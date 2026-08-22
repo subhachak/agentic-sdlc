@@ -5,3 +5,10 @@ features:
     acceptance_criteria:
       - Table renders one row per claim in the data store
       - Each row shows id, policyholder, status, last updated date
+  - id: claims-status-filter
+    route: /claims
+    description: A status filter dropdown lets the user narrow the claims table to one status (Under Review, Approved, Denied) or view all.
+    acceptance_criteria:
+      - Filter dropdown defaults to "All" and shows every claim
+      - Selecting a status shows only rows matching that status
+      - Selecting a status with zero matching claims shows an empty-state message instead of an empty table

@@ -9,19 +9,40 @@ type Claim = {
   lastUpdated: string;
 };
 
+const STATUS_OPTIONS = ["All", "Under Review", "Approved", "Denied"];
+
 export default function ClaimsPage() {
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [status, setStatus] = useState("All");
 
   useEffect(() => {
-    fetch("/api/claims")
+    const url = status === "All" ? "/api/claims" : `/api/claims?status=${encodeURIComponent(status)}`;
+    fetch(url)
       .then((r) => r.json())
       .then((d) => setClaims(d.claims));
-  }, []);
+  }, [status]);
 
   return (
     <main style={{ padding: 32, fontFamily: "sans-serif" }}>
       <h1>Claims</h1>
-      <table data-testid="claims-table">
+
+      <label htmlFor="status-filter" style={{ marginRight: 8 }}>
+        Filter by status:
+      </label>
+      <select
+        id="status-filter"
+        data-testid="status-filter"
+        value={status}
+        onChange={(e) => setStatus(e.target.value)}
+      >
+        {STATUS_OPTIONS.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+
+      <table data-testid="claims-table" style={{ marginTop: 16 }}>
         <thead>
           <tr>
             <th>ID</th>
@@ -41,6 +62,8 @@ export default function ClaimsPage() {
           ))}
         </tbody>
       </table>
+
+      {claims.length === 0 && <p data-testid="empty-state">No claims match this filter.</p>}
     </main>
   );
 }
