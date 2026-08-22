@@ -1,0 +1,7 @@
+features:
+  - id: claims-list
+    route: /claims
+    description: Policyholder-facing table listing all claims with id, policyholder, status, and last updated date.
+    acceptance_criteria:
+      - Table renders one row per claim in the data store
+      - Each row shows id, policyholder, status, last updated date

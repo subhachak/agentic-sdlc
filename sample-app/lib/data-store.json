@@ -1,0 +1,9 @@
+{
+  "claims": [
+    { "id": "CLM-1001", "policyholder": "J. Alvarez", "status": "Under Review", "lastUpdated": "2026-08-10" },
+    { "id": "CLM-1002", "policyholder": "M. Chen", "status": "Approved", "lastUpdated": "2026-08-14" },
+    { "id": "CLM-1003", "policyholder": "R. Osei", "status": "Denied", "lastUpdated": "2026-08-11" },
+    { "id": "CLM-1004", "policyholder": "S. Kapoor", "status": "Approved", "lastUpdated": "2026-08-18" },
+    { "id": "CLM-1005", "policyholder": "T. Nguyen", "status": "Under Review", "lastUpdated": "2026-08-19" }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "scripts": [
+    {
+      "id": "claims-list-renders",
+      "file": "claims-list.spec.ts",
+      "tags": ["claims", "list", "regression"],
+      "covers": "Claims table renders all seeded claims with id, policyholder, status, last updated"
+    }
+  ]
+}

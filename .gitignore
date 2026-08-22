@@ -1,0 +1,7 @@
+node_modules/
+.next/
+evidence/
+__pycache__/
+*.pyc
+.env
+sample-app/lib/data-store.local.json

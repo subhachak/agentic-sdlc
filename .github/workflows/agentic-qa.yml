@@ -1,0 +1,65 @@
+name: Agentic QA Pipeline
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  agentic-qa:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install sample app dependencies
+        working-directory: sample-app
+        run: npm install
+
+      - name: Build sample app
+        working-directory: sample-app
+        run: npm run build
+
+      - name: Install Playwright browsers
+        working-directory: sample-app
+        run: npx playwright install --with-deps chromium
+
+      - name: Install orchestrator dependencies
+        run: pip install -r orchestrator/requirements.txt
+
+      - name: Run agentic QA pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m orchestrator.run \
+            --repo "${{ github.repository }}" \
+            --pr-number "${{ github.event.pull_request.number }}" \
+            --base-sha "${{ github.event.pull_request.base.sha }}" \
+            --head-sha "${{ github.event.pull_request.merge_commit_sha }}"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-evidence-pr-${{ github.event.pull_request.number }}
+          path: evidence/
+          retention-days: 30
