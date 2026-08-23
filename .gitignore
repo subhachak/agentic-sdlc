@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .env
 sample-app/lib/data-store.local.json
+generated-tests/

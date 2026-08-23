@@ -3,8 +3,9 @@
     {
       "id": "claims-list-renders",
       "file": "claims-list.spec.ts",
+      "route": "/claims",
       "tags": ["claims", "list", "regression"],
-      "covers": "Claims table renders all seeded claims with id, policyholder, status, last updated"
+      "covers": "Claims table renders all claims with id, policyholder, status, last updated"
     }
   ]
 }

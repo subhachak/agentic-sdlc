@@ -13,6 +13,11 @@ cd "$(dirname "$0")/.."
 echo "== Installing sample app deps =="
 (cd sample-app && npm install && npx playwright install --with-deps chromium)
 
+# Playwright's webServer runs `npm run start`, which is `next start` and needs a
+# production build to exist. Without this the run dies before any test executes.
+echo "== Building sample app =="
+(cd sample-app && npm run build)
+
 echo "== Installing orchestrator deps =="
 pip install -r orchestrator/requirements.txt --break-system-packages -q
 

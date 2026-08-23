@@ -8,21 +8,37 @@ from __future__ import annotations
 
 from orchestrator.state import PipelineState
 
+# Playwright test-level statuses that count as a clean pass. Anything else
+# ("unexpected", "flaky", "skipped") is not a scenario we can claim ran and
+# passed, so it belongs in the gate reasons.
+_PASSING = ("expected", "passed")
+
 
 def _walk_results(node) -> list[dict]:
-    """Flatten Playwright's nested JSON reporter output into a list of
-    {title, status} leaves, regardless of suite nesting depth."""
+    """Flatten Playwright's JSON reporter output into a list of
+    {title, status} leaves, regardless of suite nesting depth.
+
+    The reporter nests as suites[] -> specs[] -> tests[] -> results[]. The
+    human-readable title lives on the *spec*; the resolved pass/fail verdict
+    (after retries) lives on the *test* as `status`. Nested describe blocks
+    appear as child `suites` on a suite, so recurse through those too.
+    """
     out: list[dict] = []
-    if isinstance(node, dict):
-        if "tests" in node:
-            for t in node["tests"]:
-                title = t.get("title", "?")
-                results = t.get("results", [])
-                status = results[-1]["status"] if results else "unknown"
-                out.append({"title": title, "status": status})
-        for key in ("suites",):
-            for child in node.get(key, []):
-                out.extend(_walk_results(child))
+    if not isinstance(node, dict):
+        return out
+
+    for spec in node.get("specs", []):
+        title = spec.get("title", "?")
+        for test in spec.get("tests", []):
+            status = test.get("status")
+            if status is None:
+                results = test.get("results", [])
+                status = results[-1].get("status", "unknown") if results else "unknown"
+            out.append({"title": title, "status": status})
+
+    for child in node.get("suites", []):
+        out.extend(_walk_results(child))
+
     return out
 
 
@@ -39,7 +55,7 @@ def run(state: PipelineState) -> PipelineState:
         }
 
     leaves = _walk_results(raw)
-    failing = [l for l in leaves if l["status"] not in ("passed", "expected")]
+    failing = [l for l in leaves if l["status"] not in _PASSING]
 
     planned_count = len(state.get("test_plan", []))
     assigned_count = len(state.get("test_assignments", []))

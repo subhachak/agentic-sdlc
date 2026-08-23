@@ -50,7 +50,7 @@ diff_analysis → test_plan ─┬─(gate fails)→ plan_rejected → END
 
 ## Running it for real
 
-1. `cd sample-app && npm install && npx playwright install --with-deps chromium`
+1. `cd sample-app && npm install && npx playwright install --with-deps chromium && npm run build`
 2. Set repo secrets: `ANTHROPIC_API_KEY` (Actions already has `GITHUB_TOKEN`)
 3. Push this repo to GitHub, open a PR against `main` that touches
    `sample-app/` or `features.yaml`, merge it
@@ -61,8 +61,9 @@ diff_analysis → test_plan ─┬─(gate fails)→ plan_rejected → END
 ## Running it locally (dry run, no GitHub calls)
 
 ```bash
-cd sample-app && npm install && npx playwright install --with-deps chromium && cd ..
-pip install -r orchestrator/requirements.txt
+cd sample-app && npm install && npx playwright install --with-deps chromium
+npm run build && cd ..                 # Playwright's webServer runs `next start`
+pip install -r orchestrator/requirements-dev.txt
 export ANTHROPIC_API_KEY=sk-...
 export DRY_RUN=1   # prints PR comments / issues to stdout instead of calling GitHub
 
@@ -86,9 +87,10 @@ python -m orchestrator.run --repo demo/claims-lite --pr-number 1 \
 
 ```
 sample-app/          Next.js app under test
+tests/                pytest suite over the deterministic gates
 orchestrator/         LangGraph pipeline (the QA agent)
 test-scripts/         Existing Playwright script library + manifest
-generated-tests/      Written at runtime — selected + generated specs
+sample-app/generated-tests/   Written at runtime — selected + generated specs
 evidence/             Written at runtime — results.json, screenshots, traces, HTML report
 features.yaml         Stand-in for Requirements Refinement Agent output
 .github/workflows/    The trigger
