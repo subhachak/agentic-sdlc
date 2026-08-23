@@ -7,6 +7,7 @@
 #   ./run.sh restart
 #   ./run.sh status           # ports, pids, and which adapters are actually live
 #   ./run.sh logs [api|web]
+#   ./run.sh keys [status|import] [--github]   # set up API keys
 #   ./run.sh seed [repo] [ref]  # derive the context graph from a repository
 #   ./run.sh demo [repo]      # reset, start, seed — a clean demo in one command
 #   ./run.sh qa               # run the QA pipeline against demo-app (dry run)
@@ -253,6 +254,140 @@ do_logs() {
   esac
 }
 
+# --- keys ------------------------------------------------------------------
+
+# Where to look for keys already configured on this machine.
+SIBLING_ROOT="${SIBLING_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+WANTED_KEYS=(ANTHROPIC_API_KEY GITHUB_TOKEN)
+
+# Values are moved from file to file and never printed. Everything this
+# command reports is a key *name* and which project it came from.
+sibling_env_files() {
+  find "$SIBLING_ROOT" -maxdepth 2 -name .env -not -path "$SCRIPT_DIR/*" 2>/dev/null | sort
+}
+
+# Missing file, missing key, unreadable file: all "no value", never an error.
+# Under `set -e` a failing pipeline inside a command substitution takes the
+# whole script down, which is how `keys status` silently printed nothing.
+read_key_from() {
+  [[ -f "$1" ]] || return 0
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -1 | tr -d "\"' \r" || true
+}
+
+# Find the first sibling that defines a key, printing the project name only.
+locate_key() {
+  local key="$1" file value
+  while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    value="$(read_key_from "$file" "$key")"
+    if [[ -n "$value" ]]; then
+      echo "$file"
+      return 0
+    fi
+  done < <(sibling_env_files)
+  return 1
+}
+
+# Rewrite one line of .env in place. The value travels through the
+# environment rather than argv, so it never appears in the process list.
+upsert_env() {
+  KEY="$1" VALUE="$2" "$API_DIR/.venv/bin/python" - "$SCRIPT_DIR/.env" <<'PY'
+import os, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+key, value = os.environ["KEY"], os.environ["VALUE"]
+lines = path.read_text().splitlines() if path.exists() else []
+out, replaced = [], False
+for line in lines:
+    stripped = line.lstrip()
+    if not stripped.startswith("#") and line.split("=", 1)[0].strip() == key:
+        out.append(f"{key}={value}")
+        replaced = True
+    else:
+        out.append(line)
+if not replaced:
+    out.append(f"{key}={value}")
+path.write_text("\n".join(out) + "\n")
+PY
+}
+
+do_keys() {
+  local action="${1:-status}" push_github=0
+  shift || true
+  for arg in "$@"; do
+    [[ "$arg" == "--github" ]] && push_github=1
+  done
+
+  local key source have
+  case "$action" in
+    status)
+      echo "Looking under $SIBLING_ROOT"
+      for key in "${WANTED_KEYS[@]}"; do
+        have="$(read_key_from "$SCRIPT_DIR/.env" "$key")"
+        if [[ -n "$have" ]]; then
+          printf "  %-20s already set in .env\n" "$key"
+        elif source="$(locate_key "$key")"; then
+          printf "  %-20s available from %s\n" "$key" "$(basename "$(dirname "$source")")"
+        else
+          printf "  %-20s not found in any sibling project\n" "$key"
+        fi
+      done
+      echo
+      echo "Run './run.sh keys import' to copy them into .env,"
+      echo "or add --github to also set the Actions secret."
+      ;;
+
+    import)
+      [[ -f "$SCRIPT_DIR/.env" ]] || cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+      ensure_dependencies
+
+      for key in "${WANTED_KEYS[@]}"; do
+        if [[ -n "$(read_key_from "$SCRIPT_DIR/.env" "$key")" ]]; then
+          printf "  %-20s already set — leaving it alone\n" "$key"
+          continue
+        fi
+        if ! source="$(locate_key "$key")"; then
+          printf "  %-20s not found in any sibling project\n" "$key"
+          continue
+        fi
+        upsert_env "$key" "$(read_key_from "$source" "$key")"
+        printf "  %-20s imported from %s\n" "$key" "$(basename "$(dirname "$source")")"
+      done
+
+      chmod 600 "$SCRIPT_DIR/.env"
+
+      # A key is only useful to the agents if the provider is switched over.
+      if [[ -n "$(read_key_from "$SCRIPT_DIR/.env" ANTHROPIC_API_KEY)" ]]; then
+        upsert_env LLM_PROVIDER_ADAPTER claude
+        echo "  LLM_PROVIDER_ADAPTER set to claude"
+      fi
+
+      if (( push_github )); then
+        if ! command -v gh >/dev/null 2>&1; then
+          echo "  gh is not installed — skipping the Actions secret." >&2
+        else
+          local repo value
+          repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
+          value="$(read_key_from "$SCRIPT_DIR/.env" ANTHROPIC_API_KEY)"
+          if [[ -n "$repo" && -n "$value" ]]; then
+            printf "%s" "$value" | gh secret set ANTHROPIC_API_KEY --repo "$repo" >/dev/null \
+              && echo "  ANTHROPIC_API_KEY set as an Actions secret on $repo"
+          else
+            echo "  could not set the Actions secret — no repo or no key." >&2
+          fi
+        fi
+      fi
+
+      echo
+      echo ".env written (mode 600, gitignored). Check it took with ./run.sh status."
+      ;;
+
+    *)
+      echo "Usage: $0 keys [status|import] [--github]" >&2
+      exit 1
+      ;;
+  esac
+}
+
 # --- graph, QA, tests ------------------------------------------------------
 
 do_seed() {
@@ -308,11 +443,12 @@ case "${1:-}" in
   logs)    do_logs "${2:-all}" ;;
   seed)    shift; do_seed "$@" ;;
   demo)    shift; do_demo "$@" ;;
+  keys)    shift; do_keys "$@" ;;
   qa)      do_qa ;;
   test)    do_test ;;
   reset)   do_reset ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status|logs|seed|demo|qa|test|reset}"
+    echo "Usage: $0 {start|stop|restart|status|logs|keys|seed|demo|qa|test|reset}"
     exit 1
     ;;
 esac

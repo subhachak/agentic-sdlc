@@ -81,9 +81,19 @@ Requires [uv](https://docs.astral.sh/uv/), Node.js 20+, and Python 3.11+.
 
 ```bash
 cp .env.example .env          # defaults to the mock LLM adapter, no API key needed
-cd control-plane/api && uv sync
-cd ../web && npm install
 ```
+
+If keys are already configured in another project on this machine:
+
+```bash
+./run.sh keys                 # show what is available, by name and source
+./run.sh keys import          # copy them into .env and switch to the claude adapter
+./run.sh keys import --github # also set the Actions secret on this repo
+```
+
+Values are moved file to file and never printed; `.env` is written mode 600
+and is gitignored. Without any key the platform still runs — the model
+provider defaults to a deterministic mock.
 
 Then, from the repository root:
 
