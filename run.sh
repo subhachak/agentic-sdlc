@@ -38,6 +38,20 @@ mkdir -p "$RUN_DIR"
 API_LOG="$RUN_DIR/api.log"; API_PID_FILE="$RUN_DIR/api.pid"
 WEB_LOG="$RUN_DIR/web.log"; WEB_PID_FILE="$RUN_DIR/web.pid"
 
+# Keys and settings live in one .env at the repository root. Exporting them
+# here means the QA pipeline and the seeding script see the same values the
+# control plane does, rather than each having its own idea of where to look.
+load_env() {
+  if [[ -f "$SCRIPT_DIR/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$SCRIPT_DIR/.env"
+    set +a
+  fi
+}
+
+load_env
+
 # --- helpers ---------------------------------------------------------------
 
 is_running() {

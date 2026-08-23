@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.config import Settings
+from pathlib import Path
+
+from app.core.config import REPO_ROOT, Settings
 from app.core.settings_store import (
     BY_KEY,
     MUTABLE_KEYS,
@@ -136,3 +138,20 @@ def test_every_mutable_key_is_actually_settable():
         if sample is None:
             continue
         assert getattr(effective(base, {key: sample}), key) == sample
+
+
+# --- where configuration is read from --------------------------------------
+
+
+def test_repo_root_resolves_to_the_repository():
+    """The .env location is derived by counting directories up from this file.
+    If the layout moves, a .env written where the documentation says to write
+    it stops being read — and nothing else fails, which is the bad kind of
+    bug."""
+    assert (REPO_ROOT / ".env.example").exists()
+    assert (REPO_ROOT / "run.sh").exists()
+
+
+def test_the_documented_env_location_is_first_in_the_search_order():
+    files = Settings.model_config["env_file"]
+    assert Path(files[0]) == REPO_ROOT / ".env"

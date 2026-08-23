@@ -1,11 +1,23 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# .../control-plane/api/app/core/config.py -> the repository root
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Two locations, repository root first. The root is the documented one and
+    # the only one .env.example describes; a file beside the API still wins,
+    # for anyone running it from there directly. Without the root entry, a
+    # .env written where the instructions say to write it is silently ignored,
+    # because the API's working directory is control-plane/api.
+    model_config = SettingsConfigDict(
+        env_file=(REPO_ROOT / ".env", ".env"), extra="ignore"
+    )
 
     database_url: str = "sqlite+aiosqlite:///./agentic_sdlc.db"
 
