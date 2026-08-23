@@ -31,6 +31,7 @@ class PipelineState(TypedDict, total=False):
     gate2_decision: GateDecision | None
     test_cases: list[dict[str, Any]]
     qa_result: dict[str, Any] | None
+    graph_edges_written: int
     base_sha: str | None
     head_sha: str | None
     gate3_decision: GateDecision | None

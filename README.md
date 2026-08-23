@@ -8,7 +8,7 @@ decisions and evidence, and an **execution plane** that runs the actual work
 where the code and credentials already live.
 
 ```
-control-plane/     decides — run state, gates, audit trail, adapters
+control-plane/     decides — run state, gates, audit trail, context graph
   api/               FastAPI + LangGraph, ports and adapters, GateController
   web/               Next.js console: submit a run, approve at gates
 execution-plane/   executes — one directory per lifecycle phase
@@ -28,6 +28,19 @@ The **execution plane** is ephemeral. It runs inside CI — the client's CI, in
 a real deployment — where the repository, the runners, the credentials and
 the compliance controls already exist. It executes agent-authored code and
 holds no write credentials while doing so.
+
+Between them sits a **context graph**. Phases assert typed relationships —
+this criterion is verified by that scenario, which ran as that script — at
+the moment their gate decides, so the graph fills itself as a byproduct of
+governance rather than through a separate ingestion job. It holds identity
+and relationships only: requirement text stays in the client's tracker, code
+stays in the repository, and node ids are derived rather than allocated so
+both planes name the same thing without a round trip.
+
+That is what makes questions like "which acceptance criteria have never
+reached a passing test" a query rather than an assertion — and what lets the
+QA phase widen regression scope from what a diff touched to what depends on
+what it touched.
 
 Today these are two working halves that do not yet talk to each other. The
 seam between them — dispatch a phase into CI, correlate a signed callback

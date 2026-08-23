@@ -33,6 +33,30 @@ def test_rejects_vague_or_empty_outcomes(outcome):
     assert ok is False and reason
 
 
+def test_rejects_a_scenario_whose_ac_ref_resolves_to_nothing():
+    """Without a resolvable reference there is no VERIFIED_BY edge, so the
+    scenario can never contribute to proving coverage of anything."""
+    known = {"claims-list/ac-1"}
+    ok, reason = _is_testable(
+        {"expected_outcome": CONCRETE, "ac_ref": "invented/ac-9"}, known
+    )
+    assert ok is False
+    assert "does not resolve" in reason
+
+
+def test_accepts_a_scenario_whose_ac_ref_resolves():
+    known = {"claims-list/ac-1"}
+    ok, reason = _is_testable({"expected_outcome": CONCRETE, "ac_ref": "claims-list/ac-1"}, known)
+    assert (ok, reason) == (True, None)
+
+
+def test_ac_refs_are_not_checked_when_no_criteria_are_known():
+    """Feature context is optional; a pipeline running without it should not
+    reject every scenario it is given."""
+    ok, _ = _is_testable({"expected_outcome": CONCRETE, "ac_ref": "anything"}, set())
+    assert ok is True
+
+
 def test_rejects_a_missing_outcome_key():
     ok, reason = _is_testable({"title": "no outcome at all"})
     assert ok is False and reason == "no expected_outcome"
@@ -83,10 +107,15 @@ class _Agent:
         return schema(scenarios=scenarios)
 
 
-def _sc(sid, outcome):
+# A real criterion id from features.yaml. The gate now resolves ac_ref, so a
+# placeholder here would be rejected — which is the point.
+REAL_AC = "claims-status-filter/ac-2"
+
+
+def _sc(sid, outcome, ac_ref=REAL_AC):
     return {
         "id": sid, "title": sid, "type": "functional", "target_route": "/claims",
-        "expected_outcome": outcome, "priority": "P1", "confidence": "high", "ac_ref": "ac",
+        "expected_outcome": outcome, "priority": "P1", "confidence": "high", "ac_ref": ac_ref,
     }
 
 

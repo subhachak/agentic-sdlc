@@ -24,6 +24,7 @@ from pathlib import Path
 
 import yaml
 
+from orchestrator.context import build_assertions
 from orchestrator.graph import build_graph
 from orchestrator.nodes import report as report_node
 from orchestrator.paths import DIFF_PATHS, FEATURES_FILE, REPO_ROOT
@@ -92,9 +93,12 @@ def main() -> int:
         state = _run_phase(args)
         if args.phase == "run":
             # The diff can be large and nothing downstream reads it.
-            args.state_file.write_text(
-                json.dumps({k: v for k, v in state.items() if k != "diff_text"}, indent=2)
-            )
+            # The graph edges this run observed travel with the result. The
+            # control plane ingests them with provenance; nothing here writes
+            # to the graph directly, because this job is the untrusted half.
+            payload = {k: v for k, v in state.items() if k != "diff_text"}
+            payload["assertions"] = build_assertions(state)
+            args.state_file.write_text(json.dumps(payload, indent=2))
             print(f"Wrote pipeline state to {args.state_file}")
             # Exit 0 even on gate failure: the report phase still has to run,
             # and it is the one that turns the workflow red.

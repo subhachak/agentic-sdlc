@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from app.agents.state import GateDecision
 from app.core.audit import AuditLogger, NodeFn, audited
+from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
 from app.core.dispatches import DispatchStore
 from app.core.gate_controller import GateController
 from app.core.reliability import with_retry_fallback
@@ -24,6 +25,29 @@ from app.ports.test_management import TestCaseRecord, TestManagement
 from app.ports.work_dispatch import DispatchResult, WorkDispatch
 
 
+def _assertions_from(payload: dict[str, Any]) -> list[Assertion]:
+    """Translate the execution plane's assertion list into core types.
+
+    The wire format is deliberately plain dicts: the execution plane is a
+    separate package that cannot import these classes, and a shared schema
+    across a process boundary is a coupling that would have to be versioned.
+    """
+    out: list[Assertion] = []
+    for raw in payload.get("assertions", []) or []:
+        try:
+            out.append(
+                Assertion(
+                    edge=raw["edge"],
+                    src=NodeSpec(**raw["src"]),
+                    dst=NodeSpec(**raw["dst"]),
+                    attributes=raw.get("attributes", {}),
+                )
+            )
+        except (KeyError, TypeError):
+            continue  # a malformed assertion is dropped, never crashes the phase
+    return out
+
+
 def build_nodes(
     *,
     requirements_source: RequirementsSource,
@@ -32,6 +56,7 @@ def build_nodes(
     build_deploy: BuildDeploy,
     work_dispatch: WorkDispatch,
     dispatch_store: DispatchStore,
+    context_graph: ContextGraphStore,
     llm_provider: LLMProvider,  # unused by stub logic this phase; wired for later phases
     audit_logger: AuditLogger,
     gate_controller: GateController,
@@ -164,8 +189,19 @@ def build_nodes(
         )
 
         outcome = result.get("state", "failed")
+
+        # The QA phase already knows which criterion each scenario covers and
+        # which script ran it. Those are the graph's edges, so they are written
+        # here rather than by any separate ingestion job — and they carry the
+        # run that asserted them.
+        payload = result.get("payload") or {}
+        edges_written = await context_graph.ingest(
+            run_id, "qa", _assertions_from(payload)
+        )
+
         return {
             "qa_result": result,
+            "graph_edges_written": edges_written,
             "status": "awaiting_gate_3" if outcome == "succeeded" else f"qa_{outcome}",
         }
 

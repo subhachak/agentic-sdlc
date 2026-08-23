@@ -19,6 +19,7 @@ from app.core.audit import AuditLogger
 from app.core.gate_controller import GateController
 from app.core.graph_runtime import spawn_run
 from app.ports.work_dispatch import DispatchResult
+from tests.graph_doubles import InMemoryContextGraph
 from tests.dispatch_doubles import (
     SUCCESS,
     ExplodingWorkDispatch,
@@ -44,6 +45,7 @@ def _graph(work_dispatch, store):
         build_deploy=StubBuildDeploy(),
         work_dispatch=work_dispatch,
         dispatch_store=store,
+        context_graph=InMemoryContextGraph(),
         llm_provider=StubLLMProvider(),
         audit_logger=logger,
         gate_controller=GateController(logger),

@@ -140,6 +140,26 @@ async def nudge_dispatch(request: Request, run_id: str) -> dict[str, str]:
     return {"run_id": run_id, "status": "reconciled"}
 
 
+@router.get("/{run_id}/graph")
+async def get_run_graph(request: Request, run_id: str) -> dict:
+    """What this run asserted, and what the graph can now answer.
+
+    `untested_criteria` is the release-readiness question — an acceptance
+    criterion with no scenario reaching a passing run. It is not derivable
+    from the audit log, which is the whole argument for the graph.
+    """
+    graph = request.app.state.context_graph
+    return {
+        "counts": await graph.counts(),
+        "untested_criteria": await graph.untested_criteria(),
+    }
+
+
+@router.get("/{run_id}/trace/{criterion_id}")
+async def get_trace(request: Request, run_id: str, criterion_id: str) -> dict:
+    return await request.app.state.context_graph.trace(criterion_id)
+
+
 @router.get("/{run_id}/audit")
 async def get_audit_trail(run_id: str) -> list[AuditEntryOut]:
     async with get_sessionmaker()() as session:

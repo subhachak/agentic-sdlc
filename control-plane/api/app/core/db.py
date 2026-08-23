@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.models.base import Base
 
 # Import models so they register on Base.metadata before create_all() runs.
-from app.models import audit_log, dispatch, run  # noqa: F401
+from app.models import audit_log, dispatch, graph, run  # noqa: F401
 
 
 @lru_cache

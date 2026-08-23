@@ -18,6 +18,7 @@ from app.ports.build_deploy import BuildResult
 from app.ports.code_design_context import ContextSnippet
 from app.ports.requirements_source import RequirementsDoc
 from app.ports.test_management import TestCaseRecord
+from tests.graph_doubles import InMemoryContextGraph
 from tests.dispatch_doubles import SUCCESS, InMemoryDispatchStore, StubWorkDispatch
 
 
@@ -77,6 +78,7 @@ def _build_test_graph(work_dispatch=None, dispatch_store=None):
         build_deploy=StubBuildDeploy(),
         work_dispatch=work_dispatch,
         dispatch_store=dispatch_store,
+        context_graph=InMemoryContextGraph(),
         llm_provider=StubLLMProvider(),
         audit_logger=logger,
         gate_controller=gate_controller,

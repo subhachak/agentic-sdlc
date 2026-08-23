@@ -39,6 +39,8 @@ class PipelineState(TypedDict, total=False):
     # --- phase 1: diff analysis ---
     change_summary: str
     affected_areas: list[str]
+    changed_paths: list[str]
+    regression_scope: dict[str, Any]
 
     # --- phase 2: test plan ---
     test_plan: list[Scenario]
@@ -60,6 +62,9 @@ class PipelineState(TypedDict, total=False):
 
     # --- phase 6: evidence ---
     evidence_summary: dict[str, Any]
+
+    # --- context graph ---
+    assertions: list[dict[str, Any]]
 
     # --- phase 7: gate ---
     gate_passed: bool

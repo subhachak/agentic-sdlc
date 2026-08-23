@@ -15,6 +15,7 @@ from app.agents.nodes import build_nodes
 from app.core.audit import AuditLogger
 from app.core.config import get_settings
 from app.core.db import init_db
+from app.core.context_graph import SqlContextGraph
 from app.core.dispatches import SqlDispatchStore
 from app.core.gate_controller import GateController
 from app.core.reconciler import run_forever
@@ -33,6 +34,8 @@ async def lifespan(app: FastAPI):
 
     dispatch_store = SqlDispatchStore()
     app.state.dispatch_store = dispatch_store
+    context_graph = SqlContextGraph(adapters.entity_resolver)
+    app.state.context_graph = context_graph
     audit_logger = AuditLogger(adapters.audit_sink)
     gate_controller = GateController(audit_logger)
 
@@ -43,6 +46,7 @@ async def lifespan(app: FastAPI):
         build_deploy=adapters.build_deploy,
         work_dispatch=adapters.work_dispatch,
         dispatch_store=dispatch_store,
+        context_graph=context_graph,
         llm_provider=adapters.llm_provider,
         audit_logger=audit_logger,
         gate_controller=gate_controller,

@@ -19,6 +19,8 @@ APP_ROOT = REPO_ROOT / "demo-app"
 
 LIBRARY_DIR = QA_ROOT / "test-scripts"
 FEATURES_FILE = QA_ROOT / "features.yaml"
+# Seeded code-intelligence graph. Derived from the repository in production.
+CODE_GRAPH_FILE = QA_ROOT / "code-graph.json"
 
 GENERATED_DIR = APP_ROOT / "generated-tests"
 DATA_STORE = APP_ROOT / "lib" / "data-store.json"

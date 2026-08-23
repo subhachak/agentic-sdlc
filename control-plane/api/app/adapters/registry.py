@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from app.core.config import Settings
 from app.ports.audit_sink import AuditSink
+from app.ports.entity_resolver import EntityResolver
 from app.ports.build_deploy import BuildDeploy
 from app.ports.code_design_context import CodeDesignContext
 from app.ports.llm_provider import LLMProvider
@@ -31,6 +32,7 @@ class Adapters:
     llm_provider: LLMProvider
     audit_sink: AuditSink
     work_dispatch: WorkDispatch
+    entity_resolver: EntityResolver
 
 
 def build_llm_provider(settings: Settings) -> LLMProvider:
@@ -63,6 +65,14 @@ def build_work_dispatch(settings: Settings) -> WorkDispatch:
     return LocalStubWorkDispatch(duration_seconds=settings.local_dispatch_duration_seconds)
 
 
+def build_entity_resolver(settings: Settings) -> EntityResolver:
+    # Only one implementation today. The branch exists so adding a Jira or
+    # GitHub resolver is a new arm here, not a change to any caller.
+    from app.adapters.entity_resolver.local import LocalEntityResolver
+
+    return LocalEntityResolver()
+
+
 def build_adapters(settings: Settings) -> Adapters:
     from app.adapters.audit_sink.sqlite_audit_sink import SqliteAuditSink
     from app.adapters.build_deploy.noop import NoOpBuildDeploy
@@ -72,6 +82,7 @@ def build_adapters(settings: Settings) -> Adapters:
 
     return Adapters(
         work_dispatch=build_work_dispatch(settings),
+        entity_resolver=build_entity_resolver(settings),
         requirements_source=PlainTextCSVRequirementsSource(),
         code_design_context=StubSimilarityCodeDesignContext(),
         test_management=JsonFileTestManagement(),

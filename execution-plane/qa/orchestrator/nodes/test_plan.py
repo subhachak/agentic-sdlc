@@ -10,6 +10,7 @@ not a useful pipeline.
 """
 from __future__ import annotations
 
+from orchestrator.context import criterion_ids, regression_candidates
 from orchestrator.llm import ask
 from orchestrator.schemas import TestPlan
 from orchestrator.state import PipelineState
@@ -23,7 +24,11 @@ where applicable. Every scenario MUST have a concrete, observable
 expected_outcome (something a test can assert on — a count, a visible
 element, specific text) — never a vague statement like "should work
 correctly". Also reuse relevant regression scenarios for areas adjacent to
-the change if it's plausible they could break."""
+the change if it's plausible they could break.
+
+Every scenario's ac_ref MUST be one of the acceptance criterion ids listed in
+the request. A scenario referencing an id that does not exist is rejected —
+that reference is what ties the test back to the requirement it verifies."""
 
 _VAGUE_PHRASES = [
     "should work",
@@ -35,7 +40,7 @@ _VAGUE_PHRASES = [
 ]
 
 
-def _is_testable(scenario: dict) -> tuple[bool, str | None]:
+def _is_testable(scenario: dict, known_criteria: set[str] | None = None) -> tuple[bool, str | None]:
     outcome = (scenario.get("expected_outcome") or "").strip().lower()
     if not outcome:
         return False, "no expected_outcome"
@@ -43,14 +48,24 @@ def _is_testable(scenario: dict) -> tuple[bool, str | None]:
         return False, "expected_outcome too vague/short"
     if any(p in outcome for p in _VAGUE_PHRASES):
         return False, f"expected_outcome uses a non-observable phrase: '{outcome}'"
+
+    # A scenario that cannot say which criterion it verifies produces no
+    # VERIFIED_BY edge, which means coverage can never be proved for it.
+    if known_criteria:
+        ac_ref = (scenario.get("ac_ref") or "").strip()
+        if ac_ref not in known_criteria:
+            return False, f"ac_ref {ac_ref!r} does not resolve to a known acceptance criterion"
+
     return True, None
 
 
-def _evaluate(proposed: list[dict]) -> tuple[list[dict], list[str]]:
+def _evaluate(
+    proposed: list[dict], known_criteria: set[str] | None = None
+) -> tuple[list[dict], list[str]]:
     accepted: list[dict] = []
     reasons: list[str] = []
     for sc in proposed:
-        ok, reason = _is_testable(sc)
+        ok, reason = _is_testable(sc, known_criteria)
         if ok:
             accepted.append(sc)
         else:
@@ -70,10 +85,21 @@ def _revision_prompt(reasons: list[str]) -> str:
 
 
 def run(state: PipelineState) -> PipelineState:
+    known = criterion_ids()
+    # Regression scope comes from the dependency graph, not from the change
+    # summary: a component the diff never touched can still be the one that
+    # breaks, and only the graph knows that.
+    scope = regression_candidates(state.get("changed_paths", []))
+
     base_user = (
         f"Change summary: {state['change_summary']}\n"
         f"Affected areas: {state['affected_areas']}\n"
-        f"Feature context: {state.get('features_context', {})}"
+        f"Acceptance criteria (use these exact ids for ac_ref):\n"
+        + "\n".join(f"  {cid}: {meta['text']}" for cid, meta in known.items())
+        + f"\n\nComponents impacted by this change, directly or through a dependency: "
+        f"{scope['impacted_components']}\n"
+        f"Existing scenarios covering those components, worth reusing as regression: "
+        f"{scope['scenarios']}"
     )
 
     accepted: list[dict] = []
@@ -86,11 +112,12 @@ def run(state: PipelineState) -> PipelineState:
         plan = ask(SYSTEM, user, TestPlan)
         proposed = [s.model_dump() for s in plan.scenarios]
 
-        accepted, reasons = _evaluate(proposed)
+        accepted, reasons = _evaluate(proposed, set(known))
         if accepted and not reasons:
             return {
                 **state,
                 "test_plan": accepted,
+                "regression_scope": scope,
                 "test_plan_gate_passed": True,
                 "test_plan_attempts": attempt,
                 "test_plan_gate_reasons": [
@@ -105,6 +132,7 @@ def run(state: PipelineState) -> PipelineState:
     return {
         **state,
         "test_plan": accepted,
+        "regression_scope": scope,
         "test_plan_gate_passed": False,
         "test_plan_attempts": attempt,
         "test_plan_gate_reasons": [

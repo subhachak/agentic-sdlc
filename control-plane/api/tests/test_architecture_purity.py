@@ -25,6 +25,11 @@ FORBIDDEN_MODULES = [
     "app.ports.audit_sink",
     "app.ports.work_dispatch",
     "app.core.dispatches",
+    "app.core.context_graph",
+    "app.graph.ontology",
+    "app.graph.identity",
+    "app.ports.entity_resolver",
+    "app.models.graph",
     "app.core.reconciler",
     "app.models.dispatch",
     "app.agents.graph",
@@ -82,7 +87,8 @@ def test_only_the_github_adapter_speaks_http() -> None:
 
 
 @pytest.mark.parametrize(
-    "module_name", ["app.core.dispatches", "app.core.reconciler", "app.agents.nodes"]
+    "module_name",
+    ["app.core.dispatches", "app.core.reconciler", "app.agents.nodes", "app.core.context_graph"],
 )
 def test_core_never_imports_a_work_dispatch_adapter(module_name: str) -> None:
     """The core may depend on the port, never on a concrete CI system."""
