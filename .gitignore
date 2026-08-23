@@ -15,3 +15,6 @@ control-plane/api/data/*.json
 *.sqlite
 tsconfig.tsbuildinfo
 .run/
+.venv/
+*.sqlite-shm
+*.sqlite-wal

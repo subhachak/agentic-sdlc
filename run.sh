@@ -400,8 +400,9 @@ do_seed() {
 
 do_qa() {
   if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-    echo "The QA pipeline calls a model — export ANTHROPIC_API_KEY first." >&2
-    echo "Everything else runs without one; the control plane defaults to the mock provider." >&2
+    echo "The QA pipeline calls a model — set ANTHROPIC_API_KEY in .env," >&2
+    echo "or run ./run.sh keys import. Everything else runs without one;" >&2
+    echo "the control plane defaults to the mock provider." >&2
     exit 1
   fi
   "$SCRIPT_DIR/scripts/local-demo.sh"
