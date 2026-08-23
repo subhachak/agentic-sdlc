@@ -1,123 +1,83 @@
-# Agentic QA Pipeline — Working Demo
+# Agentic SDLC
 
-A real, deployable version of the QA phase of an agentic SDLC: a PR
-merges to `main`, a GitHub Action fires, and an agent pipeline builds a
-test plan from the diff, seeds data, generates or selects Playwright
-scripts, runs them, gathers evidence, and either comments PASS on the PR
-or files a GitHub issue per failing scenario.
+A governed pipeline for agent-run software delivery. Agents propose; a
+deterministic core decides; every decision and its evidence is recorded.
 
-## What's real here
-
-- **Sample app** (`sample-app/`) — a small Next.js app (`/claims`) with a
-  real API route and a real feature (a status filter) added via an actual
-  git commit, so the pipeline analyzes a real diff, not a mocked one.
-- **Orchestrator** (`orchestrator/`) — a LangGraph state graph. Every node
-  is a plain Python function over one shared `PipelineState`. Agent calls
-  go through Claude (`orchestrator/llm.py`); gates are pure Python with no
-  LLM involved (`nodes/test_plan.py`'s testability check, `nodes/gate.py`'s
-  pass/fail logic).
-- **Test execution** — real Playwright, run via `npx playwright test`
-  against a running instance of the sample app. Screenshots, traces, and
-  an HTML report are captured on failure.
-- **GitHub integration** — real REST API calls (PR comments, issue
-  creation) via `orchestrator/github_api.py`, using a `GITHUB_TOKEN`.
-- **The workflow** (`.github/workflows/agentic-qa.yml`) — triggers on
-  `pull_request: closed` with `merged == true`, matching the "PR merged →
-  pipeline runs automatically" requirement exactly.
-
-## Pipeline phases
+The repository is laid out as the architecture: a **control plane** that owns
+decisions and evidence, and an **execution plane** that runs the actual work
+where the code and credentials already live.
 
 ```
-job: qa-run  (no write token — this job executes agent-generated specs)
-  diff_analysis → test_plan ─┬─(gate fails after N revisions)→ plan_rejected → END
-                              └─(gate passes)→ test_data → test_gen
-                                  → test_run → evidence → gate → END
-                                        │
-                                        └── state written to qa-state.json
-job: qa-report  (issues:write + pull-requests:write, runs no generated code)
-  read qa-state.json → report → END
+control-plane/     decides — run state, gates, audit trail, adapters
+  api/               FastAPI + LangGraph, ports and adapters, GateController
+  web/               Next.js console: submit a run, approve at gates
+execution-plane/   executes — one directory per lifecycle phase
+  qa/                the QA phase: plan from a diff, run Playwright, file defects
+demo-app/          claims-lite — the application under test
+scripts/           local demo drivers
 ```
 
-1. **diff_analysis** — agent summarizes the PR diff + `features.yaml` context
-2. **test_plan** — agent proposes scenarios; deterministic testability gate
-   rejects any scenario without a concrete, assertable expected outcome. The
-   rejection reasons are fed back and the agent gets up to
-   `test_plan.MAX_ATTEMPTS` tries before the run stops
-3. **test_data** — deterministic seeding: guarantees every status/value a
-   scenario references actually exists in `sample-app/lib/data-store.json`
-4. **test_gen** — for each scenario: select a matching script from
-   `test-scripts/manifest.json` (whole-token tag match, route gate, scored
-   overlap threshold), or have the agent generate a new Playwright spec.
-   Every spec — selected or generated — is checked by
-   `orchestrator/validate.py` before it touches disk, and a spec that trips
-   the allowlist is never written and never runs
-5. **test_run** — `npx playwright test`, real execution
-6. **evidence** — indexes screenshots, traces, and the HTML report
-7. **gate** — deterministic pass/fail: every planned scenario must have
-   run and passed, nothing dropped silently between plan and run
-8. **report** — PASS → one PR comment. FAIL → one GitHub issue per failing
-   scenario (with evidence pointers) + a summary PR comment linking them.
-   Issue filing is idempotent: a defect that recurs gets a comment on the
-   existing issue, reopened if it had been closed
+## The two planes
 
-## Trust boundary
+The **control plane** is long-lived. It holds run state, pauses for human
+approval at gate boundaries, records an audit entry per node execution, and
+reaches every external system through a port with a swappable adapter
+(`control-plane/api/app/ports/`). It never executes agent-authored code.
 
-The pipeline reads an untrusted PR diff, feeds it to a model, and executes
-the model's output as TypeScript. So the workflow is split in two:
-`qa-run` executes that code and holds no GitHub write token; `qa-report`
-holds the token and executes none of it, communicating only through a
-serialized state file. `orchestrator/validate.py` is a second, weaker layer
-— a text scan that refuses specs importing anything but `@playwright/test`,
-touching `process.env`, spawning processes, or opening their own sockets.
+The **execution plane** is ephemeral. It runs inside CI — the client's CI, in
+a real deployment — where the repository, the runners, the credentials and
+the compliance controls already exist. It executes agent-authored code and
+holds no write credentials while doing so.
 
-## Running it for real
+Today these are two working halves that do not yet talk to each other. The
+seam between them — dispatch a phase into CI, correlate a signed callback
+back to a run — is the next thing to build.
 
-1. `cd sample-app && npm install && npx playwright install --with-deps chromium && npm run build`
-2. Set repo secrets: `ANTHROPIC_API_KEY` (Actions already has `GITHUB_TOKEN`)
-3. Push this repo to GitHub, open a PR against `main` that touches
-   `sample-app/` or `features.yaml`, merge it
-4. The Action runs automatically — check the PR for the comment, check
-   Issues for any defects, download the `qa-evidence-pr-N` artifact for
-   screenshots/traces/HTML report
+## The QA phase is real
 
-## Running it locally (dry run, no GitHub calls)
+`execution-plane/qa/` is not a stub. On a merged pull request it analyses the
+real diff, plans test scenarios, seeds fixtures the plan depends on, selects
+an existing Playwright script or generates a new one, runs the suite against
+a built `demo-app/`, captures screenshots and traces, and either comments
+PASS on the pull request or files one GitHub issue per failing scenario.
+
+Two properties are worth knowing before reading the code:
+
+- **No model is ever in a pass/fail decision.** The testability gate
+  (`nodes/test_plan.py`) and the run gate (`nodes/gate.py`) are plain Python
+  with no LLM involved, and both are covered by tests.
+- **The job that executes agent-generated specs holds no write token.** The
+  workflow splits into `qa-run` (executes, `contents: read`) and `qa-report`
+  (writes to GitHub, executes none of it), communicating through a
+  serialized state file.
+
+## Running it
+
+Requires [uv](https://docs.astral.sh/uv/), Node.js 20+, and Python 3.11+.
 
 ```bash
-cd sample-app && npm install && npx playwright install --with-deps chromium
-npm run build && cd ..                 # Playwright's webServer runs `next start`
-pip install -r orchestrator/requirements-dev.txt
+cp .env.example .env          # defaults to the mock LLM adapter, no API key needed
+cd control-plane/api && uv sync
+cd ../web && npm install
+```
+
+Then, from the repository root:
+
+```bash
+make api     # control plane API on :8000
+make web     # console on :3000
+make test    # both test suites
+```
+
+For the QA pipeline on its own, against the demo app:
+
+```bash
 export ANTHROPIC_API_KEY=sk-...
-export DRY_RUN=1   # prints PR comments / issues to stdout instead of calling GitHub
-
-BASE_SHA=$(git rev-list --max-parents=0 HEAD)   # first commit = pre-feature baseline
-HEAD_SHA=$(git rev-parse HEAD)                   # latest commit = feature added
-
-python -m orchestrator.run --repo demo/claims-lite --pr-number 1 \
-  --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
+make qa-demo                  # dry run — prints what it would post to GitHub
 ```
 
-## What this deliberately does NOT do yet
+## Where to read next
 
-- No orchestration across phases beyond QA (Requirements Refinement,
-  Architecture, Release are still separate, not-yet-built phases in this design)
-- No routing tag for which executor (Playwright/Sauce Labs/Appium) a
-  scenario belongs to — this demo is Playwright-only
-- No MCP, by design — everything here is native GitHub Actions + REST API,
-  matching a common enterprise constraint
-- No cross-scenario traceability yet: the gate compares plan/assignment/run
-  counts, not scenario identity end to end
-
-## Repo layout
-
-```
-sample-app/          Next.js app under test
-tests/                pytest suite over the deterministic gates
-orchestrator/         LangGraph pipeline (the QA agent)
-  schemas.py            structured-output shapes for every agent call
-  validate.py           allowlist check on generated specs before execution
-test-scripts/         Existing Playwright script library + manifest
-sample-app/generated-tests/   Written at runtime — selected + generated specs
-evidence/             Written at runtime — results.json, screenshots, traces, HTML report
-features.yaml         Stand-in for Requirements Refinement Agent output
-.github/workflows/    The trigger
-```
+- `control-plane/README.md` — the governance core, ports, and adapter swap
+- `execution-plane/qa/orchestrator/` — the QA agent, node by node
+- `execution-plane/qa/tests/` — what the deterministic gates are held to

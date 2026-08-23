@@ -4,12 +4,9 @@ node both work from one summary.
 """
 from __future__ import annotations
 
-from pathlib import Path
 
+from orchestrator.paths import EVIDENCE_DIR, REPO_ROOT
 from orchestrator.state import PipelineState
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-EVIDENCE_DIR = REPO_ROOT / "evidence"
 
 
 def run(state: PipelineState) -> PipelineState:

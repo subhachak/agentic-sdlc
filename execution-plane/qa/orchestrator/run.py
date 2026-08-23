@@ -26,13 +26,12 @@ import yaml
 
 from orchestrator.graph import build_graph
 from orchestrator.nodes import report as report_node
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
+from orchestrator.paths import DIFF_PATHS, FEATURES_FILE, REPO_ROOT
 
 
 def get_diff(base_sha: str, head_sha: str) -> str:
     result = subprocess.run(
-        ["git", "diff", f"{base_sha}..{head_sha}", "--", "sample-app/", "features.yaml"],
+        ["git", "diff", f"{base_sha}..{head_sha}", "--", *DIFF_PATHS],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -46,14 +45,13 @@ def get_diff(base_sha: str, head_sha: str) -> str:
 
 
 def get_features() -> dict:
-    path = REPO_ROOT / "features.yaml"
-    return yaml.safe_load(path.read_text()) if path.exists() else {}
+    return yaml.safe_load(FEATURES_FILE.read_text()) if FEATURES_FILE.exists() else {}
 
 
 def _run_phase(args) -> dict:
     diff_text = get_diff(args.base_sha, args.head_sha)
     if not diff_text.strip():
-        print("No relevant changes in sample-app/ or features.yaml — skipping QA pipeline.")
+        print("No relevant changes in demo-app/ or features.yaml — skipping QA pipeline.")
         return {}
 
     return build_graph().invoke(

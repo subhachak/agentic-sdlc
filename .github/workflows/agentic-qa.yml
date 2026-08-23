@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+    # Only the execution plane and the app under test can change what this
+    # pipeline should assert. Control-plane edits do not trigger a QA run.
+    paths:
+      - "demo-app/**"
+      - "execution-plane/**"
 
 # Two merges in quick succession would otherwise race on the data store and
 # both post to the same PR.
@@ -39,24 +44,26 @@ jobs:
           python-version: "3.11"
 
       - name: Install orchestrator dependencies
-        run: pip install -r orchestrator/requirements-dev.txt
+        run: pip install -r execution-plane/qa/orchestrator/requirements-dev.txt
 
       - name: Test the orchestrator's deterministic gates
+        working-directory: execution-plane/qa
         run: python -m pytest tests/ -q
 
-      - name: Install sample app dependencies
-        working-directory: sample-app
+      - name: Install the app under test
+        working-directory: demo-app
         run: npm ci
 
-      - name: Build sample app
-        working-directory: sample-app
+      - name: Build the app under test
+        working-directory: demo-app
         run: npm run build
 
       - name: Install Playwright browsers
-        working-directory: sample-app
+        working-directory: demo-app
         run: npx playwright install --with-deps chromium
 
       - name: Run agentic QA pipeline
+        working-directory: execution-plane/qa
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -73,7 +80,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qa-state-pr-${{ github.event.pull_request.number }}
-          path: qa-state.json
+          path: execution-plane/qa/qa-state.json
           if-no-files-found: ignore
           retention-days: 30
 
@@ -110,7 +117,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install orchestrator dependencies
-        run: pip install -r orchestrator/requirements.txt
+        run: pip install -r execution-plane/qa/orchestrator/requirements.txt
 
       - name: Download pipeline state
         uses: actions/download-artifact@v4
@@ -118,11 +125,12 @@ jobs:
           name: qa-state-pr-${{ github.event.pull_request.number }}
 
       - name: Post results to the PR
+        working-directory: execution-plane/qa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -m orchestrator.run \
             --phase report \
-            --state-file qa-state.json \
+            --state-file ../../qa-state.json \
             --repo "${{ github.repository }}" \
             --pr-number "${{ github.event.pull_request.number }}"

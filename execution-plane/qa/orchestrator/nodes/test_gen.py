@@ -13,19 +13,12 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from pathlib import Path
 
 from orchestrator.llm import ask
 from orchestrator.schemas import GeneratedSpec
 from orchestrator.state import PipelineState
+from orchestrator.paths import GENERATED_DIR, LIBRARY_DIR
 from orchestrator.validate import validate_spec
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-LIBRARY_DIR = REPO_ROOT / "test-scripts"
-# Inside sample-app/ on purpose: Node resolves imports by walking up from the
-# spec file, so a spec at the repo root cannot see sample-app/node_modules and
-# fails with "Cannot find module '@playwright/test'" before any test runs.
-GENERATED_DIR = REPO_ROOT / "sample-app" / "generated-tests"
 
 # A library script is reused only if it demonstrably covers the same ground
 # as the scenario. Matching on bare substrings does not work here: the tag

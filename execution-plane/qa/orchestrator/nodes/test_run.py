@@ -6,21 +6,17 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
 
+from orchestrator.paths import APP_ROOT, EVIDENCE_DIR, RESULTS_FILE
 from orchestrator.state import PipelineState
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SAMPLE_APP = REPO_ROOT / "sample-app"
-RESULTS_FILE = REPO_ROOT / "evidence" / "results.json"
 
 
 def run(state: PipelineState) -> PipelineState:
-    (REPO_ROOT / "evidence").mkdir(exist_ok=True)
+    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
     proc = subprocess.run(
         ["npx", "playwright", "test"],
-        cwd=SAMPLE_APP,
+        cwd=APP_ROOT,
         capture_output=True,
         text=True,
     )

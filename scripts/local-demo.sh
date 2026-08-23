@@ -10,22 +10,23 @@ fi
 
 cd "$(dirname "$0")/.."
 
-echo "== Installing sample app deps =="
-(cd sample-app && npm install && npx playwright install --with-deps chromium)
+echo "== Installing the app under test =="
+(cd demo-app && npm install && npx playwright install --with-deps chromium)
 
 # Playwright's webServer runs `npm run start`, which is `next start` and needs a
 # production build to exist. Without this the run dies before any test executes.
-echo "== Building sample app =="
-(cd sample-app && npm run build)
+echo "== Building the app under test =="
+(cd demo-app && npm run build)
 
 echo "== Installing orchestrator deps =="
-pip install -r orchestrator/requirements.txt --break-system-packages -q
+pip install -r execution-plane/qa/orchestrator/requirements-dev.txt --break-system-packages -q
 
 BASE_SHA=$(git rev-list --max-parents=0 HEAD)
 HEAD_SHA=$(git rev-parse HEAD)
 
 echo "== Running pipeline: ${BASE_SHA:0:7}..${HEAD_SHA:0:7} =="
 export DRY_RUN=1
+cd execution-plane/qa
 python -m orchestrator.run \
   --repo demo/claims-lite \
   --pr-number 1 \

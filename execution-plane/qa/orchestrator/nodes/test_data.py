@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 
+from orchestrator.paths import DATA_STORE
 from orchestrator.state import PipelineState
-
-DATA_STORE = Path(__file__).resolve().parents[2] / "sample-app" / "lib" / "data-store.json"
 
 _KNOWN_STATUSES = ["Under Review", "Approved", "Denied"]
 
