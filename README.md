@@ -88,8 +88,21 @@ cd ../web && npm install
 Then, from the repository root:
 
 ```bash
-make api     # control plane API on :8000
-make web     # console on :3000
+./run.sh demo          # reset, start both, seed the graph, open the console
+./run.sh start         # just start (API on :8020, console on :3020)
+./run.sh status        # ports, pids, and which adapters are actually live
+./run.sh stop
+```
+
+Ports avoid 8000/3000 deliberately: `demo-app` binds :3000 while the QA
+pipeline runs, and other projects on a typical machine take those. Override
+with `API_PORT` / `WEB_PORT`.
+
+The `make` targets still work for individual pieces:
+
+```bash
+make api     # control plane API
+make web     # console
 make test    # both test suites
 ```
 

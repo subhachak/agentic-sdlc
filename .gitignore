@@ -14,3 +14,4 @@ generated-tests/
 control-plane/api/data/*.json
 *.sqlite
 tsconfig.tsbuildinfo
+.run/
