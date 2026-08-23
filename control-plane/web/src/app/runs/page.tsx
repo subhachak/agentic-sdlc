@@ -5,10 +5,10 @@ export default async function RunsListPage() {
   const runs = await listRuns();
 
   return (
-    <main>
+    <main className="wide">
       <h1>Runs</h1>
       <p>
-        <Link href="/">← Start a new run</Link>
+        <Link href="/new">Start a new run →</Link>
       </p>
       {runs.length === 0 ? (
         <p className="muted">No runs yet.</p>

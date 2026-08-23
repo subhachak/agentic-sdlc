@@ -19,42 +19,58 @@ from app.core.context_graph import SqlContextGraph
 from app.core.dispatches import SqlDispatchStore
 from app.core.gate_controller import GateController
 from app.core.reconciler import run_forever
+from app.core import settings_store
 from app.routers import graph as graph_router
+from app.routers import config as config_router
+from app.routers import dashboard as dashboard_router
 from app.routers import health, runs
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    settings = get_settings()
-    app.state.settings = settings
+def build_runtime(app: FastAPI, settings, checkpointer=None) -> None:
+    """Construct everything that depends on configuration.
 
-    await init_db()
-
+    Called at start-up and again whenever configuration changes. The registry
+    is already a pure function of settings, so rebuilding is the whole of
+    "apply this change" — and paused runs survive it, because their state
+    lives in the checkpointer rather than in the compiled graph.
+    """
     adapters = build_adapters(settings)
+    app.state.settings = settings
     app.state.adapters = adapters
+    app.state.context_graph = SqlContextGraph(adapters.entity_resolver)
 
-    dispatch_store = SqlDispatchStore()
-    app.state.dispatch_store = dispatch_store
-    context_graph = SqlContextGraph(adapters.entity_resolver)
-    app.state.context_graph = context_graph
     audit_logger = AuditLogger(adapters.audit_sink)
-    gate_controller = GateController(audit_logger)
-
     nodes = build_nodes(
         requirements_source=adapters.requirements_source,
         code_design_context=adapters.code_design_context,
         test_management=adapters.test_management,
         build_deploy=adapters.build_deploy,
         work_dispatch=adapters.work_dispatch,
-        dispatch_store=dispatch_store,
-        context_graph=context_graph,
+        dispatch_store=app.state.dispatch_store,
+        context_graph=app.state.context_graph,
         llm_provider=adapters.llm_provider,
         audit_logger=audit_logger,
-        gate_controller=gate_controller,
+        gate_controller=GateController(audit_logger),
         max_retries=settings.max_node_retries,
         dispatch_timeout_seconds=settings.dispatch_timeout_seconds,
         dispatch_provider=settings.work_dispatch_adapter,
     )
+    app.state.graph = build_graph(nodes, checkpointer=checkpointer or app.state.checkpointer)
+
+
+async def reload_runtime(app: FastAPI) -> None:
+    """Re-read configuration and rebuild. The reconciler picks the new
+    instances up on its next tick, because it asks for them on every tick."""
+    base = get_settings()
+    overrides = await settings_store.load_overrides()
+    build_runtime(app, settings_store.effective(base, overrides))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    app.state.dispatch_store = SqlDispatchStore()
+    app.state.active_tasks = {}
 
     # Our own pydantic models (PipelineConfig, GateDecision, ConfidenceEntry)
     # ride in graph state and get checkpointed — register them explicitly so
@@ -68,19 +84,20 @@ async def lifespan(app: FastAPI):
             ("app.core.confidence", "ConfidenceEntry"),
         ]
     )
-    async with aiosqlite.connect(settings.checkpointer_db_path) as conn:
-        checkpointer = AsyncSqliteSaver(conn, serde=serde)
-        app.state.graph = build_graph(nodes, checkpointer=checkpointer)
-        app.state.active_tasks = {}
-        # One reconciler for the process. It is what turns a finished CI job
-        # into a resumed run, so nothing else needs to block waiting on one.
+    base = get_settings()
+    async with aiosqlite.connect(base.checkpointer_db_path) as conn:
+        app.state.checkpointer = AsyncSqliteSaver(conn, serde=serde)
+        await reload_runtime(app)
+
         reconciler = asyncio.create_task(
             run_forever(
-                app.state.graph,
-                adapters.work_dispatch,
-                app.state.active_tasks,
-                dispatch_store,
-                settings.reconciler_interval_seconds,
+                lambda: (
+                    app.state.graph,
+                    app.state.adapters.work_dispatch,
+                    app.state.active_tasks,
+                    app.state.dispatch_store,
+                ),
+                app.state.settings.reconciler_interval_seconds,
             )
         )
         try:
@@ -103,3 +120,5 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(graph_router.router, prefix="/api")
+app.include_router(config_router.router, prefix="/api")
+app.include_router(dashboard_router.router, prefix="/api")

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from langgraph.types import Command
@@ -77,15 +78,18 @@ async def tick(
 
 
 async def run_forever(
-    graph: Any,
-    work_dispatch: WorkDispatch,
-    active_tasks: dict,
-    store: DispatchStore,
+    provider: Callable[[], tuple[Any, WorkDispatch, dict, DispatchStore]],
     interval_seconds: float,
 ) -> None:
+    """`provider` is called every tick rather than captured once.
+
+    Configuration can be changed through the control plane, which rebuilds the
+    adapters and the graph. A reconciler holding references from start-up would
+    quietly keep polling the provider the operator just switched away from.
+    """
     while True:
         try:
-            await tick(graph, work_dispatch, active_tasks, store)
+            await tick(*provider())
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - the loop must outlive any single failure

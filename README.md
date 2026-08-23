@@ -93,6 +93,19 @@ make web     # console on :3000
 make test    # both test suites
 ```
 
+The console has four views: a **dashboard** showing what is running, what is
+waiting on a person versus on CI, and how many acceptance criteria have
+reached a passing test; the **runs** list and detail; the **context graph**,
+where you point it at a repository and watch the component structure appear;
+and **configuration**.
+
+Configuration lives in the control plane, not only in `.env`. Adapter choices
+and thresholds are editable in the console and applied by rebuilding the
+adapters — no restart, because the registry is already a pure function of
+settings. Secrets are the exception: they stay in the environment, are
+reported as present or absent, and are never read back or accepted through
+the API. Every change is recorded with its previous value.
+
 For the QA pipeline on its own, against the demo app:
 
 ```bash

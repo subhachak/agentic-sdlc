@@ -43,3 +43,76 @@ export interface StreamedAuditEvent {
   human_decision: "approved" | "rejected" | null;
   timestamp: string;
 }
+
+export interface DashboardData {
+  runs: {
+    total: number;
+    by_status: Record<string, number>;
+    awaiting_human: number;
+    awaiting_machine: number;
+    working: number;
+    finished: number;
+  };
+  recent: {
+    run_id: string;
+    status: string;
+    created_at: string;
+    requirement: string;
+    waiting_on: "awaiting_human" | "awaiting_machine" | "working" | "finished";
+  }[];
+  coverage: {
+    criteria: number;
+    untested: number;
+    tested: number;
+    gaps: { id: string; text: string }[];
+  };
+  graph: {
+    nodes: Record<string, number>;
+    edges: Record<string, number>;
+    components: number;
+    dependencies: number;
+  };
+  dispatches: Record<string, number>;
+  active: {
+    model_provider: string;
+    execution_target: string;
+    index_source: string;
+    indexed_repo: string | null;
+    gates: string;
+  };
+}
+
+export interface SettingEntry {
+  key: string;
+  label: string;
+  group: string;
+  kind: "mutable" | "secret" | "static";
+  type: "enum" | "text" | "int" | "float" | "bool";
+  options: string[];
+  help: string;
+  placeholder: string;
+  overridden: boolean;
+  value: string | number | boolean | null;
+  configured?: boolean;
+}
+
+export interface SettingChange {
+  key: string;
+  label: string;
+  previous: string | number | boolean | null;
+  value: string | number | boolean | null;
+  changed_by: string;
+  at: string;
+}
+
+export interface ConfigData {
+  settings: SettingEntry[];
+  history: SettingChange[];
+  active: Record<string, string>;
+}
+
+export interface ComponentEntry {
+  id: string;
+  files: number;
+  depends_on: { target: string; weight: number }[];
+}

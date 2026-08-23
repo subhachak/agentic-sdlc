@@ -1,4 +1,11 @@
-import type { AuditEntry, RunDetail, RunSummary } from "./types";
+import type {
+  AuditEntry,
+  ComponentEntry,
+  ConfigData,
+  DashboardData,
+  RunDetail,
+  RunSummary,
+} from "./types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -48,6 +55,44 @@ export async function approveGate(
 
 export async function nudgeDispatch(runId: string): Promise<{ run_id: string; status: string }> {
   const res = await fetch(`${API_URL}/api/runs/${runId}/dispatch-nudge`, { method: "POST" });
+  return json(res);
+}
+
+export async function getDashboard(): Promise<DashboardData> {
+  const res = await fetch(`${API_URL}/api/dashboard`, { cache: "no-store" });
+  return json(res);
+}
+
+export async function getConfig(): Promise<ConfigData> {
+  const res = await fetch(`${API_URL}/api/config`, { cache: "no-store" });
+  return json(res);
+}
+
+export async function saveConfig(
+  changes: Record<string, unknown>
+): Promise<{ applied: Record<string, unknown>; active_runs: number; warning: string | null }> {
+  const res = await fetch(`${API_URL}/api/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ changes }),
+  });
+  return json(res);
+}
+
+export async function listComponents(): Promise<{ components: ComponentEntry[] }> {
+  const res = await fetch(`${API_URL}/api/graph/components`, { cache: "no-store" });
+  return json(res);
+}
+
+export async function seedGraph(
+  repo: string,
+  ref: string
+): Promise<Record<string, number | string>> {
+  const res = await fetch(`${API_URL}/api/graph/seed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, ref }),
+  });
   return json(res);
 }
 
