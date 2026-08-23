@@ -1,4 +1,7 @@
+import contextlib
 from contextlib import asynccontextmanager
+
+import asyncio
 
 import aiosqlite
 from fastapi import FastAPI
@@ -12,7 +15,9 @@ from app.agents.nodes import build_nodes
 from app.core.audit import AuditLogger
 from app.core.config import get_settings
 from app.core.db import init_db
+from app.core.dispatches import SqlDispatchStore
 from app.core.gate_controller import GateController
+from app.core.reconciler import run_forever
 from app.routers import health, runs
 
 
@@ -26,6 +31,8 @@ async def lifespan(app: FastAPI):
     adapters = build_adapters(settings)
     app.state.adapters = adapters
 
+    dispatch_store = SqlDispatchStore()
+    app.state.dispatch_store = dispatch_store
     audit_logger = AuditLogger(adapters.audit_sink)
     gate_controller = GateController(audit_logger)
 
@@ -34,10 +41,14 @@ async def lifespan(app: FastAPI):
         code_design_context=adapters.code_design_context,
         test_management=adapters.test_management,
         build_deploy=adapters.build_deploy,
+        work_dispatch=adapters.work_dispatch,
+        dispatch_store=dispatch_store,
         llm_provider=adapters.llm_provider,
         audit_logger=audit_logger,
         gate_controller=gate_controller,
         max_retries=settings.max_node_retries,
+        dispatch_timeout_seconds=settings.dispatch_timeout_seconds,
+        dispatch_provider=settings.work_dispatch_adapter,
     )
 
     # Our own pydantic models (PipelineConfig, GateDecision, ConfidenceEntry)
@@ -56,7 +67,23 @@ async def lifespan(app: FastAPI):
         checkpointer = AsyncSqliteSaver(conn, serde=serde)
         app.state.graph = build_graph(nodes, checkpointer=checkpointer)
         app.state.active_tasks = {}
-        yield
+        # One reconciler for the process. It is what turns a finished CI job
+        # into a resumed run, so nothing else needs to block waiting on one.
+        reconciler = asyncio.create_task(
+            run_forever(
+                app.state.graph,
+                adapters.work_dispatch,
+                app.state.active_tasks,
+                dispatch_store,
+                settings.reconciler_interval_seconds,
+            )
+        )
+        try:
+            yield
+        finally:
+            reconciler.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reconciler
 
 
 app = FastAPI(title="Agentic SDLC Pipeline Accelerator (scaffold)", lifespan=lifespan)

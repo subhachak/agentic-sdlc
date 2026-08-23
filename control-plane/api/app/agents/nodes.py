@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from app.agents.state import GateDecision
 from app.core.audit import AuditLogger, NodeFn, audited
+from app.core.dispatches import DispatchStore
 from app.core.gate_controller import GateController
 from app.core.reliability import with_retry_fallback
 from app.ports.build_deploy import BuildDeploy
@@ -20,6 +21,7 @@ from app.ports.code_design_context import CodeDesignContext
 from app.ports.llm_provider import LLMProvider
 from app.ports.requirements_source import RequirementsInput, RequirementsSource
 from app.ports.test_management import TestCaseRecord, TestManagement
+from app.ports.work_dispatch import DispatchResult, WorkDispatch
 
 
 def build_nodes(
@@ -28,10 +30,14 @@ def build_nodes(
     code_design_context: CodeDesignContext,
     test_management: TestManagement,
     build_deploy: BuildDeploy,
+    work_dispatch: WorkDispatch,
+    dispatch_store: DispatchStore,
     llm_provider: LLMProvider,  # unused by stub logic this phase; wired for later phases
     audit_logger: AuditLogger,
     gate_controller: GateController,
     max_retries: int,
+    dispatch_timeout_seconds: int = 1800,
+    dispatch_provider: str = "local",
 ) -> dict[str, NodeFn]:
     def business(name: str, fallback: dict[str, Any]):
         def decorator(fn: NodeFn) -> NodeFn:
@@ -115,10 +121,60 @@ def build_nodes(
             gherkin_text="Given a submitted requirement\nWhen the pipeline runs\nThen a test case is drafted (stub)",
         )
         await test_management.create_test_case(state["run_id"], tc)
-        return {"test_cases": [tc.model_dump()], "status": "awaiting_gate_3"}
+        return {"test_cases": [tc.model_dump()], "status": "awaiting_qa_execution"}
+
+    async def qa_execution(state: dict[str, Any]) -> dict[str, Any]:
+        """Hand the QA phase to whatever actually runs it, then park.
+
+        Deliberately not wrapped in `with_retry_fallback`, for the same
+        reason gate nodes are not: a parked node is not a transient failure,
+        and falling back would mean reporting a QA verdict that no test
+        produced. Retries belong inside the adapter's HTTP calls, where a
+        flaky response genuinely is transient.
+        """
+        run_id = state["run_id"]
+
+        # None means a row already exists, i.e. this is the resume pass and
+        # the job is already running. Triggering here would start a second.
+        claimed = await dispatch_store.claim(
+            run_id, "qa", dispatch_provider, dispatch_timeout_seconds
+        )
+        if claimed is not None:
+            try:
+                handle = await work_dispatch.trigger(
+                    run_id,
+                    "qa",
+                    claimed.correlation_id,
+                    {
+                        "base_sha": state.get("base_sha", ""),
+                        "head_sha": state.get("head_sha", ""),
+                    },
+                )
+                await dispatch_store.attach_external(
+                    claimed.id, handle.external_id, handle.external_url
+                )
+            except Exception as exc:  # noqa: BLE001 - surfaced as a failed dispatch
+                await dispatch_store.resolve(
+                    claimed.id,
+                    DispatchResult(state="failed", detail=f"could not trigger: {exc}"),
+                )
+
+        result = await gate_controller.request_external(
+            state, "qa_execution", {"type": "qa_execution", "phase": "qa"}
+        )
+
+        outcome = result.get("state", "failed")
+        return {
+            "qa_result": result,
+            "status": "awaiting_gate_3" if outcome == "succeeded" else f"qa_{outcome}",
+        }
 
     async def gate_3(state: dict[str, Any]) -> dict[str, Any]:
-        payload = {"type": "test_case_approval", "test_cases": state.get("test_cases", [])}
+        payload = {
+            "type": "test_case_approval",
+            "test_cases": state.get("test_cases", []),
+            "qa_result": state.get("qa_result"),
+        }
         decision = await gate_controller.request_gate(state, "gate_3", payload)
         gate_decision = GateDecision(
             gate_name="gate_3",
@@ -146,6 +202,7 @@ def build_nodes(
         "design_proposal": design_proposal,
         "gate_2": gate_2,
         "test_case_generation": test_case_generation,
+        "qa_execution": qa_execution,
         "gate_3": gate_3,
         "build_deploy_stub": build_deploy_stub,
     }

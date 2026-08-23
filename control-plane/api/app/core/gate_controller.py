@@ -2,6 +2,10 @@
 call into this rather than each managing their own gate logic, so there is
 exactly one place in the codebase that calls `interrupt()`.
 
+A pause is not always a human one. `request_external` parks a run on a
+remote execution instead of a person: same mechanism, different resumer.
+Keeping both here is what preserves the single-interrupt-site rule.
+
 This module is part of the deterministic core: it never imports an LLM
 client, directly or transitively.
 """
@@ -54,3 +58,34 @@ class GateController:
             human_decision="approved" if decision.get("approved") else "rejected",
         )
         return decision
+
+    async def request_external(
+        self, state: dict[str, Any], node_name: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Pause the graph until a remote execution reports back.
+
+        Unlike `request_gate` this ignores `auto_approve_gates`. That flag
+        exists so a headless run does not stop for a human; it cannot
+        manufacture the result of a job that has not run.
+
+        The same `has_written` dedupe applies for the same reason: LangGraph
+        re-executes the node from its start on resume, so the "before" entry
+        would otherwise be written twice. The far more dangerous side effect
+        on that second pass — triggering a second remote job — is guarded
+        separately, by the unique constraint in core/dispatches.py.
+        """
+        run_id = state["run_id"]
+
+        if not await self._logger.has_written(run_id, node_name, "before"):
+            await self._logger.write_before(run_id, node_name, payload)
+
+        result = interrupt(payload)
+
+        await self._logger.write_after(
+            run_id,
+            node_name,
+            payload,
+            {"result": result},
+            human_decision=None,
+        )
+        return result

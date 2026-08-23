@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { approveGate, eventsUrl, getAuditTrail, getRun } from "@/lib/api";
+import { approveGate, eventsUrl, getAuditTrail, getRun, nudgeDispatch } from "@/lib/api";
 import type { AuditEntry, RunDetail, StreamedAuditEvent } from "@/lib/types";
 import PipelineTimeline from "@/components/pipeline-timeline";
+import DispatchWaitingPanel from "@/components/dispatch-waiting-panel";
 import GateApprovalPanel from "@/components/gate-approval-panel";
 import AuditLogView from "@/components/audit-log-view";
 
@@ -113,6 +114,16 @@ export default function RunView({ runId }: { runId: string }) {
       <h1>Run {runId.slice(0, 8)}</h1>
 
       <PipelineTimeline status={run.status} completedNodes={completedNodes} />
+
+      {run.pending_dispatch && run.pending_dispatch.state === "pending" && !done && (
+        <DispatchWaitingPanel
+          dispatch={run.pending_dispatch}
+          onNudge={async () => {
+            await nudgeDispatch(runId);
+            await refreshRun();
+          }}
+        />
+      )}
 
       {run.pending_gate && pendingGateName && !done && (
         <GateApprovalPanel

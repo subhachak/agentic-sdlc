@@ -30,6 +30,11 @@ def _after_gate(decision_key: str, next_node: str):
     return router
 
 
+def _after_qa(state: dict[str, Any]) -> str:
+    result = state.get("qa_result") or {}
+    return "gate_3" if result.get("state") == "succeeded" else END
+
+
 def build_graph(nodes: dict[str, NodeFn], checkpointer=None):
     graph = StateGraph(PipelineState)
     for name, fn in nodes.items():
@@ -42,7 +47,10 @@ def build_graph(nodes: dict[str, NodeFn], checkpointer=None):
     graph.add_conditional_edges("gate_1", _after_gate("gate1_decision", "design_proposal"))
     graph.add_edge("design_proposal", "gate_2")
     graph.add_conditional_edges("gate_2", _after_gate("gate2_decision", "test_case_generation"))
-    graph.add_edge("test_case_generation", "gate_3")
+    graph.add_edge("test_case_generation", "qa_execution")
+    # A QA phase that failed or timed out must not reach a release gate — the
+    # run ends instead, with the reason already in its status.
+    graph.add_conditional_edges("qa_execution", _after_qa)
     graph.add_conditional_edges("gate_3", _after_gate("gate3_decision", "build_deploy_stub"))
     graph.add_edge("build_deploy_stub", END)
 

@@ -13,6 +13,7 @@ from app.ports.code_design_context import CodeDesignContext
 from app.ports.llm_provider import LLMProvider
 from app.ports.requirements_source import RequirementsSource
 from app.ports.test_management import TestManagement
+from app.ports.work_dispatch import WorkDispatch
 
 
 @dataclass
@@ -29,6 +30,7 @@ class Adapters:
     build_deploy: BuildDeploy
     llm_provider: LLMProvider
     audit_sink: AuditSink
+    work_dispatch: WorkDispatch
 
 
 def build_llm_provider(settings: Settings) -> LLMProvider:
@@ -42,6 +44,25 @@ def build_llm_provider(settings: Settings) -> LLMProvider:
     return MockLLMProvider()
 
 
+def build_work_dispatch(settings: Settings) -> WorkDispatch:
+    if settings.work_dispatch_adapter == "github-actions":
+        if not (settings.github_repo and settings.github_token):
+            raise ValueError(
+                "work_dispatch_adapter=github-actions needs GITHUB_REPO and GITHUB_TOKEN"
+            )
+        from app.adapters.work_dispatch.github_actions import GitHubActionsWorkDispatch
+
+        return GitHubActionsWorkDispatch(
+            repo=settings.github_repo,
+            token=settings.github_token,
+            workflow_file=settings.github_workflow_file,
+            ref=settings.github_ref,
+        )
+    from app.adapters.work_dispatch.local_stub import LocalStubWorkDispatch
+
+    return LocalStubWorkDispatch(duration_seconds=settings.local_dispatch_duration_seconds)
+
+
 def build_adapters(settings: Settings) -> Adapters:
     from app.adapters.audit_sink.sqlite_audit_sink import SqliteAuditSink
     from app.adapters.build_deploy.noop import NoOpBuildDeploy
@@ -50,6 +71,7 @@ def build_adapters(settings: Settings) -> Adapters:
     from app.adapters.test_management.json_file import JsonFileTestManagement
 
     return Adapters(
+        work_dispatch=build_work_dispatch(settings),
         requirements_source=PlainTextCSVRequirementsSource(),
         code_design_context=StubSimilarityCodeDesignContext(),
         test_management=JsonFileTestManagement(),

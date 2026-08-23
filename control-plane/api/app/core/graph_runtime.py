@@ -22,6 +22,10 @@ TERMINAL_STATUSES = {
     "design_proposal_failed",
     "test_case_generation_failed",
     "build_deploy_failed",
+    # A remote execution that never produced a usable verdict ends the run.
+    # Both must be listed here or stream_events never closes the SSE stream.
+    "qa_failed",
+    "qa_timed_out",
 }
 
 
@@ -51,3 +55,27 @@ def is_paused(result: dict[str, Any]) -> bool:
 
 def is_terminal(status: str) -> bool:
     return status in TERMINAL_STATUSES
+
+
+def spawn_run(active_tasks: dict, graph: Any, run_id: str, graph_input: Any) -> bool:
+    """Start a graph task for `run_id`, unless one is already running.
+
+    Returns False rather than raising when the thread is busy: the HTTP
+    caller turns that into a 409, while the reconciler simply tries again on
+    its next tick. That retry is what stops a result arriving before the
+    graph has parked from being lost.
+    """
+    import asyncio
+
+    existing = active_tasks.get(run_id)
+    if existing is not None and not existing.done():
+        return False
+
+    async def _run() -> None:
+        try:
+            await execute_run(graph, run_id, graph_input)
+        finally:
+            active_tasks.pop(run_id, None)
+
+    active_tasks[run_id] = asyncio.create_task(_run())
+    return True

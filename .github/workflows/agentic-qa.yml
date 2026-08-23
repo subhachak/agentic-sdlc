@@ -10,17 +10,41 @@ on:
       - "demo-app/**"
       - "execution-plane/**"
 
+  # Dispatched by the control plane's WorkDispatch port. The correlation id
+  # is echoed into run-name because workflow_dispatch returns no run id, and
+  # matching on it is the only way to tie a trigger call to the run it made.
+  workflow_dispatch:
+    inputs:
+      control_run_id:
+        description: "Control-plane run id"
+        required: true
+      correlation_id:
+        description: "Nonce used to correlate this run back to the dispatch"
+        required: true
+      base_sha:
+        description: "Commit to diff from"
+        required: true
+      head_sha:
+        description: "Commit to diff to"
+        required: true
+
+run-name: >-
+  Agentic QA
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('· dispatch {0}', inputs.correlation_id)
+      || format('· PR #{0}', github.event.pull_request.number) }}
+
 # Two merges in quick succession would otherwise race on the data store and
 # both post to the same PR.
 concurrency:
-  group: agentic-qa-${{ github.event.pull_request.number }}
+  group: agentic-qa-${{ github.event.pull_request.number || inputs.control_run_id }}
   cancel-in-progress: false
 
 jobs:
   # Executes agent-generated Playwright specs, so it deliberately holds no
   # write token. The worst a malicious diff can achieve here is a failed run.
   qa-run:
-    if: github.event.pull_request.merged == true
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -30,8 +54,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
           fetch-depth: 0
+
+      # The two triggers expose different event payloads. Resolve them once
+      # here so no later step needs a conditional.
+      - name: Resolve run inputs
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "BASE_SHA=${{ inputs.base_sha }}" >> "$GITHUB_ENV"
+            echo "HEAD_SHA=${{ inputs.head_sha }}" >> "$GITHUB_ENV"
+            echo "PR_NUMBER=0" >> "$GITHUB_ENV"
+            echo "LABEL=${{ inputs.correlation_id }}" >> "$GITHUB_ENV"
+          else
+            echo "BASE_SHA=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_ENV"
+            echo "HEAD_SHA=${{ github.event.pull_request.merge_commit_sha }}" >> "$GITHUB_ENV"
+            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
+            echo "LABEL=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -71,15 +111,15 @@ jobs:
             --phase run \
             --state-file qa-state.json \
             --repo "${{ github.repository }}" \
-            --pr-number "${{ github.event.pull_request.number }}" \
-            --base-sha "${{ github.event.pull_request.base.sha }}" \
-            --head-sha "${{ github.event.pull_request.merge_commit_sha }}"
+            --pr-number "$PR_NUMBER" \
+            --base-sha "$BASE_SHA" \
+            --head-sha "$HEAD_SHA"
 
       - name: Upload pipeline state
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qa-state-pr-${{ github.event.pull_request.number }}
+          name: qa-state-${{ env.LABEL }}
           path: execution-plane/qa/qa-state.json
           if-no-files-found: ignore
           retention-days: 30
@@ -88,16 +128,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qa-evidence-pr-${{ github.event.pull_request.number }}
+          name: qa-evidence-${{ env.LABEL }}
           path: evidence/
           if-no-files-found: ignore
           retention-days: 30
 
   # Holds the write token. Runs no npm install, no build, no Playwright, and
   # none of the generated specs — it only reads the state file and posts.
+  # Only meaningful for a merged PR. A dispatched run reports back through
+  # the control plane instead, which polls for the state artifact.
   qa-report:
     needs: qa-run
-    if: always() && needs.qa-run.result != 'skipped'
+    if: always() && github.event_name == 'pull_request' && needs.qa-run.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

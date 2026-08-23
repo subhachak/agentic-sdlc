@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./agentic_sdlc.db"
 
     llm_provider_adapter: Literal["claude", "mock"] = "mock"
+    work_dispatch_adapter: Literal["github-actions", "local"] = "local"
     claude_model: str = "claude-opus-5"
     anthropic_api_key: str | None = None
 
@@ -17,6 +18,15 @@ class Settings(BaseSettings):
     auto_approve_gates: bool = False
 
     web_origin: str = "http://localhost:3000"
+
+    # --- remote execution (WorkDispatch) ---
+    github_repo: str | None = None
+    github_token: str | None = None
+    github_workflow_file: str = "agentic-qa.yml"
+    github_ref: str = "main"
+    dispatch_timeout_seconds: int = 1800
+    reconciler_interval_seconds: float = 5.0
+    local_dispatch_duration_seconds: float = 3.0
 
     @property
     def checkpointer_db_path(self) -> str:

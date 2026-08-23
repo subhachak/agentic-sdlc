@@ -46,6 +46,11 @@ export async function approveGate(
   return json(res);
 }
 
+export async function nudgeDispatch(runId: string): Promise<{ run_id: string; status: string }> {
+  const res = await fetch(`${API_URL}/api/runs/${runId}/dispatch-nudge`, { method: "POST" });
+  return json(res);
+}
+
 export function eventsUrl(runId: string): string {
   return `${API_URL}/api/runs/${runId}/events`;
 }

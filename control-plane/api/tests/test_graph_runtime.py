@@ -18,6 +18,7 @@ from app.ports.build_deploy import BuildResult
 from app.ports.code_design_context import ContextSnippet
 from app.ports.requirements_source import RequirementsDoc
 from app.ports.test_management import TestCaseRecord
+from tests.dispatch_doubles import SUCCESS, InMemoryDispatchStore, StubWorkDispatch
 
 
 class InMemoryAuditSink:
@@ -63,15 +64,19 @@ class StubLLMProvider:
         raise AssertionError("stub node logic must not call the LLM in this phase")
 
 
-def _build_test_graph():
+def _build_test_graph(work_dispatch=None, dispatch_store=None):
     sink = InMemoryAuditSink()
     logger = AuditLogger(sink)
     gate_controller = GateController(logger)
+    work_dispatch = work_dispatch or StubWorkDispatch(SUCCESS)
+    dispatch_store = dispatch_store if dispatch_store is not None else InMemoryDispatchStore()
     nodes = build_nodes(
         requirements_source=StubRequirementsSource(),
         code_design_context=StubCodeDesignContext(),
         test_management=StubTestManagement(),
         build_deploy=StubBuildDeploy(),
+        work_dispatch=work_dispatch,
+        dispatch_store=dispatch_store,
         llm_provider=StubLLMProvider(),
         audit_logger=logger,
         gate_controller=gate_controller,
@@ -103,7 +108,15 @@ async def test_pipeline_pauses_at_three_gates_and_completes_on_approval():
     assert "__interrupt__" in result
     assert result["status"] == "awaiting_gate_2"
 
+    # Approving gate 2 now hands the QA phase to a remote executor, so the
+    # graph parks on the machine pause rather than going straight to gate 3.
     result = await graph.ainvoke(Command(resume={"approved": True}), config=thread)
+    assert "__interrupt__" in result
+    assert result["status"] == "awaiting_qa_execution"
+
+    result = await graph.ainvoke(
+        Command(resume={"state": "succeeded", "payload": {"gate_passed": True}}), config=thread
+    )
     assert "__interrupt__" in result
     assert result["status"] == "awaiting_gate_3"
 
@@ -138,12 +151,21 @@ async def test_rejection_at_gate_halts_pipeline_instead_of_continuing():
 
 
 @pytest.mark.asyncio
-async def test_auto_approve_gates_skips_interrupts_entirely():
+async def test_auto_approve_skips_human_gates_but_never_the_machine_one():
+    """auto_approve_gates exists so a headless run does not stop for a
+    person. It cannot manufacture the result of a job that has not run, so
+    qa_execution still parks — and that is the only pause left."""
     graph, sink = _build_test_graph()
     run_id = "test-run-3"
     thread = {"configurable": {"thread_id": run_id}}
 
     result = await graph.ainvoke(_initial_state(run_id, auto_approve=True), config=thread)
+    assert "__interrupt__" in result
+    assert result["status"] == "awaiting_qa_execution"
+
+    result = await graph.ainvoke(
+        Command(resume={"state": "succeeded", "payload": {"gate_passed": True}}), config=thread
+    )
     assert "__interrupt__" not in result
     assert result["status"] == "completed"
 

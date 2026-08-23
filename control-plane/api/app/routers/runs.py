@@ -11,10 +11,19 @@ from sse_starlette.sse import EventSourceResponse
 from app.agents.state import PipelineConfig
 from app.core.audit import summarize
 from app.core.db import get_sessionmaker
-from app.core.graph_runtime import TERMINAL_STATUSES, execute_run
+from app.core import reconciler
+from app.core.graph_runtime import TERMINAL_STATUSES, spawn_run
 from app.models.audit_log import AuditLog
 from app.models.run import Run
-from app.schemas.run import ApproveRequest, ApproveResponse, AuditEntryOut, CreateRunResponse, RunDetail, RunSummary
+from app.schemas.run import (
+    ApproveRequest,
+    ApproveResponse,
+    AuditEntryOut,
+    CreateRunResponse,
+    PendingDispatch,
+    RunDetail,
+    RunSummary,
+)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -23,20 +32,12 @@ POLL_INTERVAL_S = 1.0
 
 def _spawn(request: Request, run_id: str, graph_input: Any) -> None:
     """Guard against two concurrent astream/ainvoke loops racing on the same
-    checkpoint thread — mirrors the duplicate-launch guard every LangGraph
-    FastAPI integration needs.
+    checkpoint thread. The guard itself lives in core/graph_runtime.py so the
+    reconciler can share it; here a busy thread is a 409, there it is simply
+    a reason to try again next tick.
     """
-    active_tasks: dict[str, asyncio.Task] = request.app.state.active_tasks
-    if run_id in active_tasks and not active_tasks[run_id].done():
+    if not spawn_run(request.app.state.active_tasks, request.app.state.graph, run_id, graph_input):
         raise HTTPException(status_code=409, detail="run already has an active task")
-
-    async def _run() -> None:
-        try:
-            await execute_run(request.app.state.graph, run_id, graph_input)
-        finally:
-            active_tasks.pop(run_id, None)
-
-    active_tasks[run_id] = asyncio.create_task(_run())
 
 
 @router.post("", status_code=201)
@@ -88,11 +89,24 @@ async def get_run(request: Request, run_id: str) -> RunDetail:
             pending_gate = task.interrupts[0].value
             break
 
+    row = await request.app.state.dispatch_store.get(run_id, "qa")
+    pending_dispatch = None
+    if row is not None and row.applied_at is None:
+        pending_dispatch = PendingDispatch(
+            phase=row.phase,
+            provider=row.provider,
+            state=row.state,
+            external_url=row.external_url,
+            started_at=row.created_at.isoformat(),
+            deadline_at=row.deadline_at.isoformat(),
+        )
+
     return RunDetail(
         run_id=run_id,
         status=run.status,
         state=summarize(dict(snapshot.values)),
         pending_gate=pending_gate,
+        pending_dispatch=pending_dispatch,
     )
 
 
@@ -106,6 +120,24 @@ async def approve_gate(request: Request, run_id: str, body: ApproveRequest) -> A
     payload = {"approved": body.approved, "feedback": body.feedback}
     _spawn(request, run_id, Command(resume=payload))
     return ApproveResponse(run_id=run_id, status="resuming")
+
+
+@router.post("/{run_id}/dispatch-nudge", status_code=202)
+async def nudge_dispatch(request: Request, run_id: str) -> dict[str, str]:
+    """Ask the reconciler to look now rather than on its next tick.
+
+    Carries no results and needs no authentication to be safe: everything
+    this endpoint can do is make the control plane poll its own provider
+    sooner, using its own credential. The worst a stranger achieves is a
+    redundant API call.
+    """
+    await reconciler.tick(
+        request.app.state.graph,
+        request.app.state.adapters.work_dispatch,
+        request.app.state.active_tasks,
+        request.app.state.dispatch_store,
+    )
+    return {"run_id": run_id, "status": "reconciled"}
 
 
 @router.get("/{run_id}/audit")

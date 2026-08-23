@@ -12,3 +12,5 @@ generated-tests/
 *.db-wal
 .pytest_cache/
 control-plane/api/data/*.json
+*.sqlite
+tsconfig.tsbuildinfo

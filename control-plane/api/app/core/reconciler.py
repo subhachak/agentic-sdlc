@@ -1,0 +1,93 @@
+"""Watches remote executions and feeds their results back into paused runs.
+
+One background task for the whole process, not one per run, so its
+concurrency behaviour stays something you can reason about. Each tick does
+two independent things:
+
+  1. asks the WorkDispatch port what happened to every pending dispatch,
+     and gives up on any that has passed its deadline;
+  2. resumes the graph for every dispatch that has a result the run has not
+     consumed yet.
+
+They are separate on purpose. A result is always persisted before any
+resume is attempted, so a job that finishes before its graph thread has
+parked is queued rather than lost.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any
+
+from langgraph.types import Command
+
+from app.core.dispatches import DispatchStore
+from app.core.graph_runtime import spawn_run
+from app.ports.work_dispatch import DispatchResult, WorkDispatch
+
+logger = logging.getLogger(__name__)
+
+
+async def poll_pending(work_dispatch: WorkDispatch, store: DispatchStore) -> int:
+    """Resolve whatever has finished. Returns how many moved off pending."""
+    resolved = 0
+    for row in await store.list_pending():
+        if row.is_overdue:
+            await store.resolve(
+                row.id,
+                DispatchResult(state="timed_out", detail="deadline passed with no result"),
+            )
+            resolved += 1
+            continue
+
+        try:
+            result = await work_dispatch.check(row.to_handle())
+        except Exception as exc:  # noqa: BLE001 - a flaky provider must not kill the loop
+            logger.warning("dispatch %s: check failed: %s", row.id, exc)
+            continue
+
+        if result.external_id and not row.external_id:
+            await store.attach_external(row.id, result.external_id, result.external_url)
+
+        if result.state != "pending":
+            await store.resolve(row.id, result)
+            resolved += 1
+
+    return resolved
+
+
+async def apply_results(graph: Any, active_tasks: dict, store: DispatchStore) -> int:
+    """Resume every run whose result is still unconsumed."""
+    applied = 0
+    for row in await store.list_unapplied():
+        payload = row.to_resume_payload()
+        # False means the thread is still busy — most likely it has not
+        # reached its interrupt() yet. Leave the row for the next tick.
+        if spawn_run(active_tasks, graph, row.run_id, Command(resume=payload)):
+            await store.mark_applied(row.id)
+            applied += 1
+    return applied
+
+
+async def tick(
+    graph: Any, work_dispatch: WorkDispatch, active_tasks: dict, store: DispatchStore
+) -> tuple[int, int]:
+    return await poll_pending(work_dispatch, store), await apply_results(graph, active_tasks, store)
+
+
+async def run_forever(
+    graph: Any,
+    work_dispatch: WorkDispatch,
+    active_tasks: dict,
+    store: DispatchStore,
+    interval_seconds: float,
+) -> None:
+    while True:
+        try:
+            await tick(graph, work_dispatch, active_tasks, store)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - the loop must outlive any single failure
+            logger.exception("reconciler tick failed")
+        await asyncio.sleep(interval_seconds)
