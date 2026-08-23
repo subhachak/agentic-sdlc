@@ -19,6 +19,17 @@ demo-reset:
 qa-demo:
 	./scripts/local-demo.sh
 
+# --- context graph ---------------------------------------------------------
+
+# Point the platform at a repository and derive its component graph.
+#   make seed-graph REPO=owner/name [REF=main]
+seed-graph:
+	cd control-plane/api && uv run python scripts/seed_graph.py --repo "$(REPO)" --ref "$(or $(REF),main)"
+
+# Index without writing, to see what would be derived.
+seed-preview:
+	cd control-plane/api && uv run python scripts/seed_graph.py --repo "$(REPO)" --ref "$(or $(REF),main)" --dry-run
+
 # --- tests -----------------------------------------------------------------
 
 test: test-api test-qa

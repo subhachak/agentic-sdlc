@@ -42,6 +42,17 @@ reached a passing test" a query rather than an assertion — and what lets the
 QA phase widen regression scope from what a diff touched to what depends on
 what it touched.
 
+The code half of the graph is derived, not written by hand. Point it at a
+repository and it fetches the source archive, parses imports, and works out
+which components exist and what depends on what:
+
+```bash
+make seed-preview REPO=owner/name    # index without writing
+make seed-graph   REPO=owner/name    # index and seed the graph
+```
+
+It reads source and parses imports; it never executes anything it fetches.
+
 Today these are two working halves that do not yet talk to each other. The
 seam between them — dispatch a phase into CI, correlate a signed callback
 back to a run — is the next thing to build.

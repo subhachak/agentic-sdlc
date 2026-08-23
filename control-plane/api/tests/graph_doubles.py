@@ -21,12 +21,15 @@ class InMemoryContextGraph:
 
     def _put(self, spec) -> str:
         nid = node_id(spec.type, spec.system, spec.external_id)
+        existing = self.nodes.get(nid, {}).get("projection", {})
         self.nodes[nid] = {
             "id": nid,
             "type": spec.type,
             "system": spec.system,
             "external_id": spec.external_id,
-            "projection": spec.projection,
+            # Merged, not replaced: an assertion that only names a node must
+            # not erase what a richer one established.
+            "projection": {**existing, **spec.projection},
         }
         return nid
 

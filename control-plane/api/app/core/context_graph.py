@@ -64,6 +64,8 @@ class ContextGraphStore(Protocol):
 
     async def counts(self) -> dict[str, int]: ...
 
+    async def components(self) -> list[dict[str, Any]]: ...
+
 
 class SqlContextGraph:
     def __init__(self, resolver: EntityResolver) -> None:
@@ -81,34 +83,50 @@ class SqlContextGraph:
         an edge is unique on (type, src, dst, run). Re-ingesting the same
         result — which the reconciler can do if a resume is retried — changes
         nothing.
+
+        Projections are merged, never replaced. The code seeder names a
+        component once with its file count and again as the endpoint of a
+        dependency; the second mention must not erase what the first knew.
         """
         if not assertions:
             return 0
 
+        # Resolve every node once, folding together everything the batch knows
+        # about it, before touching the database.
+        resolved: dict[str, NodeRef] = {}
+        for assertion in assertions:
+            validate_edge(assertion.edge, assertion.src.type, assertion.dst.type)
+            for spec in (assertion.src, assertion.dst):
+                ref = await self._resolve(spec)
+                existing = resolved.get(ref.id)
+                if existing is None:
+                    resolved[ref.id] = ref
+                else:
+                    existing.projection = {**existing.projection, **ref.projection}
+
         written = 0
         async with get_sessionmaker()() as session:
-            for assertion in assertions:
-                validate_edge(assertion.edge, assertion.src.type, assertion.dst.type)
-                src = await self._resolve(assertion.src)
-                dst = await self._resolve(assertion.dst)
-
-                for ref in (src, dst):
-                    await session.execute(
-                        sqlite_insert(GraphNode)
-                        .values(
-                            id=ref.id,
-                            type=ref.type,
-                            system=ref.system,
-                            external_id=ref.external_id,
-                            projection=ref.projection,
-                            created_at=_now(),
-                        )
-                        .on_conflict_do_update(
-                            index_elements=[GraphNode.id],
-                            set_={"projection": ref.projection},
-                        )
+            for ref in resolved.values():
+                stored = await session.get(GraphNode, ref.id)
+                merged = {**(stored.projection if stored else {}), **ref.projection}
+                await session.execute(
+                    sqlite_insert(GraphNode)
+                    .values(
+                        id=ref.id,
+                        type=ref.type,
+                        system=ref.system,
+                        external_id=ref.external_id,
+                        projection=merged,
+                        created_at=_now(),
                     )
+                    .on_conflict_do_update(
+                        index_elements=[GraphNode.id], set_={"projection": merged}
+                    )
+                )
 
+            for assertion in assertions:
+                src = resolved[(await self._resolve(assertion.src)).id]
+                dst = resolved[(await self._resolve(assertion.dst)).id]
                 result = await session.execute(
                     sqlite_insert(GraphEdge)
                     .values(
@@ -288,3 +306,42 @@ class SqlContextGraph:
             "nodes": {t: c for t, c in nodes},
             "edges": {t: c for t, c in edges},
         }
+
+    async def components(self) -> list[dict[str, Any]]:
+        """Derived components with their outgoing dependencies, heaviest first."""
+        async with get_sessionmaker()() as session:
+            nodes = {
+                n.id: n
+                for n in (
+                    await session.execute(
+                        select(GraphNode).where(GraphNode.type == NodeType.COMPONENT)
+                    )
+                ).scalars().all()
+            }
+            edges = (
+                await session.execute(
+                    select(GraphEdge).where(
+                        GraphEdge.type == EdgeType.DEPENDS_ON,
+                        GraphEdge.superseded_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+
+        out = []
+        for node in nodes.values():
+            deps = [
+                {
+                    "target": nodes[e.dst_id].external_id,
+                    "weight": (e.attributes or {}).get("weight", 1),
+                }
+                for e in edges
+                if e.src_id == node.id and e.dst_id in nodes
+            ]
+            out.append(
+                {
+                    "id": node.external_id,
+                    "files": node.projection.get("file_count", 0),
+                    "depends_on": sorted(deps, key=lambda d: -d["weight"]),
+                }
+            )
+        return sorted(out, key=lambda c: -c["files"])

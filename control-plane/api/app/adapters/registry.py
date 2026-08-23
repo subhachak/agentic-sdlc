@@ -11,6 +11,7 @@ from app.ports.audit_sink import AuditSink
 from app.ports.entity_resolver import EntityResolver
 from app.ports.build_deploy import BuildDeploy
 from app.ports.code_design_context import CodeDesignContext
+from app.ports.code_intelligence import CodeIntelligence
 from app.ports.llm_provider import LLMProvider
 from app.ports.requirements_source import RequirementsSource
 from app.ports.test_management import TestManagement
@@ -33,6 +34,7 @@ class Adapters:
     audit_sink: AuditSink
     work_dispatch: WorkDispatch
     entity_resolver: EntityResolver
+    code_intelligence: CodeIntelligence
 
 
 def build_llm_provider(settings: Settings) -> LLMProvider:
@@ -73,6 +75,25 @@ def build_entity_resolver(settings: Settings) -> EntityResolver:
     return LocalEntityResolver()
 
 
+def build_code_intelligence(settings: Settings) -> CodeIntelligence:
+    if settings.code_intelligence_adapter == "local":
+        from pathlib import Path
+
+        from app.adapters.code_intelligence.local_path import LocalPathCodeIntelligence
+
+        return LocalPathCodeIntelligence(
+            Path(settings.code_index_local_root), max_depth=settings.code_index_max_depth
+        )
+
+    from app.adapters.code_intelligence.github import GitHubCodeIntelligence
+
+    # Public repositories index without a token; one is used when present, for
+    # private repositories and to lift the rate limit.
+    return GitHubCodeIntelligence(
+        token=settings.github_token, max_depth=settings.code_index_max_depth
+    )
+
+
 def build_adapters(settings: Settings) -> Adapters:
     from app.adapters.audit_sink.sqlite_audit_sink import SqliteAuditSink
     from app.adapters.build_deploy.noop import NoOpBuildDeploy
@@ -83,6 +104,7 @@ def build_adapters(settings: Settings) -> Adapters:
     return Adapters(
         work_dispatch=build_work_dispatch(settings),
         entity_resolver=build_entity_resolver(settings),
+        code_intelligence=build_code_intelligence(settings),
         requirements_source=PlainTextCSVRequirementsSource(),
         code_design_context=StubSimilarityCodeDesignContext(),
         test_management=JsonFileTestManagement(),

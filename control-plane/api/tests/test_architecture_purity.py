@@ -69,12 +69,13 @@ def test_claude_adapter_is_the_only_anthropic_importer() -> None:
     assert files == ["app/adapters/llm/claude_adapter.py"], files
 
 
-def test_only_the_github_adapter_speaks_http() -> None:
-    """The same rule the Claude adapter is held to, applied to the new port.
+def test_only_adapters_speak_http() -> None:
+    """The rule is the boundary, not any one file.
 
-    A CI client reachable from the core is how "pluggable" quietly becomes
-    "GitHub-shaped" — someone needs a run URL in a hurry and imports httpx
-    where it is convenient rather than where it belongs.
+    A CI or repository client reachable from the core is how "pluggable"
+    quietly becomes "GitHub-shaped" — someone needs a run URL or a file
+    listing in a hurry and imports httpx where it is convenient rather than
+    where it belongs.
     """
     result = subprocess.run(
         ["grep", "-rl", "^import httpx\\|^from httpx", "app"],
@@ -82,8 +83,11 @@ def test_only_the_github_adapter_speaks_http() -> None:
         text=True,
         cwd=__file__.rsplit("/tests/", 1)[0],
     )
-    files = [f for f in result.stdout.strip().splitlines() if f]
-    assert files == ["app/adapters/work_dispatch/github_actions.py"], files
+    files = sorted(f for f in result.stdout.strip().splitlines() if f)
+    outside = [f for f in files if not f.startswith("app/adapters/")]
+
+    assert outside == [], f"HTTP client used outside an adapter: {outside}"
+    assert files, "expected at least one adapter to speak HTTP"
 
 
 @pytest.mark.parametrize(

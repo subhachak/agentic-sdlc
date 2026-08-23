@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     llm_provider_adapter: Literal["claude", "mock"] = "mock"
     work_dispatch_adapter: Literal["github-actions", "local"] = "local"
+    code_intelligence_adapter: Literal["github", "local"] = "github"
     claude_model: str = "claude-opus-5"
     anthropic_api_key: str | None = None
 
@@ -25,6 +26,15 @@ class Settings(BaseSettings):
     github_workflow_file: str = "agentic-qa.yml"
     github_ref: str = "main"
     dispatch_timeout_seconds: int = 1800
+
+    # --- code intelligence (graph seeding) ---
+    # The repository the demo indexes when none is given in the request.
+    code_index_repo: str | None = None
+    code_index_ref: str = "main"
+    # A component is a directory collapsed to this many path segments. Deeper
+    # means finer components; too shallow and a whole service is one node.
+    code_index_max_depth: int = 4
+    code_index_local_root: str = "."
     reconciler_interval_seconds: float = 5.0
     local_dispatch_duration_seconds: float = 3.0
 

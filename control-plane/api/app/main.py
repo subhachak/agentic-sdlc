@@ -19,6 +19,7 @@ from app.core.context_graph import SqlContextGraph
 from app.core.dispatches import SqlDispatchStore
 from app.core.gate_controller import GateController
 from app.core.reconciler import run_forever
+from app.routers import graph as graph_router
 from app.routers import health, runs
 
 
@@ -101,3 +102,4 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
+app.include_router(graph_router.router, prefix="/api")
