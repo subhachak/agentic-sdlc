@@ -5,17 +5,15 @@ phase just turns a raw diff into structured context for the test-plan node.
 """
 from __future__ import annotations
 
-from orchestrator.llm import ask_json
+from orchestrator.llm import ask
+from orchestrator.schemas import DiffAnalysis
 from orchestrator.state import PipelineState
 
 SYSTEM = """You are a QA discovery agent. Given a git diff and known feature
 context, summarize what changed in plain language and list the affected
 user-facing areas (routes, components, API endpoints). Be concrete — name
-routes and elements, don't generalize. Output JSON:
-{
-  "change_summary": "...",
-  "affected_areas": ["/claims (status filter added)", "..."]
-}"""
+routes and elements, don't generalize. affected_areas entries look like
+"/claims (status filter added)"."""
 
 
 def run(state: PipelineState) -> PipelineState:
@@ -27,10 +25,10 @@ def run(state: PipelineState) -> PipelineState:
         f"{features}\n\n"
         f"Git diff for this PR:\n```diff\n{diff}\n```"
     )
-    result = ask_json(SYSTEM, user)
+    result = ask(SYSTEM, user, DiffAnalysis)
 
     return {
         **state,
-        "change_summary": result["change_summary"],
-        "affected_areas": result["affected_areas"],
+        "change_summary": result.change_summary,
+        "affected_areas": result.affected_areas,
     }

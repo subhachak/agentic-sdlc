@@ -28,25 +28,47 @@ or files a GitHub issue per failing scenario.
 ## Pipeline phases
 
 ```
-diff_analysis → test_plan ─┬─(gate fails)→ plan_rejected → END
-                            └─(gate passes)→ test_data → test_gen
-                                → test_run → evidence → gate → report → END
+job: qa-run  (no write token — this job executes agent-generated specs)
+  diff_analysis → test_plan ─┬─(gate fails after N revisions)→ plan_rejected → END
+                              └─(gate passes)→ test_data → test_gen
+                                  → test_run → evidence → gate → END
+                                        │
+                                        └── state written to qa-state.json
+job: qa-report  (issues:write + pull-requests:write, runs no generated code)
+  read qa-state.json → report → END
 ```
 
 1. **diff_analysis** — agent summarizes the PR diff + `features.yaml` context
 2. **test_plan** — agent proposes scenarios; deterministic testability gate
-   rejects any scenario without a concrete, assertable expected outcome
+   rejects any scenario without a concrete, assertable expected outcome. The
+   rejection reasons are fed back and the agent gets up to
+   `test_plan.MAX_ATTEMPTS` tries before the run stops
 3. **test_data** — deterministic seeding: guarantees every status/value a
    scenario references actually exists in `sample-app/lib/data-store.json`
 4. **test_gen** — for each scenario: select a matching script from
-   `test-scripts/manifest.json`, or have the agent generate a new
-   Playwright spec into `generated-tests/`
+   `test-scripts/manifest.json` (whole-token tag match, route gate, scored
+   overlap threshold), or have the agent generate a new Playwright spec.
+   Every spec — selected or generated — is checked by
+   `orchestrator/validate.py` before it touches disk, and a spec that trips
+   the allowlist is never written and never runs
 5. **test_run** — `npx playwright test`, real execution
 6. **evidence** — indexes screenshots, traces, and the HTML report
 7. **gate** — deterministic pass/fail: every planned scenario must have
    run and passed, nothing dropped silently between plan and run
 8. **report** — PASS → one PR comment. FAIL → one GitHub issue per failing
-   scenario (with evidence pointers) + a summary PR comment linking them
+   scenario (with evidence pointers) + a summary PR comment linking them.
+   Issue filing is idempotent: a defect that recurs gets a comment on the
+   existing issue, reopened if it had been closed
+
+## Trust boundary
+
+The pipeline reads an untrusted PR diff, feeds it to a model, and executes
+the model's output as TypeScript. So the workflow is split in two:
+`qa-run` executes that code and holds no GitHub write token; `qa-report`
+holds the token and executes none of it, communicating only through a
+serialized state file. `orchestrator/validate.py` is a second, weaker layer
+— a text scan that refuses specs importing anything but `@playwright/test`,
+touching `process.env`, spawning processes, or opening their own sockets.
 
 ## Running it for real
 
@@ -82,6 +104,8 @@ python -m orchestrator.run --repo demo/claims-lite --pr-number 1 \
   scenario belongs to — this demo is Playwright-only
 - No MCP, by design — everything here is native GitHub Actions + REST API,
   matching a common enterprise constraint
+- No cross-scenario traceability yet: the gate compares plan/assignment/run
+  counts, not scenario identity end to end
 
 ## Repo layout
 
@@ -89,6 +113,8 @@ python -m orchestrator.run --repo demo/claims-lite --pr-number 1 \
 sample-app/          Next.js app under test
 tests/                pytest suite over the deterministic gates
 orchestrator/         LangGraph pipeline (the QA agent)
+  schemas.py            structured-output shapes for every agent call
+  validate.py           allowlist check on generated specs before execution
 test-scripts/         Existing Playwright script library + manifest
 sample-app/generated-tests/   Written at runtime — selected + generated specs
 evidence/             Written at runtime — results.json, screenshots, traces, HTML report

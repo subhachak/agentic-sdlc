@@ -4,6 +4,11 @@ Linear phases with one conditional branch: if the test-plan gate rejects
 the proposed scenarios, the graph stops at plan_rejected instead of
 running tests against an untrustworthy plan. Every node is a plain
 function over PipelineState — see orchestrator/nodes/.
+
+The graph ends at the gate. Reporting is deliberately outside it: nodes
+here execute agent-generated code, so they run in a job with no write
+token, and nodes/report.py runs afterwards in a separate job that holds the
+token but executes none of that code.
 """
 from __future__ import annotations
 
@@ -14,7 +19,6 @@ from orchestrator.nodes import (
     evidence,
     gate,
     plan_rejected,
-    report,
     test_data,
     test_gen,
     test_plan,
@@ -38,7 +42,6 @@ def build_graph():
     g.add_node("test_run", test_run.run)
     g.add_node("evidence", evidence.run)
     g.add_node("gate", gate.run)
-    g.add_node("report", report.run)
 
     g.set_entry_point("diff_analysis")
     g.add_edge("diff_analysis", "test_plan")
@@ -52,7 +55,6 @@ def build_graph():
     g.add_edge("test_gen", "test_run")
     g.add_edge("test_run", "evidence")
     g.add_edge("evidence", "gate")
-    g.add_edge("gate", "report")
-    g.add_edge("report", END)
+    g.add_edge("gate", END)
 
     return g.compile()

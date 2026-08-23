@@ -18,12 +18,15 @@ def run(state: PipelineState) -> PipelineState:
     traces = list(test_results_dir.rglob("*.zip")) if test_results_dir.exists() else []
     html_report = EVIDENCE_DIR / "html-report" / "index.html"
 
+    def rel(path: Path) -> str:
+        return str(path.relative_to(REPO_ROOT))
+
     summary = {
-        "html_report": str(html_report) if html_report.exists() else None,
+        "html_report": rel(html_report) if html_report.exists() else None,
         "screenshot_count": len(screenshots),
         "trace_count": len(traces),
-        "screenshots": [str(p) for p in screenshots],
-        "traces": [str(p) for p in traces],
+        "screenshots": [rel(p) for p in screenshots],
+        "traces": [rel(p) for p in traces],
     }
 
     return {**state, "evidence_summary": summary}

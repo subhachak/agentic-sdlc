@@ -12,8 +12,11 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://localhost:3000",
-    trace: "retain-on-failure",
-    screenshot: "only-on-failure",
+    // Captured on every test, not just failures. A PASS comment that reports
+    // "0 screenshots, 0 traces" is not an audit trail, and proving a green
+    // run is the whole point of the evidence phase.
+    trace: "on",
+    screenshot: "on",
     video: "retain-on-failure",
   },
   webServer: {

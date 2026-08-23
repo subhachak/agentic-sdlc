@@ -5,19 +5,27 @@ on:
     types: [closed]
     branches: [main]
 
+# Two merges in quick succession would otherwise race on the data store and
+# both post to the same PR.
+concurrency:
+  group: agentic-qa-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
-  agentic-qa:
+  # Executes agent-generated Playwright specs, so it deliberately holds no
+  # write token. The worst a malicious diff can achieve here is a failed run.
+  qa-run:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
-      issues: write
-      pull-requests: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
 
       - name: Set up Node
@@ -30,9 +38,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install orchestrator dependencies
+        run: pip install -r orchestrator/requirements-dev.txt
+
+      - name: Test the orchestrator's deterministic gates
+        run: python -m pytest tests/ -q
+
       - name: Install sample app dependencies
         working-directory: sample-app
-        run: npm install
+        run: npm ci
 
       - name: Build sample app
         working-directory: sample-app
@@ -42,22 +56,26 @@ jobs:
         working-directory: sample-app
         run: npx playwright install --with-deps chromium
 
-      - name: Install orchestrator dependencies
-        run: pip install -r orchestrator/requirements-dev.txt
-
-      - name: Test the orchestrator's deterministic gates
-        run: python -m pytest tests/ -q
-
       - name: Run agentic QA pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -m orchestrator.run \
+            --phase run \
+            --state-file qa-state.json \
             --repo "${{ github.repository }}" \
             --pr-number "${{ github.event.pull_request.number }}" \
             --base-sha "${{ github.event.pull_request.base.sha }}" \
             --head-sha "${{ github.event.pull_request.merge_commit_sha }}"
+
+      - name: Upload pipeline state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-state-pr-${{ github.event.pull_request.number }}
+          path: qa-state.json
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Upload evidence
         if: always()
@@ -65,4 +83,46 @@ jobs:
         with:
           name: qa-evidence-pr-${{ github.event.pull_request.number }}
           path: evidence/
+          if-no-files-found: ignore
           retention-days: 30
+
+  # Holds the write token. Runs no npm install, no build, no Playwright, and
+  # none of the generated specs — it only reads the state file and posts.
+  qa-report:
+    needs: qa-run
+    if: always() && needs.qa-run.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install orchestrator dependencies
+        run: pip install -r orchestrator/requirements.txt
+
+      - name: Download pipeline state
+        uses: actions/download-artifact@v4
+        with:
+          name: qa-state-pr-${{ github.event.pull_request.number }}
+
+      - name: Post results to the PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m orchestrator.run \
+            --phase report \
+            --state-file qa-state.json \
+            --repo "${{ github.repository }}" \
+            --pr-number "${{ github.event.pull_request.number }}"

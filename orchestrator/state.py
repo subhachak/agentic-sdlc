@@ -44,6 +44,7 @@ class PipelineState(TypedDict, total=False):
     test_plan: list[Scenario]
     test_plan_gate_passed: bool
     test_plan_gate_reasons: list[str]
+    test_plan_attempts: int
 
     # --- phase 3: test data ---
     seed_summary: str
@@ -51,6 +52,7 @@ class PipelineState(TypedDict, total=False):
 
     # --- phase 4: test generation / selection ---
     test_assignments: list[TestAssignment]
+    generation_rejections: list[str]
 
     # --- phase 5: execution ---
     run_exit_code: int

@@ -57,6 +57,10 @@ def run(state: PipelineState) -> PipelineState:
     leaves = _walk_results(raw)
     failing = [l for l in leaves if l["status"] not in _PASSING]
 
+    # A spec refused by orchestrator/validate.py never ran. Say so explicitly,
+    # otherwise the only symptom is an unexplained assignment-count shortfall.
+    reasons.extend(state.get("generation_rejections", []))
+
     planned_count = len(state.get("test_plan", []))
     assigned_count = len(state.get("test_assignments", []))
     ran_count = len(leaves)

@@ -1,14 +1,20 @@
 """Phase 2 — Test plan: agent proposes scenarios, a deterministic gate
 checks each one is actually testable before anything downstream trusts it.
 
-This is the load-bearing gate of this design: no LLM in the
-gate itself. A scenario either has an observable expected outcome or it
-gets rejected back for revision — it never silently passes through vague.
+This is the load-bearing gate of this design: no LLM in the gate itself. A
+scenario either has an observable expected outcome or it gets rejected back
+for revision. The revision is real — the rejection reasons are fed back to
+the agent and it gets a bounded number of attempts to produce a plan that
+passes, because halting the whole run over one vague sentence out of six is
+not a useful pipeline.
 """
 from __future__ import annotations
 
-from orchestrator.llm import ask_json
+from orchestrator.llm import ask
+from orchestrator.schemas import TestPlan
 from orchestrator.state import PipelineState
+
+MAX_ATTEMPTS = 3
 
 SYSTEM = """You are a QA test-planning agent. Given a summary of what changed
 in a PR and the affected areas, propose a set of test scenarios covering
@@ -17,23 +23,7 @@ where applicable. Every scenario MUST have a concrete, observable
 expected_outcome (something a test can assert on — a count, a visible
 element, specific text) — never a vague statement like "should work
 correctly". Also reuse relevant regression scenarios for areas adjacent to
-the change if it's plausible they could break.
-
-Output JSON:
-{
-  "scenarios": [
-    {
-      "id": "short-kebab-id",
-      "title": "...",
-      "type": "functional|regression|edge-case|negative",
-      "target_route": "/claims",
-      "expected_outcome": "concrete, assertable outcome",
-      "priority": "P1|P2|P3",
-      "confidence": "high|medium|low",
-      "ac_ref": "which acceptance criterion or change this covers"
-    }
-  ]
-}"""
+the change if it's plausible they could break."""
 
 _VAGUE_PHRASES = [
     "should work",
@@ -56,15 +46,7 @@ def _is_testable(scenario: dict) -> tuple[bool, str | None]:
     return True, None
 
 
-def run(state: PipelineState) -> PipelineState:
-    user = (
-        f"Change summary: {state['change_summary']}\n"
-        f"Affected areas: {state['affected_areas']}\n"
-        f"Feature context: {state.get('features_context', {})}"
-    )
-    result = ask_json(SYSTEM, user)
-    proposed = result["scenarios"]
-
+def _evaluate(proposed: list[dict]) -> tuple[list[dict], list[str]]:
     accepted: list[dict] = []
     reasons: list[str] = []
     for sc in proposed:
@@ -73,12 +55,60 @@ def run(state: PipelineState) -> PipelineState:
             accepted.append(sc)
         else:
             reasons.append(f"{sc.get('id', '?')}: rejected — {reason}")
+    return accepted, reasons
 
-    gate_passed = len(accepted) > 0 and len(reasons) == 0
+
+def _revision_prompt(reasons: list[str]) -> str:
+    return (
+        "\n\nYour previous proposal was rejected by the testability gate:\n"
+        + "\n".join(f"- {r}" for r in reasons)
+        + "\n\nRewrite the full set of scenarios. Every expected_outcome must name "
+        "something a Playwright assertion can observe: an exact row count, a "
+        "data-status attribute value, a specific visible string, an HTTP status. "
+        "Do not restate the same wording."
+    )
+
+
+def run(state: PipelineState) -> PipelineState:
+    base_user = (
+        f"Change summary: {state['change_summary']}\n"
+        f"Affected areas: {state['affected_areas']}\n"
+        f"Feature context: {state.get('features_context', {})}"
+    )
+
+    accepted: list[dict] = []
+    reasons: list[str] = []
+    attempt = 0
+
+    while attempt < MAX_ATTEMPTS:
+        attempt += 1
+        user = base_user + (_revision_prompt(reasons) if reasons else "")
+        plan = ask(SYSTEM, user, TestPlan)
+        proposed = [s.model_dump() for s in plan.scenarios]
+
+        accepted, reasons = _evaluate(proposed)
+        if accepted and not reasons:
+            return {
+                **state,
+                "test_plan": accepted,
+                "test_plan_gate_passed": True,
+                "test_plan_attempts": attempt,
+                "test_plan_gate_reasons": [
+                    f"all {len(accepted)} proposed scenarios passed the testability gate"
+                    + (f" on attempt {attempt}" if attempt > 1 else "")
+                ],
+            }
+
+        if not proposed:
+            reasons = ["the agent proposed no scenarios at all"]
 
     return {
         **state,
         "test_plan": accepted,
-        "test_plan_gate_passed": gate_passed,
-        "test_plan_gate_reasons": reasons or ["all proposed scenarios passed the testability gate"],
+        "test_plan_gate_passed": False,
+        "test_plan_attempts": attempt,
+        "test_plan_gate_reasons": [
+            f"still not testable after {attempt} attempt(s):",
+            *reasons,
+        ],
     }
