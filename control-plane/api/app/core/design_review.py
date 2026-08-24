@@ -32,6 +32,22 @@ MAX_FILES = 15
 # the seed says which specifiers it could not resolve.
 MIN_CAPTURE_RATE = 0.80
 
+# How far a change is traced. Chosen by measurement rather than by argument —
+# scripts/measure_impact.py, holding out one file per commit and asking which
+# of its co-changed siblings the graph reaches:
+#
+#   depth  recall  precision  mean radius
+#     1     11.8%     33.6%       3.0
+#     2     15.1%     27.9%       5.0
+#     3     16.3%     26.4%       6.2
+#   same-directory baseline: 15.4% recall, 18.9% precision, 12.1 files
+#
+# One hop was under-tuned: it sits below the answer you get with no
+# dependency analysis at all. Two hops matches that baseline's recall at 1.5x
+# its precision and 40% of its radius, which is the point at which the
+# traversal is earning its complexity. Re-run the harness before changing it.
+DEFAULT_DEPTH = 2
+
 
 @dataclass
 class DesignReview:
@@ -44,7 +60,7 @@ def impact_set(
     files: list[str],
     file_dependents: dict[str, set[str]],
     path_to_module: dict[str, str] | None = None,
-    depth: int = 1,
+    depth: int = DEFAULT_DEPTH,
 ) -> dict[str, list[str]]:
     """What a change to these files can reach.
 
@@ -53,8 +69,10 @@ def impact_set(
     directory the same blast radius — measured on one real repository, that
     was 13% of the codebase per change against 0.8% at file level.
 
-    One hop by default. Deeper traversal over an import graph reaches most of
-    a codebase, which is technically true and not a useful answer.
+    Two hops by default, and that number came from measurement rather than
+    from taste — see DEFAULT_DEPTH. Deeper traversal over an import graph
+    eventually reaches most of a codebase, which is technically true and not
+    a useful answer; the harness is what says where that starts.
     """
     reached = set(files)
     frontier = set(files)
