@@ -56,6 +56,8 @@ class ContextGraphStore(Protocol):
 
     async def purge_phase(self, phase: str) -> dict[str, int]: ...
 
+    async def index_provenance(self) -> dict[str, Any]: ...
+
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]: ...
 
     async def untested_criteria(self) -> list[dict[str, Any]]: ...
@@ -203,6 +205,32 @@ class SqlContextGraph:
             await session.commit()
 
         return {"edges": len(edges), "nodes": len(orphans)}
+
+    async def index_provenance(self) -> dict[str, Any]:
+        """Which snapshot of the codebase this graph currently holds.
+
+        Every consumer that reads structure — impact, containment, retrieval —
+        is reading one commit's worth of it. An answer derived from a graph
+        that cannot say which commit it describes is not reproducible, so the
+        stamp is queryable rather than buried in seed output nobody kept.
+        """
+        async with get_sessionmaker()() as session:
+            row = (
+                await session.execute(
+                    select(GraphNode)
+                    .where(GraphNode.type == NodeType.MODULE)
+                    .limit(1)
+                )
+            ).scalars().first()
+
+        projection = row.projection if row else {}
+        return {
+            "repo": projection.get("repo"),
+            "commit_sha": projection.get("commit_sha"),
+            "indexer_version": projection.get("indexer_version"),
+            "indexed_at": projection.get("indexed_at"),
+            "pinned": bool(projection.get("commit_sha")),
+        }
 
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]:
         async with get_sessionmaker()() as session:

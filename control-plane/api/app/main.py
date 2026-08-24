@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from app.adapters.registry import build_adapters
+from app.adapters.registry import build_adapters, build_entity_resolver
 from app.agents.graph import build_graph
 from app.agents.nodes import build_nodes
 from app.core.audit import AuditLogger
@@ -34,10 +34,15 @@ def build_runtime(app: FastAPI, settings, checkpointer=None) -> None:
     "apply this change" — and paused runs survive it, because their state
     lives in the checkpointer rather than in the compiled graph.
     """
-    adapters = build_adapters(settings)
+    # The graph is built before the adapters because one of them reads it:
+    # retrieval grounds the design agent in the same snapshot that impact and
+    # containment are computed from, rather than indexing the repository a
+    # second time on its own.
+    context_graph = SqlContextGraph(build_entity_resolver(settings))
+    adapters = build_adapters(settings, graph=context_graph)
     app.state.settings = settings
     app.state.adapters = adapters
-    app.state.context_graph = SqlContextGraph(adapters.entity_resolver)
+    app.state.context_graph = context_graph
 
     audit_logger = AuditLogger(adapters.audit_sink)
     nodes = build_nodes(

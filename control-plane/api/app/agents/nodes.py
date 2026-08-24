@@ -59,6 +59,11 @@ def _assertions_from(payload: dict[str, Any]) -> list[Assertion]:
 
 DESIGN_ATTEMPTS = 3
 
+# How many code excerpts the design agent is shown. Three was a placeholder
+# from when grounding was two fixture documents; retrieval now returns
+# symbol-level chunks, where the relevant one is often not in the top three.
+DESIGN_SNIPPETS = 10
+
 
 def build_nodes(
     *,
@@ -145,7 +150,10 @@ def build_nodes(
         """
         requirement = (state.get("raw_input") or {}).get("text", "")
         query = (state.get("requirements_synthesis") or {}).get("summary", "") or requirement
-        snippets = [s.model_dump() for s in await code_design_context.retrieve_context(query)]
+        snippets = [
+            s.model_dump()
+            for s in await code_design_context.retrieve_context(query, DESIGN_SNIPPETS)
+        ]
 
         catalogue = await context_graph.module_catalogue()
         known_paths = await context_graph.module_paths()

@@ -1,9 +1,12 @@
-"""Demo-default CodeDesignContext adapter.
+"""Fallback CodeDesignContext adapter, kept for the no-source case.
 
-This is explicitly a PLACEHOLDER: it scores similarity with stdlib
-`difflib.SequenceMatcher` over two tiny fixture docs, not a real embedding
-pipeline. Indexing the real `demo-app/` content into a vector index is a
-later phase — this adapter exists only to prove the interface boundary.
+Scores `difflib.SequenceMatcher` similarity over two fixture documents. It
+was the default until the design agent was grounded in the actual indexed
+repository — see `repo_index.py`, which is what `code_design_context_adapter`
+selects unless it is set to "stub".
+
+Retained because it needs no repository, no graph and no source control, so a
+test or a bare demo can exercise the port without any of them.
 """
 
 from difflib import SequenceMatcher

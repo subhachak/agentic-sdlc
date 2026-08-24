@@ -33,6 +33,19 @@ class InMemoryContextGraph:
         }
         return nid
 
+    async def index_provenance(self) -> dict[str, Any]:
+        node = next(
+            (n for n in self.nodes.values() if n["type"] == "MODULE"), {"projection": {}}
+        )
+        projection = node["projection"]
+        return {
+            "repo": projection.get("repo"),
+            "commit_sha": projection.get("commit_sha"),
+            "indexer_version": projection.get("indexer_version"),
+            "indexed_at": projection.get("indexed_at"),
+            "pinned": bool(projection.get("commit_sha")),
+        }
+
     async def purge_phase(self, phase: str) -> dict[str, int]:
         doomed = [e for e in self.edges if e.get("phase") == phase]
         touched = {e["src_id"] for e in doomed} | {e["dst_id"] for e in doomed}

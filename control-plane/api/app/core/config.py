@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     work_dispatch_adapter: Literal["github-actions", "local", "local-pipeline"] = "local"
     code_intelligence_adapter: Literal["github", "local"] = "github"
     source_control_adapter: Literal["github", "local"] = "local"
+    # "repo" grounds the design agent in the indexed repository; "stub" is
+    # the fixture placeholder, kept only so tests can run with no source.
+    code_design_context_adapter: Literal["repo", "stub"] = "repo"
     claude_model: str = "claude-opus-5"
     anthropic_api_key: str | None = None
 

@@ -5,6 +5,7 @@ importing this module (or the routers that never call it) never pulls in
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 from app.core.config import Settings
 from app.ports.audit_sink import AuditSink
@@ -122,20 +123,51 @@ def build_source_control(settings: Settings) -> SourceControl:
     return LocalWorkingCopy(_Path(settings.target_working_copy))
 
 
-def build_adapters(settings: Settings) -> Adapters:
+def build_code_design_context(
+    settings: Settings, graph: Any, source_control: SourceControl
+) -> CodeDesignContext:
+    """Grounding for the design agent.
+
+    `graph` is typed `Any` rather than `ContextGraphStore` on purpose: that
+    Protocol lives beside the SQLAlchemy store, and importing it here would
+    pull the database driver into a module whose whole point is that nothing
+    is imported until its branch runs.
+
+    Takes the graph as an argument rather than constructing one, because
+    retrieval must read the same snapshot that impact and containment read.
+    Two indexes of the same repository built at different moments would let
+    the agent be shown code the graph does not have.
+    """
+    if settings.code_design_context_adapter == "repo":
+        from app.adapters.code_design_context.repo_index import IndexedRepoCodeDesignContext
+
+        return IndexedRepoCodeDesignContext(
+            graph=graph,
+            source_control=source_control,
+            repo=settings.target_repo or settings.code_index_repo or "",
+            ref=settings.target_ref,
+        )
+
+    from app.adapters.code_design_context.stub_similarity import StubSimilarityCodeDesignContext
+
+    return StubSimilarityCodeDesignContext()
+
+
+def build_adapters(settings: Settings, graph: Any = None) -> Adapters:
     from app.adapters.audit_sink.sqlite_audit_sink import SqliteAuditSink
     from app.adapters.build_deploy.noop import NoOpBuildDeploy
-    from app.adapters.code_design_context.stub_similarity import StubSimilarityCodeDesignContext
     from app.adapters.requirements_source.plain_text_csv import PlainTextCSVRequirementsSource
     from app.adapters.test_management.json_file import JsonFileTestManagement
+
+    source_control = build_source_control(settings)
 
     return Adapters(
         work_dispatch=build_work_dispatch(settings),
         entity_resolver=build_entity_resolver(settings),
         code_intelligence=build_code_intelligence(settings),
-        source_control=build_source_control(settings),
+        source_control=source_control,
         requirements_source=PlainTextCSVRequirementsSource(),
-        code_design_context=StubSimilarityCodeDesignContext(),
+        code_design_context=build_code_design_context(settings, graph, source_control),
         test_management=JsonFileTestManagement(),
         build_deploy=NoOpBuildDeploy(),
         llm_provider=build_llm_provider(settings),
