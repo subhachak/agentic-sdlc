@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     work_dispatch_adapter: Literal["github-actions", "local", "local-pipeline"] = "local"
     code_intelligence_adapter: Literal["github", "local"] = "github"
     source_control_adapter: Literal["github", "local"] = "local"
+    # Who writes the change. "inline" is this platform's own agent, refused
+    # before its edits reach a branch. "github-copilot" hands the work to the
+    # client's cloud agent, which opens its own pull request — containment
+    # there is checked after the fact, against what it actually did.
+    implementation_agent: Literal["inline", "github-copilot"] = "inline"
+    copilot_model: str | None = None
+    copilot_custom_agent: str | None = None
     # "repo" grounds the design agent in the indexed repository; "stub" is
     # the fixture placeholder, kept only so tests can run with no source.
     code_design_context_adapter: Literal["repo", "stub"] = "repo"

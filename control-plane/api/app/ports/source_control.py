@@ -39,6 +39,17 @@ class SourceControl(Protocol):
         self, repo: str, ref: str, paths: list[str]
     ) -> dict[str, str]: ...
 
+    async def change_files(
+        self, repo: str, base_ref: str, head_ref: str
+    ) -> list[FileEdit]: ...
+    """What a branch changed, as paths and their content at head.
+
+    Needed because an agent that works elsewhere cannot be refused before it
+    writes — a cloud coding agent opens its own branch, so containment has to
+    be checked against what it actually did rather than against what it
+    proposed. Returns edits in the same shape `open_change` accepts, so the
+    same deterministic review reads both."""
+
     async def open_change(
         self,
         repo: str,

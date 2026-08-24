@@ -38,6 +38,8 @@ class Adapters:
     entity_resolver: EntityResolver
     code_intelligence: CodeIntelligence
     source_control: SourceControl
+    # None when the platform writes the change itself.
+    implementation_dispatch: WorkDispatch | None
 
 
 def build_llm_provider(settings: Settings) -> LLMProvider:
@@ -108,6 +110,33 @@ def build_code_intelligence(settings: Settings) -> CodeIntelligence:
     )
 
 
+def build_implementation_dispatch(settings: Settings) -> WorkDispatch | None:
+    """Who the implementation phase hands work to, when it is not this
+    platform's own agent.
+
+    Separate from `work_dispatch` because the two phases no longer share a
+    provider: QA may run in the client's CI while the change is written by
+    their coding agent. The reconciler resolves per dispatch row, so both can
+    be in flight at once.
+    """
+    if settings.implementation_agent == "inline":
+        return None
+
+    if not (settings.target_repo and settings.github_token):
+        raise ValueError(
+            "implementation_agent=github-copilot needs TARGET_REPO and GITHUB_TOKEN"
+        )
+    from app.adapters.work_dispatch.github_copilot import GitHubCopilotWorkDispatch
+
+    return GitHubCopilotWorkDispatch(
+        repo=settings.target_repo,
+        token=settings.github_token,
+        base_ref=settings.target_ref,
+        model=settings.copilot_model,
+        custom_agent=settings.copilot_custom_agent,
+    )
+
+
 def build_source_control(settings: Settings) -> SourceControl:
     if settings.source_control_adapter == "github":
         if not settings.github_token:
@@ -166,6 +195,7 @@ def build_adapters(settings: Settings, graph: Any = None) -> Adapters:
         entity_resolver=build_entity_resolver(settings),
         code_intelligence=build_code_intelligence(settings),
         source_control=source_control,
+        implementation_dispatch=build_implementation_dispatch(settings),
         requirements_source=PlainTextCSVRequirementsSource(),
         code_design_context=build_code_design_context(settings, graph, source_control),
         test_management=JsonFileTestManagement(),

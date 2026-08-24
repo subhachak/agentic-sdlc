@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from collections.abc import Callable
 from typing import Any
 
@@ -30,7 +31,23 @@ from app.ports.work_dispatch import DispatchResult, WorkDispatch
 logger = logging.getLogger(__name__)
 
 
-async def poll_pending(work_dispatch: WorkDispatch, store: DispatchStore) -> int:
+Dispatchers = Mapping[str, WorkDispatch]
+
+
+def _for(dispatchers: Dispatchers | WorkDispatch, provider: str) -> WorkDispatch | None:
+    """The adapter that started this dispatch, not whichever one is current.
+
+    Phases no longer share a provider: QA may run in GitHub Actions while the
+    implementation is handed to a cloud coding agent, and a row started by one
+    cannot be polled by the other — its external id means nothing there. The
+    row records who started it, so that is who is asked.
+    """
+    if isinstance(dispatchers, Mapping):
+        return dispatchers.get(provider)
+    return dispatchers  # a single adapter, from before phases could differ
+
+
+async def poll_pending(dispatchers: Dispatchers | WorkDispatch, store: DispatchStore) -> int:
     """Resolve whatever has finished. Returns how many moved off pending."""
     resolved = 0
     for row in await store.list_pending():
@@ -38,6 +55,22 @@ async def poll_pending(work_dispatch: WorkDispatch, store: DispatchStore) -> int
             await store.resolve(
                 row.id,
                 DispatchResult(state="timed_out", detail="deadline passed with no result"),
+            )
+            resolved += 1
+            continue
+
+        work_dispatch = _for(dispatchers, row.provider)
+        if work_dispatch is None:
+            # Configuration changed under a live dispatch. Failing it is the
+            # only honest outcome: nothing here can ask a provider that is no
+            # longer configured how a job it started is going.
+            await store.resolve(
+                row.id,
+                DispatchResult(
+                    state="failed",
+                    detail=f"no adapter configured for provider {row.provider!r}; "
+                           f"this dispatch was started under a different configuration",
+                ),
             )
             resolved += 1
             continue
@@ -72,9 +105,14 @@ async def apply_results(graph: Any, active_tasks: dict, store: DispatchStore) ->
 
 
 async def tick(
-    graph: Any, work_dispatch: WorkDispatch, active_tasks: dict, store: DispatchStore
+    graph: Any,
+    dispatchers: Dispatchers | WorkDispatch,
+    active_tasks: dict,
+    store: DispatchStore,
 ) -> tuple[int, int]:
-    return await poll_pending(work_dispatch, store), await apply_results(graph, active_tasks, store)
+    return await poll_pending(dispatchers, store), await apply_results(
+        graph, active_tasks, store
+    )
 
 
 async def run_forever(

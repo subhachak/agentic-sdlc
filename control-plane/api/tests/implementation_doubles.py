@@ -21,9 +21,20 @@ class StubSourceControl:
         # Settable so a test can produce the case where a change was opened
         # but named no commit, which is what the dispatch guard exists for.
         self.commit = commit
+        # What an external agent left on its branch. Separate from `files`,
+        # which is what the repository holds before the change.
+        self.branch_files: dict[str, str] = {}
 
     async def read_files(self, repo, ref, paths):
         return {p: self.files[p] for p in paths if p in self.files}
+
+    async def change_files(self, repo, base_ref, head_ref):
+        """What a branch changed. The double reports whatever it was told the
+        agent wrote, which is what lets a test make an external agent stray
+        outside the design."""
+        from app.ports.source_control import FileEdit
+
+        return [FileEdit(path=p, content=c) for p, c in (self.branch_files or {}).items()]
 
     async def open_change(self, repo, base_ref, branch, title, body, edits):
         self.opened.append({"branch": branch, "title": title,

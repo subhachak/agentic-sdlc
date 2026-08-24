@@ -72,6 +72,37 @@ class LocalWorkingCopy:
                 continue  # the file does not exist at that revision
         return out
 
+    async def change_files(self, repo: str, base_ref: str, head_ref: str) -> list[FileEdit]:
+        """What `head_ref` changed relative to `base_ref`.
+
+        Names come from `--name-status -z` for the same reason the QA plane
+        uses it: a rename must report the path that exists, and a path with a
+        space in it must survive. Deleted files are skipped — there is no
+        content at head to review, and a module losing a file is caught by the
+        path check rather than by reading it.
+        """
+        if not (self._resolves(base_ref) and self._resolves(head_ref)):
+            return []
+
+        raw = self._git_raw("diff", "--name-status", "-z", f"{base_ref}...{head_ref}")
+        fields = [f for f in raw.split("\0") if f]
+
+        paths: list[str] = []
+        index = 0
+        while index < len(fields):
+            status = fields[index]
+            if status.startswith(("R", "C")) and index + 2 < len(fields):
+                paths.append(fields[index + 2])
+                index += 3
+                continue
+            if index + 1 < len(fields):
+                if not status.startswith("D"):
+                    paths.append(fields[index + 1])
+            index += 2
+
+        contents = self._read_at(head_ref, paths)
+        return [FileEdit(path=path, content=contents[path]) for path in paths if path in contents]
+
     async def open_change(
         self, repo, base_ref, branch, title, body, edits: list[FileEdit]
     ) -> ChangeRef:

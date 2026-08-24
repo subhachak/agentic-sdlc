@@ -101,6 +101,16 @@ SPECS: tuple[SettingSpec, ...] = (
                 "Remote execution", type="float"),
 
     # --- implementation ---
+    SettingSpec("implementation_agent", "Who writes the change", "Implementation",
+                type="enum", options=("inline", "github-copilot"),
+                help="inline is this platform's own agent, refused before its edits reach "
+                     "a branch. github-copilot hands the work to the client's cloud agent, "
+                     "which opens its own pull request — containment is then checked "
+                     "against what it actually did, and a refusal leaves the branch."),
+    SettingSpec("copilot_model", "Copilot model", "Implementation",
+                help="Optional. Leave blank to use the repository's default."),
+    SettingSpec("copilot_custom_agent", "Copilot custom agent", "Implementation",
+                help="Optional identifier for a custom agent configured in the repository."),
     SettingSpec("source_control_adapter", "Change target", "Implementation", type="enum",
                 options=("local", "github"),
                 help="local writes a branch in a working copy and pushes nothing."),

@@ -54,6 +54,8 @@ def build_runtime(app: FastAPI, settings, checkpointer=None) -> None:
         work_dispatch=adapters.work_dispatch,
         source_control=adapters.source_control,
         code_intelligence=adapters.code_intelligence,
+        implementation_agent=settings.implementation_agent,
+        implementation_dispatch=adapters.implementation_dispatch,
         dispatch_store=app.state.dispatch_store,
         context_graph=app.state.context_graph,
         llm_provider=adapters.llm_provider,
@@ -87,6 +89,15 @@ async def reload_runtime(app: FastAPI) -> None:
     app.state.project = record
 
 
+def _dispatchers(app: FastAPI) -> dict[str, object]:
+    settings = app.state.settings
+    adapters = app.state.adapters
+    out: dict[str, object] = {settings.work_dispatch_adapter: adapters.work_dispatch}
+    if adapters.implementation_dispatch is not None:
+        out[settings.implementation_agent] = adapters.implementation_dispatch
+    return out
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -114,7 +125,11 @@ async def lifespan(app: FastAPI):
             run_forever(
                 lambda: (
                     app.state.graph,
-                    app.state.adapters.work_dispatch,
+                    # Keyed by provider, because the phases no longer share
+                    # one: QA may run in the client's CI while the change is
+                    # written by their coding agent, and a row started by one
+                    # cannot be polled by the other.
+                    _dispatchers(app),
                     app.state.active_tasks,
                     app.state.dispatch_store,
                 ),

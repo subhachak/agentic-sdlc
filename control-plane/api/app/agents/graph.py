@@ -44,6 +44,9 @@ def _after_implementation(state: dict[str, Any]) -> str:
     stopped them was the QA phase having nothing to test.
     """
     change = state.get("implementation") or {}
+    # Covers refusal, blocking, and a hand-off that never produced a branch.
+    # Routing on the phase's own verdict rather than on whether it named files
+    # is what stops a refused change reaching QA.
     if state.get("status") != "awaiting_qa_execution":
         return END
     return "qa_execution" if change.get("files") else END

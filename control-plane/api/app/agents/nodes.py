@@ -16,6 +16,7 @@ from app.core.audit import AuditLogger, NodeFn, audited
 from app.agents.design import SYSTEM as DESIGN_SYSTEM
 from app.agents.design import DesignProposal
 from app.agents.design import build_prompt as build_design_prompt
+from app.agents.handoff import build_task
 from app.agents.implementation import SYSTEM as IMPLEMENTATION_SYSTEM
 from app.agents.implementation import Implementation, build_prompt
 from app.core.change_review import review as review_change
@@ -79,6 +80,8 @@ def build_nodes(
     work_dispatch: WorkDispatch,
     source_control: SourceControl,
     code_intelligence: CodeIntelligence | None = None,
+    implementation_agent: str = "inline",
+    implementation_dispatch: WorkDispatch | None = None,
     dispatch_store: DispatchStore,
     context_graph: ContextGraphStore,
     llm_provider: LLMProvider,  # unused by stub logic this phase; wired for later phases
@@ -263,17 +266,27 @@ def build_nodes(
 
     @business("implementation", fallback={"status": "implementation_failed"})
     async def implementation(state: dict[str, Any]) -> dict[str, Any]:
-        """Write the change, review it deterministically, propose it.
+        """Get the change written, review it deterministically, propose it.
 
-        The review is the load-bearing part. An agent that edits a module
-        the design never mentioned is not implementing the design, and the
-        context graph is what makes that checkable rather than a matter of
-        opinion.
+        Two shapes, one review. An in-process agent returns edits and can be
+        refused before they reach a branch. A client's cloud agent works
+        elsewhere and opens its own pull request, so containment there is
+        detection rather than prevention — the branch exists whatever the
+        verdict, and a refusal fails the run with it left for a human.
+
+        The review is the load-bearing part either way. An agent that edits a
+        module the design never mentioned is not implementing the design, and
+        the context graph is what makes that checkable rather than a matter of
+        opinion. That it applies unchanged to an agent nobody here wrote is
+        the point of putting it after the work rather than inside it.
         """
         design = state.get("design_proposal") or {}
         allowed = [c for c in design.get("modules", []) if c]
-        candidate_paths = [p for p in design.get("files", []) if p]
 
+        if implementation_agent != "inline":
+            return await _hand_off(state, design, allowed)
+
+        candidate_paths = [p for p in design.get("files", []) if p]
         files = (
             await source_control.read_files(target_repo, target_ref, candidate_paths)
             if candidate_paths
@@ -300,9 +313,7 @@ def build_nodes(
 
         edits = [e.model_dump() for e in proposal.edits]
         known = await context_graph.module_paths()
-        verdict = review_change(
-            edits, allowed_modules=allowed, known_modules=known
-        )
+        verdict = review_change(edits, allowed_modules=allowed, known_modules=known)
 
         if not verdict.allowed:
             return {
@@ -324,15 +335,135 @@ def build_nodes(
             [FileEdit(path=e["path"], content=e["content"]) for e in edits],
         )
 
+        return _accepted(state, proposal.summary, change, verdict.modules)
+
+    async def _hand_off(
+        state: dict[str, Any], design: dict[str, Any], allowed: list[str]
+    ) -> dict[str, Any]:
+        """Give the work to an agent this platform does not run, then wait.
+
+        The same dispatch machinery the QA phase uses: one row per run and
+        phase, a deadline, and a reconciler that resumes the graph when the
+        provider answers. Reusing it rather than inventing a second waiting
+        mechanism is what makes a two-hour agent run survive a restart.
+        """
+        run_id = state["run_id"]
+        task = build_task(
+            requirement=(state.get("raw_input") or {}).get("text", ""),
+            design=design,
+            criteria=await context_graph.criteria(),
+            run_id=run_id,
+        )
+
+        claimed = await dispatch_store.claim(
+            run_id, "implementation", implementation_agent, dispatch_timeout_seconds
+        )
+        if claimed is not None:
+            try:
+                handle = await implementation_dispatch.trigger(
+                    run_id,
+                    "implementation",
+                    claimed.correlation_id,
+                    {"prompt": task, "base_ref": target_ref, "repo": target_repo},
+                )
+                await dispatch_store.attach_external(
+                    claimed.id, handle.external_id, handle.external_url
+                )
+            except Exception as exc:  # noqa: BLE001 - surfaced as a failed dispatch
+                await dispatch_store.resolve(
+                    claimed.id,
+                    DispatchResult(state="failed", detail=f"could not start: {exc}"),
+                )
+
+        result = await gate_controller.request_external(
+            state,
+            "implementation",
+            {"type": "implementation_handoff", "phase": "implementation",
+             "agent": implementation_agent},
+        )
+
+        if result.get("state") != "succeeded":
+            return {
+                "implementation": {
+                    "agent": implementation_agent,
+                    "failed": result.get("detail") or result.get("state"),
+                },
+                "status": "implementation_failed",
+            }
+
+        payload = result.get("payload") or {}
+        head_ref = payload.get("head_ref") or ""
+        base_ref = payload.get("base_ref") or target_ref
+        if not head_ref:
+            return {
+                "implementation": {
+                    "agent": implementation_agent,
+                    "failed": "the agent reported success but named no branch",
+                },
+                "status": "implementation_failed",
+            }
+
+        # Read what it actually did. Everything up to here is the agent's
+        # account of itself; this is the repository's.
+        try:
+            written = await source_control.change_files(target_repo, base_ref, head_ref)
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "implementation": {
+                    "agent": implementation_agent,
+                    "branch": head_ref,
+                    "failed": f"could not read the branch it produced: {exc}",
+                },
+                "status": "implementation_failed",
+            }
+
+        edits = [{"path": e.path, "content": e.content} for e in written]
+        known = await context_graph.module_paths()
+        verdict = review_change(edits, allowed_modules=allowed, known_modules=known)
+
+        if not verdict.allowed:
+            return {
+                "implementation": {
+                    "agent": implementation_agent,
+                    "branch": head_ref,
+                    "url": payload.get("external_url"),
+                    "files": [e["path"] for e in edits],
+                    "rejected": verdict.reasons,
+                    # Said explicitly because it is the difference between the
+                    # two agent shapes: this branch was not prevented, it was
+                    # caught, and it is still sitting in the repository.
+                    "note": (
+                        "the branch exists and was not merged — an agent that runs "
+                        "elsewhere cannot be stopped before it writes"
+                    ),
+                },
+                "status": "implementation_rejected",
+            }
+
+        change = ChangeRef(
+            provider=implementation_agent,
+            branch=head_ref,
+            commit=payload.get("head_sha"),
+            base_commit=payload.get("base_sha"),
+            url=payload.get("external_url"),
+            number=payload.get("pull_request_id"),
+            files=[e["path"] for e in edits],
+        )
+        return _accepted(state, design.get("summary", ""), change, verdict.modules)
+
+    def _accepted(
+        state: dict[str, Any], summary: str, change: ChangeRef, modules: list[str]
+    ) -> dict[str, Any]:
         return {
             "implementation": {
-                "summary": proposal.summary,
+                "summary": summary,
                 "files": change.files,
-                "modules": verdict.modules,
+                "modules": modules,
                 "branch": change.branch,
                 "url": change.url,
                 "commit": change.commit,
                 "base_commit": change.base_commit,
+                "agent": implementation_agent,
             },
             # The revision pair the QA phase tests between. These used to be
             # read out of state by the dispatch node and written by nothing,
