@@ -20,6 +20,10 @@ TERMINAL_STATUSES = {
     "synthesis_failed",
     "ambiguity_check_failed",
     "design_proposal_failed",
+    # A design naming components that do not exist would make containment
+    # meaningless downstream, so the run stops rather than proceeding.
+    "design_rejected",
+    "design_blocked",
     "test_case_generation_failed",
     "build_deploy_failed",
     "release_failed",

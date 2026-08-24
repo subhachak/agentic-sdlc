@@ -30,6 +30,11 @@ def _after_gate(decision_key: str, next_node: str):
     return router
 
 
+def _after_design(state: dict[str, Any]) -> str:
+    design = state.get("design_proposal") or {}
+    return "gate_2" if design.get("components") and not design.get("rejected") else END
+
+
 def _after_implementation(state: dict[str, Any]) -> str:
     change = state.get("implementation") or {}
     return "qa_execution" if change.get("files") else END
@@ -50,7 +55,7 @@ def build_graph(nodes: dict[str, NodeFn], checkpointer=None):
     graph.add_edge("requirements_synthesis", "ambiguity_check")
     graph.add_edge("ambiguity_check", "gate_1")
     graph.add_conditional_edges("gate_1", _after_gate("gate1_decision", "design_proposal"))
-    graph.add_edge("design_proposal", "gate_2")
+    graph.add_conditional_edges("design_proposal", _after_design)
     graph.add_conditional_edges("gate_2", _after_gate("gate2_decision", "test_case_generation"))
     graph.add_edge("test_case_generation", "implementation")
     # A change that was blocked or refused never reaches a browser, and never

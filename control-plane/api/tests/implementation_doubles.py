@@ -33,14 +33,33 @@ class StubSourceControl:
 class WritingLLMProvider:
     """Returns one edit to the first file it was shown."""
 
-    def __init__(self, *, blocked: str = "", path: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        blocked: str = "",
+        path: str | None = None,
+        components: list[str] | None = None,
+        criteria: list[str] | None = None,
+    ) -> None:
         self._blocked = blocked
         self._path = path
+        self._components = components or ["demo-app/app/claims"]
+        self._criteria = criteria or []
 
     async def complete(self, system_prompt, user_prompt, *, max_tokens=1024):
         return LLMResponse(text="[stub]", model="stub", input_tokens=1, output_tokens=1)
 
     async def complete_json(self, system_prompt, user_prompt, schema, *, max_tokens=16000):
+        # The same double serves the design and implementation phases; which
+        # one is asking is evident from the schema it wants back.
+        if schema.__name__ == "DesignProposal":
+            return schema(
+                summary="render the table only when there are rows",
+                rationale="the criterion is about the claims list, which this component owns",
+                components=self._components,
+                files=[self._path or "demo-app/app/claims/page.tsx"],
+                criteria_addressed=list(self._criteria),
+            )
         if self._blocked:
             return schema(summary="cannot proceed", blocked=self._blocked, edits=[])
         path = self._path or "demo-app/app/claims/page.tsx"

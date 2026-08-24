@@ -119,3 +119,22 @@ class InMemoryContextGraph:
             for n in self.nodes.values()
             if n["type"] == NodeType.ACCEPTANCE_CRITERION
         ]
+
+    async def component_dependents(self) -> dict[str, set[str]]:
+        out: dict[str, set[str]] = {}
+        for e in self.edges:
+            if e["type"] != EdgeType.DEPENDS_ON:
+                continue
+            src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
+            if src and dst:
+                out.setdefault(dst["external_id"], set()).add(src["external_id"])
+        return out
+
+    async def component_catalogue(self) -> list[dict[str, Any]]:
+        paths = await self.component_paths()
+        dependents = await self.component_dependents()
+        return [
+            {"id": cid, "files": len(p), "depends_on": [], 
+             "dependents": sorted(dependents.get(cid, set())), "paths": sorted(p)}
+            for cid, p in paths.items()
+        ]

@@ -68,6 +68,10 @@ class ContextGraphStore(Protocol):
 
     async def component_paths(self) -> dict[str, set[str]]: ...
 
+    async def component_catalogue(self) -> list[dict[str, Any]]: ...
+
+    async def component_dependents(self) -> dict[str, set[str]]: ...
+
     async def criteria(self) -> list[dict[str, Any]]: ...
 
 
@@ -388,3 +392,55 @@ class SqlContextGraph:
              "component": r.projection.get("component")}
             for r in rows
         ]
+
+    async def component_catalogue(self) -> list[dict[str, Any]]:
+        """What the design agent is allowed to choose from.
+
+        Components with their dependencies in both directions and a sample of
+        their files. An agent given only names guesses at what is inside them;
+        an agent given every path drowns.
+        """
+        components = await self.components()
+        paths = await self.component_paths()
+        dependents = await self.component_dependents()
+        return [
+            {
+                "id": c["id"],
+                "files": c["files"],
+                "depends_on": [d["target"] for d in c["depends_on"]],
+                "dependents": sorted(dependents.get(c["id"], set())),
+                "paths": sorted(paths.get(c["id"], set())),
+            }
+            for c in components
+        ]
+
+    async def component_dependents(self) -> dict[str, set[str]]:
+        """Reverse dependency edges: component -> what depends on it.
+
+        The impact set is derived from this rather than proposed, because an
+        architect can be wrong about consequences and the edges cannot.
+        """
+        async with get_sessionmaker()() as session:
+            nodes = {
+                n.id: n
+                for n in (
+                    await session.execute(
+                        select(GraphNode).where(GraphNode.type == NodeType.COMPONENT)
+                    )
+                ).scalars().all()
+            }
+            edges = (
+                await session.execute(
+                    select(GraphEdge).where(
+                        GraphEdge.type == EdgeType.DEPENDS_ON,
+                        GraphEdge.superseded_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+
+        out: dict[str, set[str]] = {}
+        for edge in edges:
+            src, dst = nodes.get(edge.src_id), nodes.get(edge.dst_id)
+            if src and dst:
+                out.setdefault(dst.external_id, set()).add(src.external_id)
+        return out

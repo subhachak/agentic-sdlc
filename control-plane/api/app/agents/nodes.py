@@ -13,9 +13,14 @@ from uuid import uuid4
 
 from app.agents.state import GateDecision
 from app.core.audit import AuditLogger, NodeFn, audited
+from app.agents.design import SYSTEM as DESIGN_SYSTEM
+from app.agents.design import DesignProposal
+from app.agents.design import build_prompt as build_design_prompt
 from app.agents.implementation import SYSTEM as IMPLEMENTATION_SYSTEM
 from app.agents.implementation import Implementation, build_prompt
 from app.core.change_review import review as review_change
+from app.core.design_review import MAX_FILES as MAX_DESIGN_FILES
+from app.core.design_review import review as review_design
 from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
 from app.core.dispatches import DispatchStore
 from app.core.gate_controller import GateController
@@ -52,6 +57,9 @@ def _assertions_from(payload: dict[str, Any]) -> list[Assertion]:
     return out
 
 
+DESIGN_ATTEMPTS = 3
+
+
 def build_nodes(
     *,
     requirements_source: RequirementsSource,
@@ -66,6 +74,7 @@ def build_nodes(
     audit_logger: AuditLogger,
     gate_controller: GateController,
     max_retries: int,
+    design_attempts: int = 3,
     dispatch_timeout_seconds: int = 1800,
     dispatch_provider: str = "local",
     target_repo: str = "",
@@ -123,41 +132,93 @@ def build_nodes(
 
     @business("design_proposal", fallback={"status": "design_proposal_failed"})
     async def design_proposal(state: dict[str, Any]) -> dict[str, Any]:
-        """Ground the change in components that actually exist.
+        """Decide what the change will touch, and prove it exists.
 
-        The reasoning is still a stub, but which components a change may touch
-        is not something to guess: it comes from the context graph, and it is
-        what the implementation phase is later held to.
+        This phase is load-bearing: the implementation phase may only edit what
+        it names, so a design that guesses makes containment meaningless. The
+        agent chooses from a catalogue of components that actually exist, and
+        every name it returns is checked against the graph before a human is
+        asked to approve anything.
+
+        The impact set is not proposed. It is derived from dependency edges,
+        because an architect can be wrong about consequences.
         """
-        query = (state.get("requirements_synthesis") or {}).get("summary", "")
-        snippets = await code_design_context.retrieve_context(query)
+        requirement = (state.get("raw_input") or {}).get("text", "")
+        query = (state.get("requirements_synthesis") or {}).get("summary", "") or requirement
+        snippets = [s.model_dump() for s in await code_design_context.retrieve_context(query)]
 
-        component_paths = await context_graph.component_paths()
-        wanted = {w for w in (query or "").lower().split() if len(w) > 3}
-        scored = sorted(
-            (
-                (len(wanted & set(component.lower().replace("/", " ").split())), component)
-                for component in component_paths
-            ),
-            reverse=True,
+        catalogue = await context_graph.component_catalogue()
+        known_paths = await context_graph.component_paths()
+        dependents = await context_graph.component_dependents()
+        criteria = await context_graph.criteria()
+        known_criteria = {c["id"] for c in criteria if c.get("id")}
+
+        base_prompt = build_design_prompt(
+            requirement=requirement,
+            criteria=criteria,
+            catalogue=catalogue,
+            snippets=snippets,
+            max_files=MAX_DESIGN_FILES,
         )
-        components = [c for score, c in scored if score > 0][:3] or [
-            c for _, c in scored[:1]
-        ]
-        files = sorted(
-            path for component in components for path in component_paths.get(component, ())
-        )[:12]
 
-        proposal = {
-            "summary": "stub design proposal grounded in retrieved context",
-            "context_snippets": [s.model_dump() for s in snippets],
-            "components": components,
-            "files": files,
+        reasons: list[str] = []
+        proposal = None
+        for attempt in range(1, DESIGN_ATTEMPTS + 1):
+            prompt = base_prompt if not reasons else (
+                base_prompt
+                + "\n\nYour previous design was rejected:\n"
+                + "\n".join(f"- {r}" for r in reasons)
+                + "\n\nName only components and files from the catalogue above."
+            )
+            proposal = await llm_provider.complete_json(DESIGN_SYSTEM, prompt, DesignProposal)
+
+            if proposal.blocked:
+                return {
+                    "design_proposal": {"blocked": proposal.blocked, "summary": proposal.summary},
+                    "status": "design_blocked",
+                }
+
+            verdict = review_design(
+                proposal.model_dump(),
+                known_components=known_paths,
+                dependents=dependents,
+                known_criteria=known_criteria,
+            )
+            if verdict.allowed:
+                return {
+                    "design_proposal": {
+                        **proposal.model_dump(),
+                        "impact": verdict.impact,
+                        "context_snippets": snippets,
+                        "attempts": attempt,
+                        "notes": verdict.reasons,
+                    },
+                    "status": "awaiting_gate_2",
+                }
+            reasons = verdict.reasons
+
+        return {
+            "design_proposal": {
+                **(proposal.model_dump() if proposal else {}),
+                "rejected": reasons,
+                "attempts": DESIGN_ATTEMPTS,
+            },
+            "status": "design_rejected",
         }
-        return {"design_proposal": proposal, "status": "awaiting_gate_2"}
 
     async def gate_2(state: dict[str, Any]) -> dict[str, Any]:
-        payload = {"type": "design_approval", "design_proposal": state.get("design_proposal")}
+        design = state.get("design_proposal") or {}
+        payload = {
+            "type": "design_approval",
+            "summary": design.get("summary"),
+            "rationale": design.get("rationale"),
+            "components": design.get("components"),
+            "files": design.get("files"),
+            "impact": design.get("impact"),
+            "criteria_addressed": design.get("criteria_addressed"),
+            "out_of_scope": design.get("out_of_scope"),
+            "risks": design.get("risks"),
+        }
         decision = await gate_controller.request_gate(state, "gate_2", payload)
         gate_decision = GateDecision(
             gate_name="gate_2",
