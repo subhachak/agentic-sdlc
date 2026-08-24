@@ -72,6 +72,10 @@ SPECS: tuple[SettingSpec, ...] = (
     SettingSpec("max_node_retries", "Node retries", "Agents", type="int",
                 help="Business nodes only. Gates and dispatches are never retried."),
 
+    SettingSpec("active_project", "Active project", "Engagement", section="platform",
+                help="Which engagement the platform is working on. The graph is scoped "
+                     "by it, and this project's own settings overlay the defaults."),
+
     # --- governance ---
     SettingSpec("auto_approve_gates", "Auto-approve human gates", "Governance", type="bool",
                 help="Skips the three human gates for headless runs. Never skips the "

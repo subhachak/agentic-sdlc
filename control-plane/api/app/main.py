@@ -19,11 +19,12 @@ from app.core.context_graph import SqlContextGraph
 from app.core.dispatches import SqlDispatchStore
 from app.core.gate_controller import GateController
 from app.core.reconciler import run_forever
-from app.core import settings_store
+from app.core import projects, settings_store
 from app.routers import graph as graph_router
 from app.routers import config as config_router
 from app.routers import dashboard as dashboard_router
 from app.routers import health, runs
+from app.routers import projects as projects_router
 
 
 def build_runtime(app: FastAPI, settings, checkpointer=None) -> None:
@@ -70,10 +71,20 @@ def build_runtime(app: FastAPI, settings, checkpointer=None) -> None:
 
 async def reload_runtime(app: FastAPI) -> None:
     """Re-read configuration and rebuild. The reconciler picks the new
-    instances up on its next tick, because it asks for them on every tick."""
+    instances up on its next tick, because it asks for them on every tick.
+
+    The active project's engagement settings are layered on last, so
+    switching project re-points the adapters at that codebase without
+    anything else having to know a project exists.
+    """
     base = get_settings()
     overrides = await settings_store.load_overrides()
-    build_runtime(app, settings_store.effective(base, overrides))
+    settings = settings_store.effective(base, overrides)
+
+    await projects.ensure_default(settings)
+    record = await projects.get(settings.active_project)
+    build_runtime(app, projects.applied_to(settings, record))
+    app.state.project = record
 
 
 @asynccontextmanager
@@ -132,3 +143,4 @@ app.include_router(runs.router, prefix="/api")
 app.include_router(graph_router.router, prefix="/api")
 app.include_router(config_router.router, prefix="/api")
 app.include_router(dashboard_router.router, prefix="/api")
+app.include_router(projects_router.router, prefix="/api")

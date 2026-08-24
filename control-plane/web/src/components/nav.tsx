@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import ProjectSwitcher from "@/components/project-switcher";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
@@ -28,6 +29,7 @@ export default function Nav() {
             </Link>
           );
         })}
+        <ProjectSwitcher />
       </div>
     </nav>
   );

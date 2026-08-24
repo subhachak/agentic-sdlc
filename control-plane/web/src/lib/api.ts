@@ -163,6 +163,81 @@ export interface RetrievalStatus {
   stale: boolean;
 }
 
+export interface ProjectRecord {
+  id: string;
+  name: string;
+  description: string;
+  engagement: Record<string, string | number | null>;
+  archived: boolean;
+  created_at: string | null;
+}
+
+export interface ProjectList {
+  active: string;
+  defaults: Record<string, string | number | null>;
+  engagement_keys: string[];
+  projects: ProjectRecord[];
+}
+
+export async function listProjects(): Promise<ProjectList> {
+  const res = await fetch(`${API_URL}/api/projects`, { cache: "no-store" });
+  return json(res);
+}
+
+/**
+ * Fired when the set of projects changes. The switcher lives in the nav and
+ * the editor lives on the configuration page, so without this a project
+ * created in one is invisible in the other until a reload.
+ */
+export const PROJECTS_CHANGED = "agentic-sdlc:projects-changed";
+
+function announceProjectsChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(PROJECTS_CHANGED));
+  }
+}
+
+export async function createProject(
+  id: string,
+  name: string,
+  description: string
+): Promise<ProjectRecord> {
+  const res = await fetch(`${API_URL}/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, name, description }),
+  });
+  const created = await json<ProjectRecord>(res);
+  announceProjectsChanged();
+  return created;
+}
+
+export async function updateProject(
+  id: string,
+  changes: { name?: string; description?: string; engagement?: Record<string, unknown> }
+): Promise<ProjectRecord> {
+  const res = await fetch(`${API_URL}/api/projects/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  return json(res);
+}
+
+export async function activateProject(
+  id: string
+): Promise<{ active: string; active_runs: number; warning: string | null }> {
+  const res = await fetch(`${API_URL}/api/projects/${id}/activate`, { method: "POST" });
+  return json(res);
+}
+
+export async function archiveProject(id: string): Promise<{ archived: string }> {
+  const res = await fetch(`${API_URL}/api/projects/${id}/archive`, { method: "POST" });
+  const result = await json<{ archived: string }>(res);
+  announceProjectsChanged();
+  return result;
+}
+
 export async function hydrationStatus(): Promise<HydrationStatus> {
   const res = await fetch(`${API_URL}/api/graph/status`, { cache: "no-store" });
   return json(res);

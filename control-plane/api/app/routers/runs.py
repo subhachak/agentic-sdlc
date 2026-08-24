@@ -44,7 +44,17 @@ def _spawn(request: Request, run_id: str, graph_input: Any) -> None:
 async def create_run(request: Request, text: str = Form(...)) -> CreateRunResponse:
     run_id = str(uuid.uuid4())
     async with get_sessionmaker()() as session:
-        session.add(Run(id=uuid.UUID(run_id), status="pending", raw_requirement_text=text))
+        # Stamped at creation rather than read back from whatever is active
+        # later. A run is a decision about one codebase, and the trail has to
+        # still say which one after someone switches project.
+        session.add(
+            Run(
+                id=uuid.UUID(run_id),
+                project=request.app.state.settings.active_project,
+                status="pending",
+                raw_requirement_text=text,
+            )
+        )
         await session.commit()
 
     settings = request.app.state.settings
@@ -60,9 +70,15 @@ async def create_run(request: Request, text: str = Form(...)) -> CreateRunRespon
 
 
 @router.get("")
-async def list_runs() -> list[RunSummary]:
+async def list_runs(request: Request, all_projects: bool = False) -> list[RunSummary]:
     async with get_sessionmaker()() as session:
-        result = await session.execute(select(Run).order_by(Run.created_at.desc()))
+        # Scoped to the active engagement. A runs list mixing two clients'
+        # work is the thing project separation exists to prevent, and `?all=1`
+        # is there for the rare case of wanting the whole history.
+        query = select(Run).order_by(Run.created_at.desc())
+        if not all_projects:
+            query = query.where(Run.project == request.app.state.settings.active_project)
+        result = await session.execute(query)
         runs = result.scalars().all()
     return [
         RunSummary(

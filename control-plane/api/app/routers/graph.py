@@ -25,7 +25,7 @@ class ProjectScoped(BaseModel):
     # omitted project is "default" rather than "all" — a request that meant
     # one project and silently addressed every one is how the graph lost a
     # team's index in the first place.
-    project: str = DEFAULT_PROJECT
+    project: str | None = None
 
 
 class ExportRequest(ProjectScoped):
@@ -60,7 +60,7 @@ async def seed_graph(request: Request, body: SeedRequest) -> dict:
             repo=repo,
             ref=ref,
             rebuild=body.rebuild,
-            project=body.project,
+            project=_project(request, body.project),
         )
 
 
@@ -90,6 +90,17 @@ async def _indexing_errors(repo: str, ref: str):
         ) from exc
 
 
+def _project(request: Request, asked: str | None) -> str:
+    """Which project a request is about.
+
+    An omitted project means the active one, not the literal default. A
+    request that meant "the engagement I am working on" and silently
+    addressed a different graph is the failure this whole scoping exists to
+    prevent, and defaulting to a constant would reintroduce it one layer up.
+    """
+    return asked or request.app.state.settings.active_project or DEFAULT_PROJECT
+
+
 def _export_path(settings) -> Path:
     """Resolved against the repository, not the process's working directory.
 
@@ -102,7 +113,7 @@ def _export_path(settings) -> Path:
 
 
 @router.get("/status")
-async def hydration_status(request: Request, project: str = DEFAULT_PROJECT) -> dict:
+async def hydration_status(request: Request, project: str | None = None) -> dict:
     """What is populated and what is not, step by step.
 
     "Is it set up" has more than one answer — the graph can be indexed while
@@ -114,7 +125,7 @@ async def hydration_status(request: Request, project: str = DEFAULT_PROJECT) -> 
         request.app.state.context_graph,
         request.app.state.adapters.code_design_context,
         _export_path(settings),
-        project=project,
+        project=_project(request, project),
     )
 
 
@@ -135,7 +146,7 @@ async def refresh_graph(request: Request, body: SeedRequest) -> dict:
             request.app.state.adapters.code_intelligence,
             repo=repo,
             ref=ref,
-            project=body.project,
+            project=_project(request, body.project),
         )
 
 
@@ -150,7 +161,9 @@ async def write_export(request: Request, body: ExportRequest) -> dict:
     """
     settings = request.app.state.settings
     export = await build_export(
-        request.app.state.context_graph, scope=body.scope, project=body.project
+        request.app.state.context_graph,
+        scope=body.scope,
+        project=_project(request, body.project),
     )
     if not export["modules"]:
         raise HTTPException(
@@ -190,9 +203,10 @@ async def rebuild_retrieval(request: Request) -> dict:
 
 
 @router.get("/modules")
-async def list_components(request: Request, project: str = DEFAULT_PROJECT) -> dict:
+async def list_components(request: Request, project: str | None = None) -> dict:
     """Modules and their dependencies, as derived from the last index."""
     graph = request.app.state.context_graph
+    project = _project(request, project)
     return {
         "project": project,
         "counts": await graph.counts(project),
@@ -202,7 +216,7 @@ async def list_components(request: Request, project: str = DEFAULT_PROJECT) -> d
 
 @router.get("/export")
 async def export_graph(
-    request: Request, scope: str = "", project: str = DEFAULT_PROJECT
+    request: Request, scope: str = "", project: str | None = None
 ) -> dict:
     """The derived graph in the form the execution plane consumes.
 
@@ -211,5 +225,5 @@ async def export_graph(
     QA run can refuse a graph that describes a commit it is not testing.
     """
     return await build_export(
-        request.app.state.context_graph, scope=scope, project=project
+        request.app.state.context_graph, scope=scope, project=_project(request, project)
     )

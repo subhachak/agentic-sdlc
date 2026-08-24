@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     claude_model: str = "claude-opus-5"
     anthropic_api_key: str | None = None
 
+    # Which engagement the platform is currently working on. The graph is
+    # scoped by it, and the active project's own settings overlay these.
+    active_project: str = "default"
+
     max_node_retries: int = 2
     auto_approve_gates: bool = False
 

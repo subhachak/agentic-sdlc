@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { useEffect, useState } from "react";
 import { getConfig, saveConfig } from "@/lib/api";
+import EngagementSection from "@/components/engagement-section";
 import type { ConfigData, SettingEntry } from "@/lib/types";
 
 function Field({
@@ -135,9 +136,9 @@ export default function ConfigPage() {
       id: "engagement" as const,
       title: "This engagement",
       blurb:
-        "What the platform is pointed at — repositories, branches, environments, and how " +
-        "coarse a module is in this codebase. These are the fields a new client or project " +
-        "needs, and the ones to change when moving between them.",
+        "What this project is pointed at — repositories, branches, environments, and how " +
+        "coarse a module is in its codebase. Stored on the project rather than globally, " +
+        "so two engagements can hold different answers at the same time.",
     },
     {
       id: "platform" as const,
@@ -168,6 +169,21 @@ export default function ConfigPage() {
         const entries = data.settings.filter((s) => s.section === section.id);
         if (entries.length === 0) return null;
         const groups = Array.from(new Set(entries.map((s) => s.group)));
+
+        // The engagement fields belong to the project record, not to the
+        // settings table — two teams have to be able to hold different
+        // answers at once. The specs are still the source of labels and help.
+        if (section.id === "engagement") {
+          return (
+            <section key={section.id} aria-labelledby={`section-${section.id}`}>
+              <h2 id={`section-${section.id}`} className="section-heading">
+                {section.title}
+              </h2>
+              <p className="section-blurb">{section.blurb}</p>
+              <EngagementSection specs={entries} />
+            </section>
+          );
+        }
 
         return (
           <section key={section.id} aria-labelledby={`section-${section.id}`}>

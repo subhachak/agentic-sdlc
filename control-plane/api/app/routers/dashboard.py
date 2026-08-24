@@ -36,12 +36,28 @@ def _classify(status: str) -> str:
 
 @router.get("")
 async def dashboard(request: Request) -> dict[str, Any]:
+    # Run counts belong to the engagement too. A dashboard totalling two
+    # clients' work into one number is the failure project separation exists
+    # to prevent, and it is the number people quote.
+    project = request.app.state.settings.active_project
+
     async with get_sessionmaker()() as session:
         by_status = dict(
-            (await session.execute(select(Run.status, func.count()).group_by(Run.status))).all()
+            (
+                await session.execute(
+                    select(Run.status, func.count())
+                    .where(Run.project == project)
+                    .group_by(Run.status)
+                )
+            ).all()
         )
         recent = (
-            await session.execute(select(Run).order_by(Run.created_at.desc()).limit(6))
+            await session.execute(
+                select(Run)
+                .where(Run.project == project)
+                .order_by(Run.created_at.desc())
+                .limit(6)
+            )
         ).scalars().all()
         dispatch_states = dict(
             (
@@ -56,16 +72,20 @@ async def dashboard(request: Request) -> dict[str, Any]:
         buckets[_classify(status)] = buckets.get(_classify(status), 0) + count
 
     graph = request.app.state.context_graph
-    counts = await graph.counts()
-    untested = await graph.untested_criteria()
+    settings = request.app.state.settings
+    # Scoped to the engagement being worked on. An unscoped read here would
+    # show one client's coverage under another's name, which is worse than
+    # showing nothing.
+    counts = await graph.counts(project)
+    untested = await graph.untested_criteria(project)
     criteria_total = counts["nodes"].get("ACCEPTANCE_CRITERION", 0)
 
-    settings = request.app.state.settings
-    provenance = await graph.index_provenance()
+    provenance = await graph.index_provenance(project)
     hydration_state = await hydration.status(
         graph,
         request.app.state.adapters.code_design_context,
         _export_path(settings),
+        project=project,
     )
     return {
         "runs": {
@@ -105,6 +125,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
         # What this deployment is pointed at, separated from how it runs.
         # A dashboard that shows throughput without showing which repository
         # produced it is a number with no subject.
+        "project": project,
         "engagement": {
             # What is *indexed*, not what is configured to be indexed next
             # time. Reading the setting alone reported "not set" while a graph

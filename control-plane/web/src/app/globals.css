@@ -356,3 +356,25 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .notice {
   border-left: 3px solid var(--warning);
 }
+
+/* The active engagement sits in the nav because it changes what every other
+   page means. Pushed to the end so it reads as context for the whole console
+   rather than as another destination. */
+.project-switcher {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+}
+
+.project-switcher select {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  max-width: 12rem;
+}
