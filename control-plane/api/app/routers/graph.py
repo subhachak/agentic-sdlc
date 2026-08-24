@@ -14,19 +14,28 @@ from pydantic import BaseModel
 
 from app.core import hydration, seeding
 from app.core.config import REPO_ROOT
+from app.graph.projects import DEFAULT_PROJECT, ProjectError
 from app.core.graph_export import build_export
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
 
-class ExportRequest(BaseModel):
+class ProjectScoped(BaseModel):
+    # Which project's graph this touches. Everything is scoped by it, so an
+    # omitted project is "default" rather than "all" — a request that meant
+    # one project and silently addressed every one is how the graph lost a
+    # team's index in the first place.
+    project: str = DEFAULT_PROJECT
+
+
+class ExportRequest(ProjectScoped):
     # The subtree the consumer actually tests. Scoping is not only about size:
     # a QA run testing demo-app should not be told a change reaches the
     # control plane's own modules.
     scope: str = "demo-app"
 
 
-class SeedRequest(BaseModel):
+class SeedRequest(ProjectScoped):
     repo: str | None = None
     ref: str | None = None
     # Derived structure is rebuilt rather than accumulated. Pass false only to
@@ -51,6 +60,7 @@ async def seed_graph(request: Request, body: SeedRequest) -> dict:
             repo=repo,
             ref=ref,
             rebuild=body.rebuild,
+            project=body.project,
         )
 
 
@@ -69,6 +79,8 @@ async def _indexing_errors(repo: str, ref: str):
     """
     try:
         yield
+    except ProjectError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except OSError as exc:
@@ -90,7 +102,7 @@ def _export_path(settings) -> Path:
 
 
 @router.get("/status")
-async def hydration_status(request: Request) -> dict:
+async def hydration_status(request: Request, project: str = DEFAULT_PROJECT) -> dict:
     """What is populated and what is not, step by step.
 
     "Is it set up" has more than one answer — the graph can be indexed while
@@ -102,6 +114,7 @@ async def hydration_status(request: Request) -> dict:
         request.app.state.context_graph,
         request.app.state.adapters.code_design_context,
         _export_path(settings),
+        project=project,
     )
 
 
@@ -122,6 +135,7 @@ async def refresh_graph(request: Request, body: SeedRequest) -> dict:
             request.app.state.adapters.code_intelligence,
             repo=repo,
             ref=ref,
+            project=body.project,
         )
 
 
@@ -135,7 +149,9 @@ async def write_export(request: Request, body: ExportRequest) -> dict:
     to be told about.
     """
     settings = request.app.state.settings
-    export = await build_export(request.app.state.context_graph, scope=body.scope)
+    export = await build_export(
+        request.app.state.context_graph, scope=body.scope, project=body.project
+    )
     if not export["modules"]:
         raise HTTPException(
             status_code=409,
@@ -174,18 +190,26 @@ async def rebuild_retrieval(request: Request) -> dict:
 
 
 @router.get("/modules")
-async def list_components(request: Request) -> dict:
+async def list_components(request: Request, project: str = DEFAULT_PROJECT) -> dict:
     """Modules and their dependencies, as derived from the last index."""
     graph = request.app.state.context_graph
-    return {"counts": await graph.counts(), "modules": await graph.modules()}
+    return {
+        "project": project,
+        "counts": await graph.counts(project),
+        "modules": await graph.modules(project),
+    }
 
 
 @router.get("/export")
-async def export_graph(request: Request, scope: str = "") -> dict:
+async def export_graph(
+    request: Request, scope: str = "", project: str = DEFAULT_PROJECT
+) -> dict:
     """The derived graph in the form the execution plane consumes.
 
     Served rather than shared, because the execution plane runs in client CI
     with no route to this database. The provenance stamp travels with it so a
     QA run can refuse a graph that describes a commit it is not testing.
     """
-    return await build_export(request.app.state.context_graph, scope=scope)
+    return await build_export(
+        request.app.state.context_graph, scope=scope, project=project
+    )

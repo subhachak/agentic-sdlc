@@ -16,6 +16,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.graph.projects import DEFAULT_PROJECT
+
 # Order matters: each step depends on the one before it, so the console can
 # present them as a sequence and disable what is not yet possible.
 STEP_INDEX = "index"
@@ -23,9 +25,14 @@ STEP_RETRIEVAL = "retrieval"
 STEP_EXPORT = "export"
 
 
-async def status(graph: Any, retrieval: Any, export_path: Path | None) -> dict[str, Any]:
-    counts = await graph.counts()
-    provenance = await graph.index_provenance()
+async def status(
+    graph: Any,
+    retrieval: Any,
+    export_path: Path | None,
+    project: str = DEFAULT_PROJECT,
+) -> dict[str, Any]:
+    counts = await graph.counts(project)
+    provenance = await graph.index_provenance(project)
     nodes = counts.get("nodes", {})
     edges = counts.get("edges", {})
 
@@ -77,6 +84,7 @@ async def status(graph: Any, retrieval: Any, export_path: Path | None) -> dict[s
     )
 
     return {
+        "project": project,
         "hydrated": all(step["ready"] for step in steps),
         "provenance": provenance,
         "counts": counts,

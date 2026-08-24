@@ -24,6 +24,25 @@ FEATURES_SYSTEM = "features"
 QA_SYSTEM = "qa"
 CODE_SYSTEM = "code"
 
+DEFAULT_PROJECT = "default"
+
+
+def graph_project() -> str:
+    """Which project this run's graph belongs to.
+
+    Read from the export rather than configured here. The control plane
+    scopes node identity by project, so a COVERS edge emitted against an
+    unqualified `code` system would land in the default project's graph —
+    pointing at a module that, for any client running more than one project,
+    is not the one this run tested.
+    """
+    return _load_code_graph().get("project") or DEFAULT_PROJECT
+
+
+def _scoped(system: str) -> str:
+    project = graph_project()
+    return system if project == DEFAULT_PROJECT else f"{system}@{project}"
+
 
 # --------------------------------------------------------------------- read
 
@@ -270,6 +289,9 @@ def api_contract() -> str:
 
 
 def _node(node_type: str, system: str, external_id: str, projection: dict) -> dict:
+    # Scoped here rather than at each call site, so a new assertion cannot be
+    # written that quietly targets the wrong project's graph.
+    system = _scoped(system)
     return {
         "id": node_id(node_type, system, external_id),
         "type": node_type,

@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.routing import route_map
+from app.graph.projects import DEFAULT_PROJECT
 
 EXPORT_VERSION = 2
 
@@ -32,16 +33,18 @@ def _in_scope(path: str, scope: str) -> bool:
     return not scope or path == scope or path.startswith(f"{scope.rstrip('/')}/")
 
 
-async def build_export(graph: Any, scope: str = "") -> dict[str, Any]:
+async def build_export(
+    graph: Any, scope: str = "", project: str = DEFAULT_PROJECT
+) -> dict[str, Any]:
     """The derived graph as JSON, optionally narrowed to a subtree.
 
     Scoping matters for more than size: a QA run testing `demo-app/` should
     not be told that a change reaches the control plane's own modules, which
     it neither deploys nor tests.
     """
-    provenance = await graph.index_provenance()
-    module_paths = await graph.module_paths()
-    file_deps = await graph.file_dependents(include_tests=False)
+    provenance = await graph.index_provenance(project)
+    module_paths = await graph.module_paths(project)
+    file_deps = await graph.file_dependents(project, include_tests=False)
 
     modules = {
         module: sorted(p for p in paths if _in_scope(p, scope))
@@ -67,6 +70,7 @@ async def build_export(graph: Any, scope: str = "") -> dict[str, Any]:
 
     return {
         "export_version": EXPORT_VERSION,
+        "project": project,
         # URL to the files that serve it. Carried so the execution plane can
         # attribute what a test actually requested back to source files
         # without re-implementing the framework's routing conventions — the

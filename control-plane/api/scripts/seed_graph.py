@@ -29,6 +29,8 @@ async def main() -> int:
     parser.add_argument("--ref", default="main")
     parser.add_argument("--local", help="index a directory instead of GitHub")
     parser.add_argument("--depth", type=int, default=None, help="module granularity")
+    parser.add_argument("--project", default="default",
+                        help="which project's graph to write; each is isolated")
     parser.add_argument("--dry-run", action="store_true", help="index but do not write")
     args = parser.parse_args()
 
@@ -68,7 +70,7 @@ async def main() -> int:
 
     await init_db()
     graph = SqlContextGraph(build_entity_resolver(settings))
-    summary = await seed(graph, indexer, repo=repo, ref=ref)
+    summary = await seed(graph, indexer, repo=repo, ref=ref, project=args.project)
 
     print(f"seeded {summary['repo']}@{summary['commit_sha'] or 'UNPINNED'} "
           f"(ref {summary['ref']}, indexer {summary['indexer_version']})")

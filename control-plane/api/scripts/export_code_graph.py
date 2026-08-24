@@ -28,17 +28,20 @@ DEFAULT_OUT = Path(__file__).resolve().parents[3] / "execution-plane/qa/code-gra
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scope", default="demo-app", help="repository subtree to export")
+    parser.add_argument("--project", default="default",
+                        help="which project's graph to export; each is isolated")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--stdout", action="store_true", help="print instead of writing")
     args = parser.parse_args()
 
     await init_db()
     graph = SqlContextGraph(build_entity_resolver(get_settings()))
-    export = await build_export(graph, scope=args.scope)
+    export = await build_export(graph, scope=args.scope, project=args.project)
 
     if not export["modules"]:
         print(
-            f"refusing to write an empty export for scope {args.scope!r} — "
+            f"refusing to write an empty export for scope {args.scope!r} in project "
+            f"{args.project!r} — "
             f"seed the graph first (scripts/seed_graph.py)",
             file=sys.stderr,
         )
@@ -52,6 +55,7 @@ async def main() -> int:
     args.out.write_text(payload)
     provenance = export["provenance"]
     print(f"wrote {args.out}")
+    print(f"  project     {args.project}")
     print(f"  scope       {args.scope}")
     print(f"  commit      {provenance.get('commit_sha') or 'UNPINNED'}")
     print(f"  modules     {len(export['modules'])}")

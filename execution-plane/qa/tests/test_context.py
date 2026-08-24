@@ -304,3 +304,53 @@ def test_paths_match_regardless_of_leading_slash_or_dot():
     assert modules_for_paths(["/demo-app/app/api/claims/route.ts"]) == {
         "demo-app/app/api/claims"
     }
+
+
+# --- project scoping -------------------------------------------------------
+
+
+def test_the_project_comes_from_the_export_not_from_configuration_here():
+    """The control plane scopes node identity by project. A COVERS edge
+    emitted against an unqualified system lands in the default project's
+    graph — pointing at a module that, for a client running more than one
+    project, is not the one this run tested."""
+    from orchestrator.context import graph_project
+
+    assert graph_project() == "default"
+
+
+def test_every_emitted_node_carries_the_project_of_the_graph(monkeypatch):
+    import orchestrator.context as context
+
+    monkeypatch.setattr(
+        context, "_load_code_graph",
+        lambda: {"project": "team-a", "modules": [], "depends_on": []},
+    )
+    node = context._node("MODULE", "code", "demo-app/app/claims", {})
+
+    assert node["system"] == "code@team-a"
+
+
+def test_the_same_module_in_two_projects_gets_two_identities(monkeypatch):
+    import orchestrator.context as context
+
+    monkeypatch.setattr(
+        context, "_load_code_graph",
+        lambda: {"project": "team-a", "modules": [], "depends_on": []})
+    a = context._node("MODULE", "code", "app/claims", {})["id"]
+
+    monkeypatch.setattr(
+        context, "_load_code_graph",
+        lambda: {"project": "team-b", "modules": [], "depends_on": []})
+    b = context._node("MODULE", "code", "app/claims", {})["id"]
+
+    assert a != b
+
+
+def test_an_export_with_no_project_is_the_default(monkeypatch):
+    """Backward compatible: an export written before projects existed still
+    resolves to the graph it was written against."""
+    import orchestrator.context as context
+
+    monkeypatch.setattr(context, "_load_code_graph", lambda: {"modules": [], "depends_on": []})
+    assert context._node("MODULE", "code", "x", {})["system"] == "code"

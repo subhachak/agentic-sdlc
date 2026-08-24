@@ -12,6 +12,7 @@ from typing import Any
 from app.core.context_graph import Assertion, NodeSpec
 from app.graph.identity import node_id
 from app.graph.ontology import EdgeType, NodeType, validate_edge
+from app.graph.projects import DEFAULT_PROJECT, project_of
 
 
 class InMemoryContextGraph:
@@ -33,17 +34,22 @@ class InMemoryContextGraph:
         }
         return nid
 
-    async def phase_edges(self, phase: str) -> set[tuple[str, str, str]]:
+    async def phase_edges(
+        self, phase: str, project: str = DEFAULT_PROJECT
+    ) -> set[tuple[str, str, str]]:
+        mine = self._mine(project)
         out = set()
         for e in self.edges:
-            if e.get("phase") != phase:
+            if e.get("phase") != phase or not (e["src_id"] in mine or e["dst_id"] in mine):
                 continue
             src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
             if src and dst:
                 out.add((e["type"], src["external_id"], dst["external_id"]))
         return out
 
-    async def retract(self, phase: str, edges: set[tuple[str, str, str]]) -> dict[str, int]:
+    async def retract(
+        self, phase: str, edges: set[tuple[str, str, str]], project: str = DEFAULT_PROJECT
+    ) -> dict[str, int]:
         def key(e):
             src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
             return (e["type"], src and src["external_id"], dst and dst["external_id"])
@@ -57,9 +63,10 @@ class InMemoryContextGraph:
             self.nodes.pop(nid, None)
         return {"edges": len(doomed), "nodes": len(orphans)}
 
-    async def index_provenance(self) -> dict[str, Any]:
+    async def index_provenance(self, project: str = DEFAULT_PROJECT) -> dict[str, Any]:
         node = next(
-            (n for n in self.nodes.values() if n["type"] == "MODULE"), {"projection": {}}
+            (n for n in self._visible(project).values() if n["type"] == "MODULE"),
+            {"projection": {}},
         )
         projection = node["projection"]
         return {
@@ -72,10 +79,34 @@ class InMemoryContextGraph:
             "most_missed": projection.get("most_missed") or [],
         }
 
-    async def purge_phase(self, phase: str) -> dict[str, int]:
-        doomed = [e for e in self.edges if e.get("phase") == phase]
+    def _visible(self, project: str) -> dict[str, dict]:
+        """Nodes belonging to one project.
+
+        Mirrors the store's filter rather than ignoring it. A double that
+        returns every node regardless of project would let a scoping bug pass
+        every test and fail only in the deployment where two teams share a
+        database.
+        """
+        return {
+            nid: n for nid, n in self.nodes.items() if project_of(n["system"]) == project
+        }
+
+    def _mine(self, project: str) -> set[str]:
+        return {
+            nid for nid, n in self.nodes.items() if project_of(n["system"]) == project
+        }
+
+    async def purge_phase(self, phase: str, project: str = DEFAULT_PROJECT) -> dict[str, int]:
+        mine = self._mine(project)
+        doomed = [
+            e for e in self.edges
+            if e.get("phase") == phase and (e["src_id"] in mine or e["dst_id"] in mine)
+        ]
         touched = {e["src_id"] for e in doomed} | {e["dst_id"] for e in doomed}
-        self.edges = [e for e in self.edges if e.get("phase") != phase]
+        # Only the doomed edges. Filtering by phase alone here is the bug this
+        # whole change exists to fix, reproduced in the double.
+        doomed_ids = {id(e) for e in doomed}
+        self.edges = [e for e in self.edges if id(e) not in doomed_ids]
         still = {e["src_id"] for e in self.edges} | {e["dst_id"] for e in self.edges}
         orphans = touched - still
         for nid in orphans:
@@ -103,7 +134,7 @@ class InMemoryContextGraph:
     async def neighbours(self, node_id_: str) -> list[dict[str, Any]]:
         return [e for e in self.edges if node_id_ in (e["src_id"], e["dst_id"])]
 
-    async def untested_criteria(self) -> list[dict[str, Any]]:
+    async def untested_criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         passing = {
             n["id"] for n in self.nodes.values()
             if n["type"] == NodeType.TEST_RUN and n["projection"].get("status") == "passed"
@@ -120,7 +151,7 @@ class InMemoryContextGraph:
                 out.append(n)
         return out
 
-    async def trace(self, criterion_id: str) -> dict[str, Any]:
+    async def trace(self, criterion_id: str, project: str = DEFAULT_PROJECT) -> dict[str, Any]:
         scenarios = self._forward(EdgeType.VERIFIED_BY, {criterion_id})
         scripts = self._forward(EdgeType.IMPLEMENTED_BY, scenarios)
         runs = self._forward(EdgeType.EXERCISED_IN, scripts)
@@ -133,7 +164,7 @@ class InMemoryContextGraph:
             "defects": render(self._forward(EdgeType.RAISED, runs)),
         }
 
-    async def blast_radius(self, module_id: str) -> list[dict[str, Any]]:
+    async def blast_radius(self, module_id: str, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         dependents = {
             e["src_id"] for e in self.edges
             if e["type"] == EdgeType.DEPENDS_ON and e["dst_id"] == module_id
@@ -142,46 +173,50 @@ class InMemoryContextGraph:
         ids = {e["src_id"] for e in self.edges if e["type"] == EdgeType.COVERS and e["dst_id"] in targets}
         return [self.nodes[i] for i in sorted(ids) if i in self.nodes]
 
-    async def counts(self) -> dict[str, Any]:
+    async def counts(self, project: str = DEFAULT_PROJECT) -> dict[str, Any]:
+        visible = self._visible(project)
         nodes: dict[str, int] = {}
         edges: dict[str, int] = {}
-        for n in self.nodes.values():
+        for n in visible.values():
             nodes[n["type"]] = nodes.get(n["type"], 0) + 1
         for e in self.edges:
-            edges[e["type"]] = edges.get(e["type"], 0) + 1
+            if e["src_id"] in visible or e["dst_id"] in visible:
+                edges[e["type"]] = edges.get(e["type"], 0) + 1
         return {"nodes": nodes, "edges": edges}
 
-    async def module_paths(self) -> dict[str, set[str]]:
+    async def module_paths(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]:
+        visible = self._visible(project)
         out: dict[str, set[str]] = {}
         for e in self.edges:
             if e["type"] != EdgeType.BELONGS_TO:
                 continue
-            artifact, module = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
+            artifact, module = visible.get(e["src_id"]), visible.get(e["dst_id"])
             if artifact and module:
                 out.setdefault(module["external_id"], set()).add(artifact["external_id"])
         return out
 
-    async def criteria(self) -> list[dict[str, Any]]:
+    async def criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         return [
             {"id": n["external_id"], "text": n["projection"].get("text", ""),
              "module": n["projection"].get("module")}
-            for n in self.nodes.values()
+            for n in self._visible(project).values()
             if n["type"] == NodeType.ACCEPTANCE_CRITERION
         ]
 
-    async def module_dependents(self) -> dict[str, set[str]]:
+    async def module_dependents(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]:
+        visible = self._visible(project)
         out: dict[str, set[str]] = {}
         for e in self.edges:
             if e["type"] != EdgeType.DEPENDS_ON:
                 continue
-            src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
+            src, dst = visible.get(e["src_id"]), visible.get(e["dst_id"])
             if src and dst:
                 out.setdefault(dst["external_id"], set()).add(src["external_id"])
         return out
 
-    async def module_catalogue(self) -> list[dict[str, Any]]:
-        paths = await self.module_paths()
-        dependents = await self.module_dependents()
+    async def module_catalogue(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
+        paths = await self.module_paths(project)
+        dependents = await self.module_dependents(project)
         return [
             {"id": cid, "files": len(p), "depends_on": [],
              "dependents": sorted(dependents.get(cid, set())),
@@ -191,11 +226,13 @@ class InMemoryContextGraph:
 
     async def file_dependents(
         self,
+        project: str = DEFAULT_PROJECT,
         *,
         runtime_only: bool = True,
         include_tests: bool = True,
         include_contracts: bool = True,
     ) -> dict[str, set[str]]:
+        visible = self._visible(project)
         out: dict[str, set[str]] = {}
         for e in self.edges:
             wanted = {EdgeType.IMPORTS}
@@ -208,7 +245,7 @@ class InMemoryContextGraph:
                 continue
             if not include_tests and attributes.get("from_test", False):
                 continue
-            src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
+            src, dst = visible.get(e["src_id"]), visible.get(e["dst_id"])
             if src and dst:
                 out.setdefault(dst["external_id"], set()).add(src["external_id"])
         return out

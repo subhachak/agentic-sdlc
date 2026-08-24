@@ -21,6 +21,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.core.db import get_sessionmaker
 from app.graph.ontology import EdgeType, NodeType, validate_edge
+from app.graph.projects import DEFAULT_PROJECT, sql_pattern
 from app.models.graph import GraphEdge, GraphNode
 from app.ports.entity_resolver import EntityResolver, NodeRef
 
@@ -56,39 +57,46 @@ class ContextGraphStore(Protocol):
 
     async def purge_phase(self, phase: str) -> dict[str, int]: ...
 
-    async def phase_edges(self, phase: str) -> set[tuple[str, str, str]]: ...
+    async def phase_edges(
+        self, phase: str, project: str = DEFAULT_PROJECT
+    ) -> set[tuple[str, str, str]]: ...
 
     async def retract(self, phase: str, edges: set[tuple[str, str, str]]) -> dict[str, int]: ...
 
-    async def index_provenance(self) -> dict[str, Any]: ...
+    async def index_provenance(self, project: str = DEFAULT_PROJECT) -> dict[str, Any]: ...
 
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]: ...
 
-    async def untested_criteria(self) -> list[dict[str, Any]]: ...
+    async def untested_criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]: ...
 
-    async def trace(self, criterion_id: str) -> dict[str, Any]: ...
+    async def trace(
+        self, criterion_id: str, project: str = DEFAULT_PROJECT
+    ) -> dict[str, Any]: ...
 
-    async def blast_radius(self, module_id: str) -> list[dict[str, Any]]: ...
+    async def blast_radius(
+        self, module_id: str, project: str = DEFAULT_PROJECT
+    ) -> list[dict[str, Any]]: ...
 
-    async def counts(self) -> dict[str, int]: ...
+    async def counts(self, project: str = DEFAULT_PROJECT) -> dict[str, int]: ...
 
-    async def modules(self) -> list[dict[str, Any]]: ...
+    async def modules(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]: ...
 
-    async def module_paths(self) -> dict[str, set[str]]: ...
+    async def module_paths(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]: ...
 
-    async def module_catalogue(self) -> list[dict[str, Any]]: ...
+    async def module_catalogue(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]: ...
 
-    async def module_dependents(self) -> dict[str, set[str]]: ...
+    async def module_dependents(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]: ...
 
     async def file_dependents(
         self,
+        project: str = DEFAULT_PROJECT,
         *,
         runtime_only: bool = True,
         include_tests: bool = True,
         include_contracts: bool = True,
     ) -> dict[str, set[str]]: ...
 
-    async def criteria(self) -> list[dict[str, Any]]: ...
+    async def criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]: ...
 
 
 class SqlContextGraph:
@@ -99,6 +107,18 @@ class SqlContextGraph:
         return await self._resolver.resolve(
             spec.type, spec.system, spec.external_id, spec.projection
         )
+
+    @staticmethod
+    def _of_project(project: str):
+        """Restrict a node query to one project.
+
+        Applied to nodes rather than edges because an edge has no project of
+        its own — it belongs to whichever project its endpoints do, and both
+        endpoints are always in the same one.
+        """
+        pattern, negate = sql_pattern(project)
+        column = GraphNode.system
+        return column.notlike(pattern) if negate else column.like(pattern)
 
     async def ingest(self, run_id: str, phase: str, assertions: list[Assertion]) -> int:
         """Write nodes and edges for one phase's observations.
@@ -174,18 +194,30 @@ class SqlContextGraph:
             await session.commit()
         return written
 
-    async def purge_phase(self, phase: str) -> dict[str, int]:
-        """Remove everything one phase asserted, and any node left orphaned.
+    async def purge_phase(
+        self, phase: str, project: str = DEFAULT_PROJECT
+    ) -> dict[str, int]:
+        """Remove everything one phase asserted about one project.
 
-        Derived structure is rebuilt, not migrated. What makes this safe is
-        that it is scoped by phase: an edge another phase wrote about the same
-        file is an audit record and stays, and so does the node it hangs from.
-        A node is only dropped once nothing at all refers to it.
+        Scoped by project as well as by phase. It used to be phase alone, so
+        re-indexing one repository deleted the code-intelligence graph of
+        every other — silently, because a deleted graph and an unseeded one
+        look identical to everything downstream.
         """
         async with get_sessionmaker()() as session:
-            edges = (
-                await session.execute(select(GraphEdge).where(GraphEdge.phase == phase))
-            ).scalars().all()
+            mine = {
+                n.id
+                for n in (
+                    await session.execute(select(GraphNode).where(self._of_project(project)))
+                ).scalars().all()
+            }
+            edges = [
+                edge
+                for edge in (
+                    await session.execute(select(GraphEdge).where(GraphEdge.phase == phase))
+                ).scalars().all()
+                if edge.src_id in mine or edge.dst_id in mine
+            ]
             touched = {e.src_id for e in edges} | {e.dst_id for e in edges}
             for edge in edges:
                 await session.delete(edge)
@@ -227,7 +259,9 @@ class SqlContextGraph:
         async with get_sessionmaker()() as session:
             nodes = {
                 n.id: n.external_id
-                for n in (await session.execute(select(GraphNode))).scalars().all()
+                for n in (
+                    await session.execute(select(GraphNode).where(self._of_project(project)))
+                ).scalars().all()
             }
             edges = (
                 await session.execute(select(GraphEdge).where(GraphEdge.phase == phase))
@@ -241,7 +275,10 @@ class SqlContextGraph:
         return out
 
     async def retract(
-        self, phase: str, edges: set[tuple[str, str, str]]
+        self,
+        phase: str,
+        edges: set[tuple[str, str, str]],
+        project: str = DEFAULT_PROJECT,
     ) -> dict[str, int]:
         """Withdraw specific assertions, and drop whatever they orphan.
 
@@ -255,7 +292,9 @@ class SqlContextGraph:
         async with get_sessionmaker()() as session:
             nodes = {
                 n.id: n.external_id
-                for n in (await session.execute(select(GraphNode))).scalars().all()
+                for n in (
+                    await session.execute(select(GraphNode).where(self._of_project(project)))
+                ).scalars().all()
             }
             stored = (
                 await session.execute(select(GraphEdge).where(GraphEdge.phase == phase))
@@ -295,7 +334,7 @@ class SqlContextGraph:
 
         return {"edges": len(doomed), "nodes": len(orphans)}
 
-    async def index_provenance(self) -> dict[str, Any]:
+    async def index_provenance(self, project: str = DEFAULT_PROJECT) -> dict[str, Any]:
         """Which snapshot of the codebase this graph currently holds.
 
         Every consumer that reads structure — impact, containment, retrieval —
@@ -306,9 +345,7 @@ class SqlContextGraph:
         async with get_sessionmaker()() as session:
             row = (
                 await session.execute(
-                    select(GraphNode)
-                    .where(GraphNode.type == NodeType.MODULE)
-                    .limit(1)
+                    select(GraphNode).where(GraphNode.type == NodeType.MODULE, self._of_project(project)).limit(1)
                 )
             ).scalars().first()
 
@@ -342,7 +379,7 @@ class SqlContextGraph:
                 for e in rows.scalars().all()
             ]
 
-    async def untested_criteria(self) -> list[dict[str, Any]]:
+    async def untested_criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         """Acceptance criteria with no scenario that reached a passing run.
 
         This is the query release readiness is gated on, and the reason the
@@ -352,7 +389,7 @@ class SqlContextGraph:
         async with get_sessionmaker()() as session:
             criteria = (
                 await session.execute(
-                    select(GraphNode).where(GraphNode.type == NodeType.ACCEPTANCE_CRITERION)
+                    select(GraphNode).where(GraphNode.type == NodeType.ACCEPTANCE_CRITERION, self._of_project(project))
                 )
             ).scalars().all()
 
@@ -375,7 +412,7 @@ class SqlContextGraph:
                 n.id
                 for n in (
                     await session.execute(
-                        select(GraphNode).where(GraphNode.type == NodeType.TEST_RUN)
+                        select(GraphNode).where(GraphNode.type == NodeType.TEST_RUN, self._of_project(project))
                     )
                 ).scalars().all()
                 if n.projection.get("status") == "passed"
@@ -395,7 +432,7 @@ class SqlContextGraph:
                 if c.id not in covered
             ]
 
-    async def trace(self, criterion_id: str) -> dict[str, Any]:
+    async def trace(self, criterion_id: str, project: str = DEFAULT_PROJECT) -> dict[str, Any]:
         """Everything reachable from one criterion, one hop at a time."""
         async with get_sessionmaker()() as session:
             edges = (
@@ -405,7 +442,9 @@ class SqlContextGraph:
             ).scalars().all()
             nodes = {
                 n.id: n
-                for n in (await session.execute(select(GraphNode))).scalars().all()
+                for n in (
+                    await session.execute(select(GraphNode).where(self._of_project(project)))
+                ).scalars().all()
             }
 
         def hop(edge_type: str, ids: set[str]) -> set[str]:
@@ -431,7 +470,7 @@ class SqlContextGraph:
             "defects": render(defects),
         }
 
-    async def blast_radius(self, module_id: str) -> list[dict[str, Any]]:
+    async def blast_radius(self, module_id: str, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         """Scenarios that cover a module, directly or through a dependent.
 
         Two hops is deliberate: it is what the code intelligence graph can
@@ -446,7 +485,9 @@ class SqlContextGraph:
             ).scalars().all()
             nodes = {
                 n.id: n
-                for n in (await session.execute(select(GraphNode))).scalars().all()
+                for n in (
+                    await session.execute(select(GraphNode).where(self._of_project(project)))
+                ).scalars().all()
             }
 
         dependents = {
@@ -463,31 +504,42 @@ class SqlContextGraph:
             if i in nodes
         ]
 
-    async def counts(self) -> dict[str, int]:
+    async def counts(self, project: str = DEFAULT_PROJECT) -> dict[str, int]:
         async with get_sessionmaker()() as session:
             nodes = (
                 await session.execute(
-                    select(GraphNode.type, func.count()).group_by(GraphNode.type)
+                    select(GraphNode.type, func.count())
+                    .where(self._of_project(project))
+                    .group_by(GraphNode.type)
                 )
             ).all()
-            edges = (
-                await session.execute(
-                    select(GraphEdge.type, func.count()).group_by(GraphEdge.type)
-                )
-            ).all()
+            # Edges have no project of their own, so they are counted through
+            # the nodes they connect rather than filtered directly.
+            mine = {
+                n.id
+                for n in (
+                    await session.execute(select(GraphNode).where(self._of_project(project)))
+                ).scalars().all()
+            }
+            edges_rows = (await session.execute(select(GraphEdge))).scalars().all()
+            edge_counts: dict[str, int] = {}
+            for edge in edges_rows:
+                if edge.src_id in mine or edge.dst_id in mine:
+                    edge_counts[edge.type] = edge_counts.get(edge.type, 0) + 1
+            edges = list(edge_counts.items())
         return {
             "nodes": {t: c for t, c in nodes},
             "edges": {t: c for t, c in edges},
         }
 
-    async def modules(self) -> list[dict[str, Any]]:
+    async def modules(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         """Derived modules with their outgoing dependencies, heaviest first."""
         async with get_sessionmaker()() as session:
             nodes = {
                 n.id: n
                 for n in (
                     await session.execute(
-                        select(GraphNode).where(GraphNode.type == NodeType.MODULE)
+                        select(GraphNode).where(GraphNode.type == NodeType.MODULE, self._of_project(project))
                     )
                 ).scalars().all()
             }
@@ -519,7 +571,7 @@ class SqlContextGraph:
             )
         return sorted(out, key=lambda c: -c["files"])
 
-    async def module_paths(self) -> dict[str, set[str]]:
+    async def module_paths(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]:
         """Module id to the file paths it owns.
 
         What the change review needs to decide whether an edit lands inside
@@ -527,7 +579,10 @@ class SqlContextGraph:
         """
         async with get_sessionmaker()() as session:
             nodes = {
-                n.id: n for n in (await session.execute(select(GraphNode))).scalars().all()
+                n.id: n
+                for n in (
+                    await session.execute(select(GraphNode).where(self._of_project(project)))
+                ).scalars().all()
             }
             edges = (
                 await session.execute(
@@ -545,11 +600,11 @@ class SqlContextGraph:
                 out.setdefault(module.external_id, set()).add(artifact.external_id)
         return out
 
-    async def criteria(self) -> list[dict[str, Any]]:
+    async def criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         async with get_sessionmaker()() as session:
             rows = (
                 await session.execute(
-                    select(GraphNode).where(GraphNode.type == NodeType.ACCEPTANCE_CRITERION)
+                    select(GraphNode).where(GraphNode.type == NodeType.ACCEPTANCE_CRITERION, self._of_project(project))
                 )
             ).scalars().all()
         return [
@@ -558,7 +613,7 @@ class SqlContextGraph:
             for r in rows
         ]
 
-    async def module_catalogue(self) -> list[dict[str, Any]]:
+    async def module_catalogue(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         """What the design agent is allowed to choose from.
 
         Modules with their dependencies in both directions and a sample of
@@ -595,7 +650,7 @@ class SqlContextGraph:
             for c in modules
         ]
 
-    async def module_dependents(self) -> dict[str, set[str]]:
+    async def module_dependents(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]:
         """Reverse dependency edges: module -> what depends on it.
 
         The impact set is derived from this rather than proposed, because an
@@ -606,7 +661,7 @@ class SqlContextGraph:
                 n.id: n
                 for n in (
                     await session.execute(
-                        select(GraphNode).where(GraphNode.type == NodeType.MODULE)
+                        select(GraphNode).where(GraphNode.type == NodeType.MODULE, self._of_project(project))
                     )
                 ).scalars().all()
             }
@@ -628,6 +683,7 @@ class SqlContextGraph:
 
     async def file_dependents(
         self,
+        project: str = DEFAULT_PROJECT,
         *,
         runtime_only: bool = True,
         include_tests: bool = True,
@@ -660,7 +716,7 @@ class SqlContextGraph:
                 n.id: n.external_id
                 for n in (
                     await session.execute(
-                        select(GraphNode).where(GraphNode.type == NodeType.SOURCE_ARTIFACT)
+                        select(GraphNode).where(GraphNode.type == NodeType.SOURCE_ARTIFACT, self._of_project(project))
                     )
                 ).scalars().all()
             }

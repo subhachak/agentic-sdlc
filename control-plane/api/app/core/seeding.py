@@ -17,6 +17,8 @@ from typing import Any
 
 from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
 from app.core.source_kinds import is_test_path
+from app.graph.projects import DEFAULT_PROJECT, scoped
+from app.graph.projects import validate as validate_project
 from app.ports.code_intelligence import CodeIndex, CodeIntelligence
 
 CODE_SYSTEM = "code"
@@ -25,8 +27,14 @@ CODE_SYSTEM = "code"
 CODE_INDEX_PHASE = "code-index"
 
 
-def assertions_from_index(index: CodeIndex) -> list[Assertion]:
+def assertions_from_index(
+    index: CodeIndex, project: str = DEFAULT_PROJECT
+) -> list[Assertion]:
     prov = index.provenance
+    # The project qualifies the system, which is what makes two projects'
+    # identical file paths distinct identities rather than one overwriting
+    # the other's projections.
+    system = scoped(CODE_SYSTEM, project)
     # Carried on every module rather than kept in the seed's return value,
     # because the consumer that needs it — the design review, deciding whether
     # this graph is good enough to derive an impact set from — reads the graph,
@@ -41,7 +49,7 @@ def assertions_from_index(index: CodeIndex) -> list[Assertion]:
     metadata = {f.path: f for f in index.files}
 
     def module(cid: str, **projection: Any) -> NodeSpec:
-        return NodeSpec("MODULE", CODE_SYSTEM, cid, projection)
+        return NodeSpec("MODULE", system, cid, projection)
 
     def artifact(path: str, **extra: Any) -> NodeSpec:
         """A file node carrying what is true of the file itself.
@@ -60,7 +68,7 @@ def assertions_from_index(index: CodeIndex) -> list[Assertion]:
                 loc=meta.loc,
                 exports=meta.exports,
             )
-        return NodeSpec("SOURCE_ARTIFACT", CODE_SYSTEM, path, projection)
+        return NodeSpec("SOURCE_ARTIFACT", system, path, projection)
 
     assertions: list[Assertion] = []
 
@@ -145,6 +153,7 @@ async def seed(
     repo: str,
     ref: str = "main",
     run_id: str = "seed",
+    project: str = DEFAULT_PROJECT,
     rebuild: bool = True,
 ) -> dict[str, Any]:
     """Index a repository and write its structure into the context graph.
@@ -160,14 +169,16 @@ async def seed(
     a file, and the nodes carrying them, survive: those are audit records, not
     derived structure.
     """
+    project = validate_project(project)
     index = await indexer.index(repo, ref)
-    assertions = assertions_from_index(index)
+    assertions = assertions_from_index(index, project)
 
-    removed = await graph.purge_phase(CODE_INDEX_PHASE) if rebuild else {}
+    removed = await graph.purge_phase(CODE_INDEX_PHASE, project) if rebuild else {}
     written = await graph.ingest(run_id, CODE_INDEX_PHASE, assertions)
 
     prov = index.provenance
     return {
+        "project": project,
         "repo": index.repo,
         "ref": index.ref,
         "commit_sha": prov.commit_sha,
@@ -213,6 +224,7 @@ async def refresh(
     repo: str,
     ref: str = "main",
     run_id: str = "seed",
+    project: str = DEFAULT_PROJECT,
 ) -> dict[str, Any]:
     """Bring the graph up to date, and say what changed.
 
@@ -229,20 +241,22 @@ async def refresh(
     file's import resolves. What this avoids is rewriting a graph that mostly
     did not change, and losing the ability to report on the part that did.
     """
+    project = validate_project(project)
     index = await indexer.index(repo, ref)
-    assertions = assertions_from_index(index)
+    assertions = assertions_from_index(index, project)
 
-    before = await graph.phase_edges(CODE_INDEX_PHASE)
+    before = await graph.phase_edges(CODE_INDEX_PHASE, project)
     after = _edge_keys(assertions)
 
     added = after - before
     removed = before - after
 
-    retracted = await graph.retract(CODE_INDEX_PHASE, removed) if removed else {"edges": 0, "nodes": 0}
+    retracted = await graph.retract(CODE_INDEX_PHASE, removed, project) if removed else {"edges": 0, "nodes": 0}
     written = await graph.ingest(run_id, CODE_INDEX_PHASE, assertions)
 
     prov = index.provenance
     return {
+        "project": project,
         "repo": index.repo,
         "ref": index.ref,
         "commit_sha": prov.commit_sha,
