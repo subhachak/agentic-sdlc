@@ -76,7 +76,9 @@ class ContextGraphStore(Protocol):
 
     async def module_dependents(self) -> dict[str, set[str]]: ...
 
-    async def file_dependents(self) -> dict[str, set[str]]: ...
+    async def file_dependents(
+        self, *, runtime_only: bool = True, include_tests: bool = True
+    ) -> dict[str, set[str]]: ...
 
     async def criteria(self) -> list[dict[str, Any]]: ...
 
@@ -230,6 +232,8 @@ class SqlContextGraph:
             "indexer_version": projection.get("indexer_version"),
             "indexed_at": projection.get("indexed_at"),
             "pinned": bool(projection.get("commit_sha")),
+            "internal_capture_rate": projection.get("internal_capture_rate"),
+            "most_missed": projection.get("most_missed") or [],
         }
 
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]:
@@ -477,7 +481,9 @@ class SqlContextGraph:
         modules = await self.modules()
         paths = await self.module_paths()
         dependents = await self.module_dependents()
-        fan_in = await self.file_dependents()
+        # Product coupling only: a module's hubs should describe the
+        # product, not which of its files the test suite imports most.
+        fan_in = await self.file_dependents(include_tests=False)
 
         def hubs(module_paths: set[str]) -> list[str]:
             """The files inside a module that most things import.
@@ -533,12 +539,21 @@ class SqlContextGraph:
                 out.setdefault(dst.external_id, set()).add(src.external_id)
         return out
 
-    async def file_dependents(self) -> dict[str, set[str]]:
+    async def file_dependents(
+        self, *, runtime_only: bool = True, include_tests: bool = True
+    ) -> dict[str, set[str]]:
         """File to the files that import it.
 
         The unit of truth for impact. Rolling this up to modules before
         traversing gives every file in a directory the same blast radius,
         which cannot distinguish a leaf from a hub.
+
+        Filtered by edge kind rather than at index time, because the right
+        answer differs per caller. Impact and hub ranking want runtime product
+        coupling: a type-only import is erased at compile time, and counting
+        test importers ranks a module by how well tested it is. Regression
+        scoping wants the test edges specifically — they are how you find
+        which tests to run.
         """
         async with get_sessionmaker()() as session:
             nodes = {
@@ -560,6 +575,14 @@ class SqlContextGraph:
 
         out: dict[str, set[str]] = {}
         for edge in edges:
+            attributes = edge.attributes or {}
+            # An edge written before classification existed carries neither
+            # attribute. Reading those as runtime product code keeps an older
+            # graph usable rather than silently emptying it.
+            if runtime_only and attributes.get("kind", "runtime") != "runtime":
+                continue
+            if not include_tests and attributes.get("from_test", False):
+                continue
             src, dst = nodes.get(edge.src_id), nodes.get(edge.dst_id)
             if src and dst:
                 out.setdefault(dst, set()).add(src)

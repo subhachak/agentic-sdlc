@@ -180,3 +180,20 @@ def test_the_api_contract_covers_the_filter_parameter():
     contract = api_contract()
     assert "?status=" in contract
     assert "case-insensitive" in contract
+
+
+# --- path identity ---------------------------------------------------------
+
+
+def test_a_similar_looking_path_does_not_pull_a_module_into_scope():
+    """The old lookup asked whether a graph path appeared anywhere inside a
+    changed path, so `demo-app/app/claims/page.tsx` was matched by anything
+    containing it — and a module could be scoped in by a file that merely
+    shares a prefix."""
+    assert modules_for_paths(["vendor/demo-app/app/claims/page.tsx"]) == set()
+    assert modules_for_paths(["demo-app/app/claims/page.tsx.bak"]) == set()
+
+
+def test_paths_match_regardless_of_leading_slash_or_dot():
+    assert modules_for_paths(["./demo-app/app/api/claims/route.ts"]) == {"claims-api"}
+    assert modules_for_paths(["/demo-app/app/api/claims/route.ts"]) == {"claims-api"}

@@ -43,6 +43,12 @@ class CodeDependency(BaseModel):
 class FileImport(BaseModel):
     source: str
     target: str
+    # "runtime" or "type-only". A type-only import is erased at compile time:
+    # real coupling for a type checker, none at runtime.
+    kind: str = "runtime"
+    # Whether the importing file is test code. Kept rather than filtered —
+    # regression scoping wants these edges, hub ranking does not.
+    from_test: bool = False
 
 
 class IndexProvenance(BaseModel):
@@ -64,6 +70,9 @@ class IndexProvenance(BaseModel):
     external_package: int = 0
     unresolved_relative: int = 0
     unresolved_internal: int = 0
+    type_only: int = 0
+    from_tests: int = 0
+    runtime_product: int = 0
     # resolved / (resolved + unresolved). The headline completeness number.
     internal_capture_rate: float = 1.0
     most_missed: list[tuple[str, int]] = Field(default_factory=list)

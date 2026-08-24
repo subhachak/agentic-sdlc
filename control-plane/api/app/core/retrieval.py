@@ -25,6 +25,8 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from app.core.source_kinds import is_test_path
+
 # Chunk text is capped so one enormous generated file cannot dominate a
 # prompt. Truncation is marked, because an agent that cannot see a file ends
 # should know that rather than infer it.
@@ -57,25 +59,6 @@ PATH_WEIGHT = 2
 # a test is often the clearest statement of intended behaviour. It just must
 # not be what an agent designs against.
 TEST_PENALTY = 0.35
-
-_TEST_MARKERS = (
-    "/tests/", "/test/", "/__tests__/", "/spec/",
-    "/test-scripts/", "/generated-tests/", "/e2e/", "/evals/",
-)
-_TEST_FILENAMES = ("conftest.py", "setup.py")
-
-def is_test_path(path: str) -> bool:
-    """Whether a path is test or fixture code rather than product code."""
-    lowered = path.lower()
-    name = lowered.rsplit("/", 1)[-1]
-    return (
-        any(marker in f"/{lowered}" for marker in _TEST_MARKERS)
-        or name.startswith("test_")
-        or name.endswith(("_test.py", ".spec.ts", ".spec.tsx", ".spec.js",
-                          ".test.ts", ".test.tsx", ".test.js"))
-        or name in _TEST_FILENAMES
-        or "doubles" in name
-    )
 
 
 _JS_SYMBOL = re.compile(

@@ -18,6 +18,7 @@ from app.adapters.code_intelligence.parsing import (
     is_ignored,
     is_source,
     load_aliases,
+    load_alias_sets,
     parse_imports,
     resolve_js,
     resolve_py,
@@ -84,18 +85,130 @@ def test_a_tsconfig_with_comments_still_parses():
 # --- resolution ------------------------------------------------------------
 
 
+ROOT_ALIASES = load_alias_sets({"tsconfig.json": '{"compilerOptions":{"paths":{"@/*":["./*"]}}}'})
+
+
 def test_a_relative_js_import_resolves_through_extensions():
     known = {"src/lib/util.ts", "src/app/page.tsx"}
-    assert resolve_js("../lib/util", "src/app/page.tsx", known, {}, "") == "src/lib/util.ts"
+    assert resolve_js("../lib/util", "src/app/page.tsx", known, []) == "src/lib/util.ts"
 
 
 def test_an_aliased_js_import_resolves():
     known = {"lib/data.json", "app/page.tsx"}
-    assert resolve_js("@/lib/data.json", "app/page.tsx", known, {"@/": ""}, "") == "lib/data.json"
+    assert resolve_js("@/lib/data.json", "app/page.tsx", known, ROOT_ALIASES) == "lib/data.json"
 
 
 def test_an_external_package_resolves_to_nothing():
-    assert resolve_js("react", "app/page.tsx", {"app/page.tsx"}, {}, "") is None
+    assert resolve_js("react", "app/page.tsx", {"app/page.tsx"}, ROOT_ALIASES) is None
+
+
+def test_a_tsconfig_whose_paths_contain_a_star_still_parses():
+    """The bug that actually dropped this repository's 19 aliased edges. A
+    regex block-comment strip sees `/*` inside `"@/*"` and deletes everything
+    up to the next `*/`, which is inside `"**/*.ts"` further down — taking the
+    whole `paths` block with it. The config then fails to parse and every
+    aliased import in that package is filed as an npm package."""
+    text = """{
+      "compilerOptions": {
+        "paths": { "@/*": ["./src/*"] }
+      },
+      "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"]
+    }"""
+
+    assert load_aliases(text) == {"@/": "src/"}
+
+
+def test_real_comments_are_still_stripped():
+    text = """{
+      // the source root
+      "compilerOptions": {
+        /* block comment */
+        "paths": { "@/*": ["./app/*"] }
+      }
+    }"""
+
+    assert load_aliases(text) == {"@/": "app/"}
+
+
+def test_a_comment_marker_inside_a_string_is_not_a_comment():
+    text = '{"compilerOptions":{"paths":{"@/*":["./a//b/*"]}}}'
+    assert load_aliases(text) == {"@/": "a//b/"}
+
+
+def test_each_package_resolves_against_its_own_tsconfig():
+    """The bug this exists to catch: one tsconfig applied to a whole monorepo.
+    Both packages map `@/*` to their own root, so a single alias table sends
+    every import in one of them to a file that does not exist. Measured on
+    this repository, that dropped 19 edges — and reported 3."""
+    tsconfigs = {
+        "web/tsconfig.json": '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["./src/*"]}}}',
+        "docs/tsconfig.json": '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["./lib/*"]}}}',
+    }
+    alias_sets = load_alias_sets(tsconfigs)
+    known = {"web/src/api.ts", "docs/lib/api.ts", "web/page.tsx", "docs/page.tsx"}
+
+    assert resolve_js("@/api", "web/page.tsx", known, alias_sets) == "web/src/api.ts"
+    assert resolve_js("@/api", "docs/page.tsx", known, alias_sets) == "docs/lib/api.ts"
+
+
+def test_the_nearest_tsconfig_wins_over_one_further_up():
+    tsconfigs = {
+        "tsconfig.json": '{"compilerOptions":{"paths":{"@/*":["./shared/*"]}}}',
+        "web/tsconfig.json": '{"compilerOptions":{"paths":{"@/*":["./src/*"]}}}',
+    }
+    alias_sets = load_alias_sets(tsconfigs)
+    known = {"shared/api.ts", "web/src/api.ts", "web/page.tsx", "page.tsx"}
+
+    assert resolve_js("@/api", "web/page.tsx", known, alias_sets) == "web/src/api.ts"
+    assert resolve_js("@/api", "page.tsx", known, alias_sets) == "shared/api.ts"
+
+
+# --- edge classification ---------------------------------------------------
+
+
+def test_a_type_only_import_is_marked_as_erasable():
+    """`import type` is real coupling for a type checker and none at runtime.
+    Counting it as a runtime edge overstates what a change can break."""
+    sources = {
+        "web/a.ts": "import type { Claim } from './model'\nimport { fetchClaims } from './api'",
+        "web/model.ts": "export type Claim = { id: string }",
+        "web/api.ts": "export function fetchClaims() {}",
+    }
+    _, _, imports, stats = build_index(sources, max_depth=1)
+    by_target = {i.target: i for i in imports}
+
+    assert by_target["web/model.ts"].kind == "type-only"
+    assert by_target["web/api.ts"].kind == "runtime"
+    assert stats.type_only == 1
+    assert stats.runtime_product == 1
+
+
+def test_an_import_used_both_ways_counts_as_runtime():
+    sources = {
+        "web/a.ts": "import type { Claim } from './model'\nimport { load } from './model'",
+        "web/model.ts": "export function load() {}",
+    }
+    _, _, imports, _ = build_index(sources, max_depth=1)
+    assert [i.kind for i in imports] == ["runtime"]
+
+
+def test_a_test_file_import_is_marked_and_kept_out_of_the_module_rollup():
+    """30% of this repository's import edges originate in tests. They are real
+    edges — they are how you find which tests to run — but a module's
+    dependents should describe the product, not its test suite."""
+    sources = {
+        "app/core/db.py": "",
+        "app/api/route.py": "from app.core.db import x",
+        "tests/test_db.py": "from app.core.db import x",
+    }
+    _, pairs, imports, stats = build_index(sources, max_depth=2)
+    by_source = {i.source: i for i in imports}
+
+    assert by_source["tests/test_db.py"].from_test is True
+    assert by_source["app/api/route.py"].from_test is False
+    assert stats.from_tests == 1
+    # The test edge survives at file level and is absent from the rollup.
+    assert pairs == [("app/api", "app/core")]
 
 
 def test_a_python_import_resolves_inside_a_source_root():
@@ -369,7 +482,7 @@ def test_file_level_imports_are_kept_not_only_the_module_aggregate():
     }
     _, pairs, imports, _ = build_index(sources, max_depth=2)
 
-    assert sorted(imports) == [
+    assert sorted((i.source, i.target) for i in imports) == [
         ("app/api/route.py", "app/core/db.py"),
         ("app/core/svc.py", "app/core/db.py"),
     ]

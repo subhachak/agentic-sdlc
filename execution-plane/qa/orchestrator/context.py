@@ -34,14 +34,36 @@ def _load_code_graph() -> dict[str, Any]:
     return json.loads(CODE_GRAPH_FILE.read_text())
 
 
+def _normalise(path: str) -> str:
+    """One canonical repository-relative form for a path.
+
+    Both sides of the comparison have to agree on what a path *is* before
+    equality means anything: git emits repository-relative paths, the graph
+    holds whatever was written into it, and a leading `./` or `/` in either
+    turns a match into a miss.
+    """
+    return path.strip().lstrip("/").removeprefix("./")
+
+
 def modules_for_paths(changed_paths: list[str]) -> set[str]:
-    """Which modules a set of changed files belongs to."""
+    """Which modules a set of changed files belongs to.
+
+    Matched by exact path, or by directory prefix for a module that names a
+    directory rather than files. The previous check asked whether a graph path
+    appeared anywhere inside a changed path — so `app/claims` matched
+    `vendor/app/claims-archive/x.ts`, and a module could be pulled into scope
+    by a file that has nothing to do with it.
+    """
     graph = _load_code_graph()
+    changed = {_normalise(path) for path in changed_paths}
     hits: set[str] = set()
+
     for module in graph.get("modules", []):
-        for path in module.get("paths", []):
-            if any(path in changed for changed in changed_paths):
+        for raw in module.get("paths", []):
+            owned = _normalise(raw)
+            if owned in changed or any(c.startswith(f"{owned}/") for c in changed):
                 hits.add(module["id"])
+                break
     return hits
 
 

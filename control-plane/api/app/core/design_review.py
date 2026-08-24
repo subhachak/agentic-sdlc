@@ -8,7 +8,14 @@ before an agent is asked to implement it.
 
 The impact set is derived rather than proposed: whatever the design names,
 plus everything that depends on it, according to the graph. An architect can
-be wrong about consequences; the dependency edges cannot.
+be wrong about consequences, and a derived answer is at least reproducible.
+
+The edges can still be wrong. They are extracted statically, so they miss
+coupling that only exists at runtime — an HTTP call between two services
+produces no import edge at all — and they can resolve to the wrong file where
+a package name is ambiguous. The index reports its own capture rate for
+exactly this reason, and this module refuses to review against a graph too
+poor to review against.
 """
 
 from __future__ import annotations
@@ -17,6 +24,13 @@ from dataclasses import dataclass, field
 
 MAX_MODULES = 6
 MAX_FILES = 15
+
+# Below this share of internal imports resolved, the graph does not know
+# enough about the codebase for containment to mean anything: the modules a
+# design names may be right and the impact set will still be missing edges
+# nobody can see. Refusing is the only honest answer, and it is actionable —
+# the seed says which specifiers it could not resolve.
+MIN_CAPTURE_RATE = 0.80
 
 
 @dataclass
@@ -63,6 +77,7 @@ def review(
     known_modules: dict[str, set[str]],
     file_dependents: dict[str, set[str]] | None = None,
     known_criteria: set[str] | None = None,
+    graph_quality: dict | None = None,
 ) -> DesignReview:
     reasons: list[str] = []
     modules = [c for c in proposal.get("modules", []) if c]
@@ -71,13 +86,35 @@ def review(
     path_to_module = {p: m for m, paths in known_modules.items() for p in paths}
 
     if not known_modules:
-        # Nothing to check against. Say so rather than passing silently: a
-        # design validated against an empty graph has not been validated.
+        # Nothing to check against, so nothing was checked. This used to
+        # return allowed=True with a note, which meant the one condition
+        # guaranteeing containment could not work was also the one condition
+        # that let every design through.
         return DesignReview(
-            True,
-            ["the context graph is empty — the design was not validated against it"],
-            impact_set(files, file_dependents or {}, path_to_module),
+            False,
+            [
+                "the context graph holds no modules, so this design cannot be "
+                "validated against the codebase — seed the graph from a repository "
+                "before running a design phase"
+            ],
+            {"files": [], "modules": []},
         )
+
+    if graph_quality is not None:
+        capture = graph_quality.get("internal_capture_rate")
+        if capture is not None and capture < MIN_CAPTURE_RATE:
+            missed = graph_quality.get("most_missed") or []
+            examples = ", ".join(spec for spec, _ in missed[:3])
+            return DesignReview(
+                False,
+                [
+                    f"the code index resolved only {capture:.1%} of imports that look "
+                    f"internal, below the {MIN_CAPTURE_RATE:.0%} needed to derive an "
+                    f"impact set that can be trusted"
+                    + (f" — unresolved: {examples}" if examples else "")
+                ],
+                {"files": [], "modules": []},
+            )
 
     if not modules:
         reasons.append("the design names no modules")

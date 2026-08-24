@@ -26,10 +26,16 @@ CODE_INDEX_PHASE = "code-index"
 
 def assertions_from_index(index: CodeIndex) -> list[Assertion]:
     prov = index.provenance
+    # Carried on every module rather than kept in the seed's return value,
+    # because the consumer that needs it — the design review, deciding whether
+    # this graph is good enough to derive an impact set from — reads the graph,
+    # not the log line from whenever it was last seeded.
     stamp = {
         "commit_sha": prov.commit_sha,
         "indexer_version": prov.indexer_version,
         "indexed_at": prov.indexed_at,
+        "internal_capture_rate": prov.internal_capture_rate,
+        "most_missed": prov.most_missed[:5],
     }
     metadata = {f.path: f for f in index.files}
 
@@ -76,9 +82,16 @@ def assertions_from_index(index: CodeIndex) -> list[Assertion]:
                 "IMPORTS",
                 artifact(imported.source),
                 artifact(imported.target),
-                # Provenance per edge: this one was derived by regex
-                # extraction, not observed at runtime or declared by a human.
-                {"provenance": "static-import", "indexer_version": prov.indexer_version},
+                # Provenance per edge: derived by static extraction, not
+                # observed at runtime or declared by a human. `kind` and
+                # `from_test` are what let a consumer ask for runtime product
+                # coupling without losing the edges it did not want.
+                {
+                    "provenance": "static-import",
+                    "indexer_version": prov.indexer_version,
+                    "kind": imported.kind,
+                    "from_test": imported.from_test,
+                },
             )
         )
 
@@ -144,6 +157,9 @@ async def seed(
                 "external_package",
                 "unresolved_relative",
                 "unresolved_internal",
+                "type_only",
+                "from_tests",
+                "runtime_product",
                 "internal_capture_rate",
                 "most_missed",
             }

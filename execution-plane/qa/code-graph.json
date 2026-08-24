@@ -1,5 +1,5 @@
 {
-  "_comment": "Seeded code-intelligence graph. In production this is derived from the repository \u2014 imports, ownership, historical co-change. Seeded here so blast-radius test selection is demonstrable without building the deriver first.",
+  "_comment": "Seeded code-intelligence graph. In production this is derived from the repository and generated as a pinned export of the context graph \u2014 it is hand-authored here only until that export exists. Paths are repository-relative, matching what `git diff --name-status` emits: they used to be relative to demo-app/ and matched only because the lookup compared by substring, which also matched paths that had nothing to do with the module.",
   "depends_on": [
     {
       "from": "claims-table",
@@ -14,7 +14,7 @@
     {
       "id": "claims-table",
       "paths": [
-        "app/claims/page.tsx"
+        "demo-app/app/claims/page.tsx"
       ],
       "covered_by": [
         "claims-table-renders"
@@ -23,7 +23,7 @@
     {
       "id": "claims-filter",
       "paths": [
-        "app/claims/page.tsx"
+        "demo-app/app/claims/page.tsx"
       ],
       "covered_by": [
         "filter-approved",
@@ -34,7 +34,7 @@
     {
       "id": "claims-api",
       "paths": [
-        "app/api/claims/route.ts"
+        "demo-app/app/api/claims/route.ts"
       ],
       "covered_by": [
         "api-status-param"

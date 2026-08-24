@@ -19,7 +19,7 @@ from app.core.audit import AuditLogger
 from app.core.gate_controller import GateController
 from app.core.graph_runtime import spawn_run
 from app.ports.work_dispatch import DispatchResult
-from tests.graph_doubles import InMemoryContextGraph
+from tests.graph_doubles import seeded_graph
 from tests.implementation_doubles import StubSourceControl, WritingLLMProvider
 from tests.dispatch_doubles import (
     SUCCESS,
@@ -37,7 +37,7 @@ from tests.test_graph_runtime import (
 )
 
 
-def _graph(work_dispatch, store):
+async def _graph(work_dispatch, store):
     logger = AuditLogger(InMemoryAuditSink())
     nodes = build_nodes(
         requirements_source=StubRequirementsSource(),
@@ -46,7 +46,7 @@ def _graph(work_dispatch, store):
         build_deploy=StubBuildDeploy(),
         work_dispatch=work_dispatch,
         dispatch_store=store,
-        context_graph=InMemoryContextGraph(),
+        context_graph=await seeded_graph(),
         llm_provider=WritingLLMProvider(),
         source_control=StubSourceControl(),
         audit_logger=logger,
@@ -82,7 +82,7 @@ async def test_resuming_does_not_trigger_a_second_dispatch():
     second workflow run: minutes burned, the data store mutated again, and a
     result nothing will ever read."""
     dispatcher, store = StubWorkDispatch(), InMemoryDispatchStore()
-    graph = _graph(dispatcher, store)
+    graph = await _graph(dispatcher, store)
 
     result = await _drive_to_qa(graph, "run-a")
     assert result["status"] == "awaiting_qa_execution"
@@ -133,7 +133,7 @@ async def test_a_result_is_queued_not_lost_while_the_thread_is_busy():
     await asyncio.sleep(0)
 
     applied = await reconciler.apply_results(
-        graph=_graph(StubWorkDispatch(), store), active_tasks=active_tasks, store=store
+        graph=await _graph(StubWorkDispatch(), store), active_tasks=active_tasks, store=store
     )
     assert applied == 1
     assert await store.list_unapplied() == []
@@ -144,7 +144,7 @@ async def test_a_result_is_applied_only_once():
     store = InMemoryDispatchStore()
     row = await store.claim("run-c", "qa", "stub", 60)
     await store.resolve(row.id, SUCCESS)
-    graph = _graph(StubWorkDispatch(), store)
+    graph = await _graph(StubWorkDispatch(), store)
 
     first = await reconciler.apply_results(graph, {}, store)
     second = await reconciler.apply_results(graph, {}, store)
@@ -172,7 +172,7 @@ async def test_an_overdue_dispatch_times_out_instead_of_hanging():
 @pytest.mark.asyncio
 async def test_a_timed_out_run_ends_and_never_reaches_gate_3():
     store = InMemoryDispatchStore()
-    graph = _graph(StubWorkDispatch(), store)
+    graph = await _graph(StubWorkDispatch(), store)
     await _drive_to_qa(graph, "run-e")
 
     result = await graph.ainvoke(
@@ -187,7 +187,7 @@ async def test_a_timed_out_run_ends_and_never_reaches_gate_3():
 @pytest.mark.asyncio
 async def test_a_failed_ci_run_ends_and_never_reaches_gate_3():
     store = InMemoryDispatchStore()
-    graph = _graph(StubWorkDispatch(), store)
+    graph = await _graph(StubWorkDispatch(), store)
     await _drive_to_qa(graph, "run-f")
 
     result = await graph.ainvoke(
@@ -207,7 +207,7 @@ async def test_an_untriggerable_job_resolves_as_failed_rather_than_retrying():
     """A trigger that raises must not leave a pending row behind, or the run
     would wait out its whole deadline for a job that was never created."""
     store = InMemoryDispatchStore()
-    graph = _graph(ExplodingWorkDispatch(), store)
+    graph = await _graph(ExplodingWorkDispatch(), store)
 
     await _drive_to_qa(graph, "run-g")
 
@@ -222,7 +222,7 @@ async def test_an_untriggerable_job_resolves_as_failed_rather_than_retrying():
 @pytest.mark.asyncio
 async def test_a_successful_run_carries_its_evidence_into_gate_3():
     store = InMemoryDispatchStore()
-    graph = _graph(StubWorkDispatch(SUCCESS), store)
+    graph = await _graph(StubWorkDispatch(SUCCESS), store)
     await _drive_to_qa(graph, "run-h")
 
     result = await graph.ainvoke(

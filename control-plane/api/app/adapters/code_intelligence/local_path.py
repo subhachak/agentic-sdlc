@@ -29,7 +29,7 @@ class LocalPathCodeIntelligence:
 
         sources: dict[str, str] = {}
         skipped = 0
-        tsconfig: str | None = None
+        tsconfigs: dict[str, str] = {}
 
         for path in sorted(base.rglob("*")):
             if not path.is_file():
@@ -37,8 +37,9 @@ class LocalPathCodeIntelligence:
             rel = path.relative_to(base).as_posix()
             if is_ignored(rel):
                 continue
-            if rel.endswith("tsconfig.json") and tsconfig is None:
-                tsconfig = path.read_text(encoding="utf-8", errors="replace")
+            # Every config, not the first: a monorepo has one per package.
+            if rel.endswith(("tsconfig.json", "jsconfig.json")):
+                tsconfigs[rel] = path.read_text(encoding="utf-8", errors="replace")
                 continue
             if not is_source(rel):
                 continue
@@ -48,7 +49,7 @@ class LocalPathCodeIntelligence:
             sources[rel] = path.read_text(encoding="utf-8", errors="replace")
 
         return _index_from_sources(
-            _repo_identity(base), ref, sources, skipped, tsconfig,
+            _repo_identity(base), ref, sources, skipped, tsconfigs,
             self._max_depth, _head_sha(base),
         )
 

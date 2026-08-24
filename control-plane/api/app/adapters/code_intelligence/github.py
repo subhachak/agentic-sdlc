@@ -25,7 +25,7 @@ from app.adapters.code_intelligence.parsing import (
     file_metadata,
     is_ignored,
     is_source,
-    load_aliases,
+    load_alias_sets,
 )
 from app.ports.code_intelligence import (
     CodeDependency,
@@ -63,11 +63,11 @@ class GitHubCodeIntelligence:
 
     async def index(self, repo: str, ref: str = "main") -> CodeIndex:
         archive = await self._fetch_archive(repo, ref)
-        sources, skipped, tsconfig, commit_sha = _read_archive(archive)
+        sources, skipped, tsconfigs, commit_sha = _read_archive(archive)
         if commit_sha is None:
             commit_sha = await self._resolve_sha(repo, ref)
         return _index_from_sources(
-            repo, ref, sources, skipped, tsconfig, self._max_depth, commit_sha
+            repo, ref, sources, skipped, tsconfigs, self._max_depth, commit_sha
         )
 
     async def _resolve_sha(self, repo: str, ref: str) -> str | None:
@@ -139,7 +139,9 @@ class GitHubCodeIntelligence:
 _WRAPPER_SHA = re.compile(r"-([0-9a-f]{40})$")
 
 
-def _read_archive(blob: bytes) -> tuple[dict[str, str], int, str | None, str | None]:
+def _read_archive(
+    blob: bytes,
+) -> tuple[dict[str, str], int, dict[str, str], str | None]:
     """Pull source text out of a tarball, stripping GitHub's wrapper directory.
 
     Also returns the commit the archive was cut from, when the wrapper name
@@ -148,7 +150,7 @@ def _read_archive(blob: bytes) -> tuple[dict[str, str], int, str | None, str | N
     """
     sources: dict[str, str] = {}
     skipped = 0
-    tsconfig: str | None = None
+    tsconfigs: dict[str, str] = {}
     commit_sha: str | None = None
 
     with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as archive:
@@ -163,10 +165,12 @@ def _read_archive(blob: bytes) -> tuple[dict[str, str], int, str | None, str | N
             if not path or is_ignored(path):
                 continue
 
-            if path.endswith("tsconfig.json") and tsconfig is None:
+            # Every config, not the first: a monorepo has one per package and
+            # each maps its aliases to its own source root.
+            if path.endswith(("tsconfig.json", "jsconfig.json")):
                 handle = archive.extractfile(member)
                 if handle:
-                    tsconfig = handle.read().decode("utf-8", "replace")
+                    tsconfigs[path] = handle.read().decode("utf-8", "replace")
                 continue
 
             if not is_source(path):
@@ -180,7 +184,7 @@ def _read_archive(blob: bytes) -> tuple[dict[str, str], int, str | None, str | N
                 continue
             sources[path] = handle.read().decode("utf-8", "replace")
 
-    return sources, skipped, tsconfig, commit_sha
+    return sources, skipped, tsconfigs, commit_sha
 
 
 def _index_from_sources(
@@ -188,13 +192,12 @@ def _index_from_sources(
     ref: str,
     sources: dict[str, str],
     skipped: int,
-    tsconfig: str | None,
+    tsconfigs: dict[str, str],
     max_depth: int,
     commit_sha: str | None = None,
 ) -> CodeIndex:
-    aliases = load_aliases(tsconfig)
     modules, pairs, imports, stats = build_index(
-        sources, aliases=aliases, alias_root="", max_depth=max_depth
+        sources, alias_sets=load_alias_sets(tsconfigs), max_depth=max_depth
     )
 
     by_component: dict[str, list[str]] = {}
@@ -220,7 +223,10 @@ def _index_from_sources(
             CodeDependency(source=s, target=t, weight=w)
             for (s, t), w in sorted(weights.items())
         ],
-        imports=[FileImport(source=a, target=b) for a, b in sorted(set(imports))],
+        imports=[
+            FileImport(source=i.source, target=i.target, kind=i.kind, from_test=i.from_test)
+            for i in sorted(set(imports), key=lambda i: (i.source, i.target, i.kind))
+        ],
         provenance=IndexProvenance(
             commit_sha=commit_sha,
             indexer_version=INDEXER_VERSION,

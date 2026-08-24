@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.context_graph import Assertion
+from app.core.context_graph import Assertion, NodeSpec
 from app.graph.identity import node_id
 from app.graph.ontology import EdgeType, NodeType, validate_edge
 
@@ -44,6 +44,8 @@ class InMemoryContextGraph:
             "indexer_version": projection.get("indexer_version"),
             "indexed_at": projection.get("indexed_at"),
             "pinned": bool(projection.get("commit_sha")),
+            "internal_capture_rate": projection.get("internal_capture_rate"),
+            "most_missed": projection.get("most_missed") or [],
         }
 
     async def purge_phase(self, phase: str) -> dict[str, int]:
@@ -163,12 +165,58 @@ class InMemoryContextGraph:
             for cid, p in paths.items()
         ]
 
-    async def file_dependents(self) -> dict[str, set[str]]:
+    async def file_dependents(
+        self, *, runtime_only: bool = True, include_tests: bool = True
+    ) -> dict[str, set[str]]:
         out: dict[str, set[str]] = {}
         for e in self.edges:
             if e["type"] != EdgeType.IMPORTS:
+                continue
+            attributes = e.get("attributes") or {}
+            if runtime_only and attributes.get("kind", "runtime") != "runtime":
+                continue
+            if not include_tests and attributes.get("from_test", False):
                 continue
             src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
             if src and dst:
                 out.setdefault(dst["external_id"], set()).add(src["external_id"])
         return out
+
+
+async def seeded_graph(
+    module: str = "demo-app/app/claims",
+    paths: tuple[str, ...] = ("demo-app/app/claims/page.tsx",),
+) -> InMemoryContextGraph:
+    """A graph with enough code structure for a design phase to run.
+
+    Needed because design now fails closed on an empty graph: a design
+    "validated" against nothing has not been validated, and that used to be
+    the one case where every proposal was allowed through. Tests that drive
+    the pipeline past design therefore have to seed it, exactly as a real
+    deployment does.
+    """
+    graph = InMemoryContextGraph()
+    await graph.ingest(
+        "seed",
+        "code-index",
+        [
+            Assertion(
+                "BELONGS_TO",
+                NodeSpec("SOURCE_ARTIFACT", "code", path, {"module": module}),
+                NodeSpec(
+                    "MODULE",
+                    "code",
+                    module,
+                    {
+                        "file_count": len(paths),
+                        "repo": "acme/thing",
+                        "commit_sha": "c" * 40,
+                        "indexer_version": "test",
+                        "internal_capture_rate": 1.0,
+                    },
+                ),
+            )
+            for path in paths
+        ],
+    )
+    return graph

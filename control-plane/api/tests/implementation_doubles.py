@@ -40,11 +40,17 @@ class WritingLLMProvider:
         path: str | None = None,
         modules: list[str] | None = None,
         criteria: list[str] | None = None,
+        implementation_path: str | None = None,
     ) -> None:
         self._blocked = blocked
         self._path = path
         self._components = modules or ["demo-app/app/claims"]
         self._criteria = criteria or []
+        # Lets a test make the two phases disagree. Containment only means
+        # anything when the implementation writes somewhere the design did not
+        # name, and a double that always agrees with itself cannot produce
+        # that case.
+        self._implementation_path = implementation_path
 
     async def complete(self, system_prompt, user_prompt, *, max_tokens=1024):
         return LLMResponse(text="[stub]", model="stub", input_tokens=1, output_tokens=1)
@@ -62,7 +68,7 @@ class WritingLLMProvider:
             )
         if self._blocked:
             return schema(summary="cannot proceed", blocked=self._blocked, edits=[])
-        path = self._path or "demo-app/app/claims/page.tsx"
+        path = self._implementation_path or self._path or "demo-app/app/claims/page.tsx"
         return schema(
             summary="add a status filter to the claims table",
             edits=[{"path": path, "content": "export default function X() { return null; }\n",

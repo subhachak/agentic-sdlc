@@ -160,6 +160,10 @@ def build_nodes(
         file_dependents = await context_graph.file_dependents()
         criteria = await context_graph.criteria()
         known_criteria = {c["id"] for c in criteria if c.get("id")}
+        # How complete the graph behind those edges is. A design cannot be
+        # meaningfully contained by a graph that dropped a fifth of the
+        # codebase's imports, so the review is told and refuses.
+        graph_quality = await context_graph.index_provenance()
 
         base_prompt = build_design_prompt(
             requirement=requirement,
@@ -191,6 +195,7 @@ def build_nodes(
                 known_modules=known_paths,
                 file_dependents=file_dependents,
                 known_criteria=known_criteria,
+                graph_quality=graph_quality,
             )
             if verdict.allowed:
                 return {
