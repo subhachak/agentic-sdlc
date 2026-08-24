@@ -1,0 +1,9 @@
+name: requires-capability-not-present
+phase: design
+requirement: >-
+  Send an email to the policyholder whenever their claim status changes, using
+  the organisation's SMTP relay, with delivery retries and a bounce log.
+expects:
+  # There is no mail capability in this codebase. A design that confidently
+  # names modules for it is worse than one that declines.
+  blocked: true

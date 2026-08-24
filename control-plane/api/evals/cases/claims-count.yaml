@@ -1,0 +1,10 @@
+name: claim-count-above-table
+phase: design
+requirement: >-
+  Show how many claims are currently listed. Above the claims table, display the
+  count of rows shown, updating when the status filter changes.
+expects:
+  accepted: true
+  blocked: false
+  must_touch: ["app/claims/page.tsx"]
+  max_files: 4

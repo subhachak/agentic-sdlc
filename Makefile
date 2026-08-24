@@ -39,3 +39,12 @@ test-api:
 
 test-qa:
 	cd execution-plane/qa && python -m pytest tests/ -q
+
+# --- evals -----------------------------------------------------------------
+
+# Measure the agents rather than the plumbing. Costs model calls, so it is
+# separate from `make test` and defaults to few repeats.
+#   make evals [PHASE=design] [REPEATS=3]
+evals:
+	cd control-plane/api && LLM_PROVIDER_ADAPTER=claude uv run python scripts/run_evals.py \
+		--repeats "$(or $(REPEATS),3)" $(if $(PHASE),--phase $(PHASE),)

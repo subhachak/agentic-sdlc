@@ -1,0 +1,11 @@
+name: empty-state-replaces-table
+phase: design
+requirement: >-
+  When a status filter matches no claims, the claims page must show only the
+  empty-state message. The empty table shell must not remain on the page.
+expects:
+  accepted: true
+  blocked: false
+  must_touch: ["app/claims/page.tsx"]
+  must_not_touch: [".github/", "package.json"]
+  max_files: 4

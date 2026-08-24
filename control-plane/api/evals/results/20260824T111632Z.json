@@ -1,0 +1,39 @@
+{
+  "at": "20260824T111632Z",
+  "label": "baseline opus-5",
+  "model": "claude-opus-5",
+  "repo": "subhachak/agentic-sdlc",
+  "repeats": 4,
+  "results": [
+    {
+      "case": "claim-count-above-table",
+      "phase": "design",
+      "repeats": 4,
+      "accept_rate": 1.0,
+      "expectation_rate": 1.0,
+      "file_stability": 0.78,
+      "module_stability": 0.78,
+      "failures": []
+    },
+    {
+      "case": "empty-state-replaces-table",
+      "phase": "design",
+      "repeats": 4,
+      "accept_rate": 1.0,
+      "expectation_rate": 1.0,
+      "file_stability": 0.83,
+      "module_stability": 0.83,
+      "failures": []
+    },
+    {
+      "case": "requires-capability-not-present",
+      "phase": "design",
+      "repeats": 4,
+      "accept_rate": 0.0,
+      "expectation_rate": 1.0,
+      "file_stability": 0.0,
+      "module_stability": 0.0,
+      "failures": []
+    }
+  ]
+}

@@ -18,3 +18,4 @@ tsconfig.tsbuildinfo
 .venv/
 *.sqlite-shm
 *.sqlite-wal
+control-plane/api/evals.db
