@@ -167,3 +167,47 @@ def test_a_first_attempt_that_passes_does_not_retry(monkeypatch):
     assert result["test_plan_attempts"] == 1
     assert len(agent.prompts) == 1
     assert "rejected" not in agent.prompts[0]
+
+
+# --- data requirements the gate can check ----------------------------------
+
+SHAPE = {"claims": {"id", "policyholder", "status", "lastUpdated"}}
+
+
+def test_a_scenario_may_declare_data_it_needs():
+    scenario = {
+        "expected_outcome": CONCRETE,
+        "ac_ref": REAL_AC,
+        "required_data": [{"entity": "claims", "field": "status", "value": "Escalated"}],
+    }
+    ok, reason = _is_testable(scenario, {REAL_AC}, SHAPE)
+    assert (ok, reason) == (True, None)
+
+
+def test_a_requirement_naming_an_entity_that_does_not_exist_is_rejected():
+    """Caught at the gate so the agent can revise, rather than at seeding time
+    when the plan has already been accepted."""
+    scenario = {
+        "expected_outcome": CONCRETE,
+        "ac_ref": REAL_AC,
+        "required_data": [{"entity": "policies", "field": "status", "value": "x"}],
+    }
+    ok, reason = _is_testable(scenario, {REAL_AC}, SHAPE)
+    assert ok is False
+    assert "unknown entity" in reason
+
+
+def test_a_requirement_naming_a_field_that_does_not_exist_is_rejected():
+    scenario = {
+        "expected_outcome": CONCRETE,
+        "ac_ref": REAL_AC,
+        "required_data": [{"entity": "claims", "field": "premium", "value": "x"}],
+    }
+    ok, reason = _is_testable(scenario, {REAL_AC}, SHAPE)
+    assert ok is False and "unknown field" in reason
+
+
+def test_data_requirements_are_not_checked_when_the_shape_is_unknown():
+    scenario = {"expected_outcome": CONCRETE, "ac_ref": REAL_AC,
+                "required_data": [{"entity": "anything", "field": "x", "value": "y"}]}
+    assert _is_testable(scenario, {REAL_AC}, None)[0] is True

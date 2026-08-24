@@ -25,3 +25,44 @@ features:
         text: Selecting a status shows only rows matching that status
       - id: claims-status-filter/ac-3
         text: Selecting a status with zero matching claims shows an empty-state message instead of an empty table
+
+# The UI contract the generation agent writes against, per route.
+#
+# Every failure in the first real run that was not a data problem came from
+# this being implicit. The agent was handed a flat list of test ids with no
+# page and no values, so it looked for the home page's nav link on /claims,
+# and it guessed that "no filter" was the empty string when the option is
+# literally "All" — a guess Playwright spends thirty seconds discovering.
+ui:
+  "/":
+    - testid: nav-claims
+      note: link through to the claims page
+  "/claims":
+    - testid: claims-table
+      note: >-
+        the table element. Whether it should remain in the DOM when nothing
+        matches is governed by claims-status-filter/ac-3, not by this note —
+        assert what the criterion requires, not what the app currently does.
+    - testid: claim-row
+      note: one per claim, carrying a data-status attribute with the claim status
+    - testid: status-filter
+      note: >-
+        a <select>. Its option values are exactly "All", "Under Review",
+        "Approved" and "Denied". "All" is the unfiltered option — there is no
+        empty-string option, and selecting one that does not exist hangs until
+        the test times out.
+    - testid: empty-state
+      note: replaces the rows when no claim matches the selected status
+
+# The API contract, for the same reason as the UI one. The generator is told
+# to derive expected counts from this endpoint, and with nothing describing
+# its shape it guessed a bare array — so every assertion about the body failed
+# on a response that was perfectly correct.
+api:
+  - endpoint: GET /api/claims
+    note: >-
+      Returns an object, never a bare array: {"claims": [ ... ]}. Each claim
+      has id, policyholder, status and lastUpdated. The optional ?status=
+      parameter filters case-insensitively; a status matching nothing returns
+      {"claims": []} with HTTP 200, not an error, and an omitted or empty
+      parameter returns every claim.

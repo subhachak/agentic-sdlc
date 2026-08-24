@@ -10,6 +10,7 @@ not a useful pipeline.
 """
 from __future__ import annotations
 
+from orchestrator import data_store
 from orchestrator.context import criterion_ids, regression_candidates
 from orchestrator.llm import ask
 from orchestrator.schemas import TestPlan
@@ -28,7 +29,13 @@ the change if it's plausible they could break.
 
 Every scenario's ac_ref MUST be one of the acceptance criterion ids listed in
 the request. A scenario referencing an id that does not exist is rejected —
-that reference is what ties the test back to the requirement it verifies."""
+that reference is what ties the test back to the requirement it verifies.
+
+If a scenario depends on data existing, declare it in required_data using only
+the entities and fields listed in the request. Anything you declare will be
+created before the test runs; anything you assume without declaring will not
+be. A scenario about a value the store does not currently hold is fine — say
+so in required_data and it will exist."""
 
 _VAGUE_PHRASES = [
     "should work",
@@ -40,7 +47,31 @@ _VAGUE_PHRASES = [
 ]
 
 
-def _is_testable(scenario: dict, known_criteria: set[str] | None = None) -> tuple[bool, str | None]:
+def _data_is_satisfiable(
+    scenario: dict, shape: dict[str, set[str]] | None
+) -> tuple[bool, str | None]:
+    """Reject a scenario whose data needs nothing can provide.
+
+    Caught here rather than at seeding time so the agent gets the chance to
+    revise, and so an unsatisfiable plan never reaches a browser.
+    """
+    if not shape:
+        return True, None
+    for requirement in scenario.get("required_data") or []:
+        entity = requirement.get("entity", "")
+        field = requirement.get("field", "")
+        if entity not in shape:
+            return False, f"required_data names unknown entity {entity!r}"
+        if field not in shape[entity]:
+            return False, f"required_data names unknown field {entity}.{field}"
+    return True, None
+
+
+def _is_testable(
+    scenario: dict,
+    known_criteria: set[str] | None = None,
+    shape: dict[str, set[str]] | None = None,
+) -> tuple[bool, str | None]:
     outcome = (scenario.get("expected_outcome") or "").strip().lower()
     if not outcome:
         return False, "no expected_outcome"
@@ -56,16 +87,18 @@ def _is_testable(scenario: dict, known_criteria: set[str] | None = None) -> tupl
         if ac_ref not in known_criteria:
             return False, f"ac_ref {ac_ref!r} does not resolve to a known acceptance criterion"
 
-    return True, None
+    return _data_is_satisfiable(scenario, shape)
 
 
 def _evaluate(
-    proposed: list[dict], known_criteria: set[str] | None = None
+    proposed: list[dict],
+    known_criteria: set[str] | None = None,
+    shape: dict[str, set[str]] | None = None,
 ) -> tuple[list[dict], list[str]]:
     accepted: list[dict] = []
     reasons: list[str] = []
     for sc in proposed:
-        ok, reason = _is_testable(sc, known_criteria)
+        ok, reason = _is_testable(sc, known_criteria, shape)
         if ok:
             accepted.append(sc)
         else:
@@ -86,6 +119,7 @@ def _revision_prompt(reasons: list[str]) -> str:
 
 def run(state: PipelineState) -> PipelineState:
     known = criterion_ids()
+    shape = data_store.shape()
     # Regression scope comes from the dependency graph, not from the change
     # summary: a component the diff never touched can still be the one that
     # breaks, and only the graph knows that.
@@ -112,7 +146,7 @@ def run(state: PipelineState) -> PipelineState:
         plan = ask(SYSTEM, user, TestPlan)
         proposed = [s.model_dump() for s in plan.scenarios]
 
-        accepted, reasons = _evaluate(proposed, set(known))
+        accepted, reasons = _evaluate(proposed, set(known), shape)
         if accepted and not reasons:
             return {
                 **state,

@@ -14,6 +14,7 @@ import json
 import re
 import shutil
 
+from orchestrator.context import api_contract, ui_contract
 from orchestrator.llm import ask
 from orchestrator.schemas import GeneratedSpec
 from orchestrator.state import PipelineState
@@ -35,13 +36,18 @@ _STOPWORDS = {
 
 GEN_SYSTEM = """You are a Playwright test-generation agent for a Next.js app.
 Given one test scenario, write a single Playwright test file in TypeScript.
-Use page.getByTestId(...) selectors — the app exposes: nav-claims,
-claims-table, claim-row (each row also has a data-status attribute),
-status-filter (a <select> on /claims when present), empty-state.
-Do not hard-code row counts that depend on how much data happens to be in
-the store — derive expected counts from the /api/claims response instead.
-Assert on the scenario's expected_outcome concretely (counts, visible text,
-attribute values) — do not write vague assertions.
+
+Use page.getByTestId(...) selectors, and only the ones listed in the request.
+Each is listed under the route it appears on: an element listed under "/" does
+not exist on /claims. Where a note gives exact values, use those values —
+selecting an option that does not exist does not fail fast, it hangs until the
+test times out.
+
+Do not hard-code row counts that depend on how much data happens to be in the
+store — derive expected counts from the API, whose response shape is given in
+the request. Do not guess that shape: assert against what is described. Assert
+on the scenario's expected_outcome concretely (counts, visible text, attribute
+values); do not write vague assertions.
 
 The generated file is checked before it runs and is refused unless it obeys
 all of these:
@@ -125,7 +131,13 @@ def run(state: PipelineState) -> PipelineState:
             code = (LIBRARY_DIR / existing["file"]).read_text()
             mode, source_id = "selected", existing["id"]
         else:
-            code = ask(GEN_SYSTEM, f"Scenario: {json.dumps(scenario)}", GeneratedSpec).code
+            code = ask(
+                GEN_SYSTEM,
+                f"UI contract, by route:\n{ui_contract()}\n\n"
+                f"API contract:\n{api_contract()}\n\n"
+                f"Scenario: {json.dumps(scenario)}",
+                GeneratedSpec,
+            ).code
             mode, source_id = "generated", None
 
         # Fail closed. A spec that trips the validator is never written, so it

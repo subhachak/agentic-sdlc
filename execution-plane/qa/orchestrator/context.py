@@ -108,6 +108,41 @@ def criterion_ids() -> dict[str, dict[str, Any]]:
     return out
 
 
+def ui_contract() -> str:
+    """The selectors the generator may use, by route, with their values.
+
+    Read from features.yaml rather than written into the prompt, so the
+    contract lives with the requirements it describes and a change to the app
+    is a change to one file rather than to a string constant in a node.
+    """
+    import yaml
+
+    if not FEATURES_FILE.exists():
+        return ""
+    data = yaml.safe_load(FEATURES_FILE.read_text()) or {}
+    lines: list[str] = []
+    for route, elements in (data.get("ui") or {}).items():
+        lines.append(f"{route}")
+        for element in elements or []:
+            note = " ".join((element.get("note") or "").split())
+            lines.append(f"  data-testid={element['testid']}" + (f" — {note}" if note else ""))
+    return "\n".join(lines)
+
+
+def api_contract() -> str:
+    """The endpoints the generator may assert against, and their shapes."""
+    import yaml
+
+    if not FEATURES_FILE.exists():
+        return ""
+    data = yaml.safe_load(FEATURES_FILE.read_text()) or {}
+    lines: list[str] = []
+    for entry in data.get("api") or []:
+        note = " ".join((entry.get("note") or "").split())
+        lines.append(f"{entry['endpoint']}" + (f" — {note}" if note else ""))
+    return "\n".join(lines)
+
+
 def _node(node_type: str, system: str, external_id: str, projection: dict) -> dict:
     return {
         "id": node_id(node_type, system, external_id),

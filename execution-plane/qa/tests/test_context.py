@@ -11,6 +11,8 @@ from orchestrator.context import (
     criterion_ids,
     regression_candidates,
     scenarios_covering,
+    api_contract,
+    ui_contract,
 )
 from orchestrator.identity import node_id
 
@@ -135,3 +137,46 @@ def test_node_ids_are_derived_not_allocated():
 def test_an_empty_plan_asserts_only_the_static_dependency_edges():
     assertions = build_assertions({**STATE, "test_plan": [], "test_assignments": []})
     assert {a["edge"] for a in assertions} == {"PRODUCED", "DEPENDS_ON"}
+
+
+# --- the UI contract handed to the generator -------------------------------
+
+
+def test_the_contract_groups_selectors_by_route():
+    """A flat list is what made the generator look for the home page nav link
+    on /claims in the first real run."""
+    contract = ui_contract()
+    home, claims = contract.index("/\n"), contract.index("/claims")
+
+    assert home < claims
+    assert contract.index("nav-claims") < claims
+    assert contract.index("status-filter") > claims
+
+
+def test_the_contract_states_the_filter_option_values():
+    """The other half of that run's failures: the generator guessed the
+    unfiltered option was the empty string, and Playwright spent thirty
+    seconds finding out otherwise."""
+    contract = ui_contract()
+    assert '"All"' in contract
+    assert "empty-string" in contract
+
+
+def test_every_selector_the_app_exposes_is_described():
+    contract = ui_contract()
+    for testid in ("nav-claims", "claims-table", "claim-row", "status-filter", "empty-state"):
+        assert testid in contract
+
+
+def test_the_api_contract_states_the_response_is_not_an_array():
+    """The second real run failed five tests on `Array.isArray(body)` — the
+    endpoint returns an object and nothing had ever told the generator so."""
+    contract = api_contract()
+    assert "never a bare array" in contract
+    assert "claims" in contract
+
+
+def test_the_api_contract_covers_the_filter_parameter():
+    contract = api_contract()
+    assert "?status=" in contract
+    assert "case-insensitive" in contract
