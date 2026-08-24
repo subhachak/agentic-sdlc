@@ -1,6 +1,6 @@
 """The design phase decides what the implementation phase may touch.
 
-It used to pick components by word overlap between the requirement text and
+It used to pick modules by word overlap between the requirement text and
 directory names, then hand the implementation agent the first twelve files it
 found. Containment was enforced against that — which meant it constrained
 nothing, and a human at gate 2 was approving a fixed string.
@@ -18,7 +18,7 @@ from app.agents.graph import build_graph
 from app.agents.nodes import build_nodes
 from app.agents.state import PipelineConfig
 from app.core.audit import AuditLogger
-from app.core.design_review import MAX_COMPONENTS, MAX_FILES, impact_set, review
+from app.core.design_review import MAX_MODULES, MAX_FILES, impact_set, review
 from app.core.gate_controller import GateController
 from tests.dispatch_doubles import SUCCESS, InMemoryDispatchStore, StubWorkDispatch
 from tests.graph_doubles import InMemoryContextGraph
@@ -36,14 +36,17 @@ KNOWN = {
     "demo-app/app/api": {"demo-app/app/api/claims/route.ts"},
     "demo-app/lib": {"demo-app/lib/data-store.json"},
 }
-DEPENDENTS = {"demo-app/app/api": {"demo-app/app/claims"}}
+# file -> the files that import it
+FILE_DEPENDENTS = {
+    "demo-app/app/api/claims/route.ts": {"demo-app/app/claims/page.tsx"},
+}
 
 
 def _design(**overrides):
     base = {
         "summary": "render the table only when there are rows",
-        "rationale": "the criterion concerns the claims list, which this component owns",
-        "components": ["demo-app/app/claims"],
+        "rationale": "the criterion concerns the claims list, which this module owns",
+        "modules": ["demo-app/app/claims"],
         "files": ["demo-app/app/claims/page.tsx"],
         "criteria_addressed": ["ac-1"],
         "out_of_scope": [],
@@ -52,39 +55,57 @@ def _design(**overrides):
 
 
 def _review(proposal, criteria={"ac-1"}):
-    return review(proposal, known_components=KNOWN, dependents=DEPENDENTS, known_criteria=criteria)
+    return review(proposal, known_modules=KNOWN, file_dependents=FILE_DEPENDENTS,
+                  known_criteria=criteria)
 
 
 # --- what it accepts -------------------------------------------------------
 
 
-def test_a_design_naming_real_components_and_files_is_accepted():
+def test_a_design_naming_real_modules_and_files_is_accepted():
     verdict = _review(_design())
     assert verdict.allowed is True
     assert verdict.reasons == []
 
 
-def test_impact_is_derived_from_dependency_edges_not_proposed():
+def test_impact_is_derived_from_import_edges_not_proposed():
     """An architect can be wrong about consequences. The edges cannot."""
-    verdict = _review(_design(components=["demo-app/app/api"],
+    verdict = _review(_design(modules=["demo-app/app/api"],
                               files=["demo-app/app/api/claims/route.ts"]))
-    assert verdict.impact == ["demo-app/app/api", "demo-app/app/claims"]
+
+    assert verdict.impact["files"] == ["demo-app/app/claims/page.tsx"]
+    assert "demo-app/app/claims" in verdict.impact["modules"]
 
 
-def test_impact_of_a_leaf_component_is_itself():
-    assert impact_set(["demo-app/lib"], DEPENDENTS) == ["demo-app/lib"]
+def test_impact_distinguishes_a_hub_from_a_leaf():
+    """The failure module-level impact could not express: every file in a
+    directory scored identically, so a leaf and the models file forty things
+    import looked the same."""
+    path_to_module = {p: m for m, ps in KNOWN.items() for p in ps}
+
+    hub = impact_set(["demo-app/app/api/claims/route.ts"], FILE_DEPENDENTS, path_to_module)
+    leaf = impact_set(["demo-app/app/claims/page.tsx"], FILE_DEPENDENTS, path_to_module)
+
+    assert hub["files"] == ["demo-app/app/claims/page.tsx"]
+    assert leaf["files"] == []
+
+
+def test_a_deeper_traversal_reaches_further():
+    fd = {"a.py": {"b.py"}, "b.py": {"c.py"}}
+    assert impact_set(["a.py"], fd, depth=1)["files"] == ["b.py"]
+    assert impact_set(["a.py"], fd, depth=2)["files"] == ["b.py", "c.py"]
 
 
 # --- what it refuses -------------------------------------------------------
 
 
-def test_a_component_that_does_not_exist_is_refused():
+def test_a_module_that_does_not_exist_is_refused():
     """The failure the whole containment claim rested on: a design naming
     something nobody has heard of, approved by a human, then used to constrain
     the implementation agent."""
-    verdict = _review(_design(components=["demo-app/app/invented"]))
+    verdict = _review(_design(modules=["demo-app/app/invented"]))
     assert verdict.allowed is False
-    assert "unknown component 'demo-app/app/invented'" in verdict.reasons
+    assert "unknown module 'demo-app/app/invented'" in verdict.reasons
 
 
 def test_a_file_that_does_not_exist_is_refused():
@@ -92,11 +113,11 @@ def test_a_file_that_does_not_exist_is_refused():
     assert any("unknown file" in r for r in verdict.reasons)
 
 
-def test_a_file_outside_the_named_components_is_refused():
+def test_a_file_outside_the_named_modules_is_refused():
     """Otherwise the implementation agent is handed a file it is then forbidden
     to edit, and the run dies one phase later for no visible reason."""
     verdict = _review(_design(files=["demo-app/app/api/claims/route.ts"]))
-    assert any("not in any component the design named" in r for r in verdict.reasons)
+    assert any("not in any module the design named" in r for r in verdict.reasons)
 
 
 def test_a_design_naming_no_files_is_refused():
@@ -121,7 +142,7 @@ def test_a_design_without_a_rationale_is_refused():
 
 
 def test_a_sprawling_design_is_refused():
-    verdict = _review(_design(components=[f"c{i}" for i in range(MAX_COMPONENTS + 1)]))
+    verdict = _review(_design(modules=[f"c{i}" for i in range(MAX_MODULES + 1)]))
     assert any("more than the" in r for r in verdict.reasons)
 
 
@@ -133,7 +154,7 @@ def test_too_many_files_is_refused():
 def test_an_empty_graph_is_reported_not_silently_passed():
     """A design validated against nothing has not been validated, and the run
     should say so rather than imply a check happened."""
-    verdict = review(_design(), known_components={}, dependents={}, known_criteria=set())
+    verdict = review(_design(), known_modules={}, file_dependents={}, known_criteria=set())
     assert verdict.allowed is True
     assert "not validated" in verdict.reasons[0]
 
@@ -178,7 +199,7 @@ async def _seeded_store():
     await store.ingest("seed", "code-index", [
         Assertion("BELONGS_TO",
                   NodeSpec("SOURCE_ARTIFACT", "code", "demo-app/app/claims/page.tsx", {}),
-                  NodeSpec("COMPONENT", "code", "demo-app/app/claims", {"file_count": 1})),
+                  NodeSpec("MODULE", "code", "demo-app/app/claims", {"file_count": 1})),
     ])
     return store
 
@@ -189,32 +210,32 @@ async def test_gate_2_now_pauses_in_front_of_a_real_design():
     an approval made on no information."""
     store = await _seeded_store()
     result = await _drive_to_gate_2(
-        _graph(WritingLLMProvider(components=["demo-app/app/claims"]), store), "d-1"
+        _graph(WritingLLMProvider(modules=["demo-app/app/claims"]), store), "d-1"
     )
 
     payload = result["__interrupt__"][0].value
     assert payload["type"] == "design_approval"
-    assert payload["components"] == ["demo-app/app/claims"]
+    assert payload["modules"] == ["demo-app/app/claims"]
     assert payload["files"] == ["demo-app/app/claims/page.tsx"]
     assert payload["rationale"]
 
 
 @pytest.mark.asyncio
-async def test_a_design_naming_an_unknown_component_never_reaches_a_human():
+async def test_a_design_naming_an_unknown_module_never_reaches_a_human():
     store = await _seeded_store()
     result = await _drive_to_gate_2(
-        _graph(WritingLLMProvider(components=["not/a/component"]), store), "d-2"
+        _graph(WritingLLMProvider(modules=["not/a/module"]), store), "d-2"
     )
 
     assert result["status"] == "design_rejected"
     assert "__interrupt__" not in result
-    assert any("unknown component" in r for r in result["design_proposal"]["rejected"])
+    assert any("unknown module" in r for r in result["design_proposal"]["rejected"])
 
 
 @pytest.mark.asyncio
 async def test_a_rejected_design_never_reaches_implementation():
     store = await _seeded_store()
     result = await _drive_to_gate_2(
-        _graph(WritingLLMProvider(components=["not/a/component"]), store), "d-3"
+        _graph(WritingLLMProvider(modules=["not/a/module"]), store), "d-3"
     )
     assert result.get("implementation") is None

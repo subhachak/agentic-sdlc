@@ -69,7 +69,7 @@ export interface DashboardData {
   graph: {
     nodes: Record<string, number>;
     edges: Record<string, number>;
-    components: number;
+    modules: number;
     dependencies: number;
   };
   dispatches: Record<string, number>;
@@ -111,7 +111,7 @@ export interface ConfigData {
   active: Record<string, string>;
 }
 
-export interface ComponentEntry {
+export interface ModuleEntry {
   id: string;
   files: number;
   depends_on: { target: string; weight: number }[];

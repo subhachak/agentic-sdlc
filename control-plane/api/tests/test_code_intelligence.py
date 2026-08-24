@@ -1,4 +1,4 @@
-"""Deriving a component graph from source.
+"""Deriving a module graph from source.
 
 The parser is regex-based and approximate on purpose — a dependency signal
 good enough to widen regression scope, rebuilt on demand. These tests pin
@@ -12,7 +12,7 @@ import pytest
 from app.adapters.code_intelligence.local_path import LocalPathCodeIntelligence
 from app.adapters.code_intelligence.parsing import (
     build_index,
-    component_of,
+    module_of,
     is_ignored,
     is_source,
     load_aliases,
@@ -22,7 +22,7 @@ from app.adapters.code_intelligence.parsing import (
 )
 from app.core.context_graph import Assertion
 from app.core.seeding import assertions_from_index, seed
-from app.ports.code_intelligence import CodeComponent, CodeDependency, CodeIndex
+from app.ports.code_intelligence import CodeModule, CodeDependency, CodeIndex
 from tests.graph_doubles import InMemoryContextGraph
 
 
@@ -58,9 +58,9 @@ def test_vendored_directories_are_ignored():
 
 
 def test_a_component_is_a_directory_collapsed_to_depth():
-    assert component_of("control-plane/api/app/core/db.py", 4) == "control-plane/api/app/core"
-    assert component_of("control-plane/api/app/core/db.py", 2) == "control-plane/api"
-    assert component_of("main.py") == "root"
+    assert module_of("control-plane/api/app/core/db.py", 4) == "control-plane/api/app/core"
+    assert module_of("control-plane/api/app/core/db.py", 2) == "control-plane/api"
+    assert module_of("main.py") == "root"
 
 
 def test_tsconfig_aliases_are_read():
@@ -107,24 +107,24 @@ def test_a_python_package_import_resolves_to_its_init():
 
 def test_only_cross_component_imports_become_dependencies():
     sources = {
-        "app/core/a.py": "from app.core import b",     # same component
+        "app/core/a.py": "from app.core import b",     # same module
         "app/core/b.py": "",
         "app/api/c.py": "from app.core import a",      # crosses
     }
-    _, pairs, _ = build_index(sources, max_depth=2)
+    _, pairs, _imports, _ = build_index(sources, max_depth=2)
 
     assert pairs == [("app/api", "app/core")]
 
 
 def test_unresolvable_local_imports_are_counted_not_silently_dropped():
     sources = {"app/a.py": "from .missing import thing"}
-    _, _, unresolved = build_index(sources, max_depth=2)
+    _, _, _imports, unresolved = build_index(sources, max_depth=2)
     assert unresolved == 1
 
 
 def test_external_packages_do_not_count_as_unresolved():
     sources = {"app/a.py": "import os\nimport httpx"}
-    _, pairs, unresolved = build_index(sources, max_depth=2)
+    _, pairs, _imports, unresolved = build_index(sources, max_depth=2)
     assert (pairs, unresolved) == ([], 0)
 
 
@@ -142,7 +142,7 @@ async def test_a_directory_indexes_end_to_end(tmp_path):
 
     index = await LocalPathCodeIntelligence(tmp_path, max_depth=2).index("", "local")
 
-    assert {c.id for c in index.components} == {"app/core", "app/api"}
+    assert {c.id for c in index.modules} == {"app/core", "app/api"}
     assert [(d.source, d.target) for d in index.dependencies] == [("app/api", "app/core")]
     assert all("node_modules" not in f.path for f in index.files)
 
@@ -152,8 +152,8 @@ async def test_a_directory_indexes_end_to_end(tmp_path):
 
 INDEX = CodeIndex(
     repo="acme/thing", ref="main",
-    components=[CodeComponent(id="core", paths=["core/a.py", "core/b.py"]),
-                CodeComponent(id="api", paths=["api/c.py"])],
+    modules=[CodeModule(id="core", paths=["core/a.py", "core/b.py"]),
+                CodeModule(id="api", paths=["api/c.py"])],
     dependencies=[CodeDependency(source="api", target="core", weight=3)],
 )
 
@@ -175,10 +175,10 @@ async def test_seeding_writes_components_and_files():
     graph = InMemoryContextGraph()
     summary = await seed(graph, _Indexer(INDEX), repo="acme/thing")
 
-    assert summary["components"] == 2
+    assert summary["modules"] == 2
     assert summary["edges_written"] == 4  # three files + one dependency
     counts = await graph.counts()
-    assert counts["nodes"]["COMPONENT"] == 2
+    assert counts["nodes"]["MODULE"] == 2
     assert counts["nodes"]["SOURCE_ARTIFACT"] == 3
 
 
@@ -186,12 +186,12 @@ async def test_seeding_writes_components_and_files():
 async def test_naming_a_component_again_does_not_erase_what_is_known():
     """Regression: the dependency assertions carry no file count, and used to
     overwrite the projection the BELONGS_TO assertions had just written — so
-    every component that had a dependency reported zero files."""
+    every module that had a dependency reported zero files."""
     graph = InMemoryContextGraph()
     await seed(graph, _Indexer(INDEX), repo="acme/thing")
 
     api = next(n for n in graph.nodes.values()
-               if n["type"] == "COMPONENT" and n["external_id"] == "api")
+               if n["type"] == "MODULE" and n["external_id"] == "api")
     assert api["projection"]["file_count"] == 1
 
 
@@ -211,3 +211,22 @@ class _Indexer:
 
     async def index(self, repo: str, ref: str = "main") -> CodeIndex:
         return self._index
+
+
+def test_file_level_imports_are_kept_not_only_the_module_aggregate():
+    """They used to be computed and discarded. On one real repository that
+    threw away 912 edges to keep 41 — and with them the ability to tell a leaf
+    from a hub."""
+    sources = {
+        "app/core/db.py": "",
+        "app/core/svc.py": "from app.core.db import x",
+        "app/api/route.py": "from app.core.db import x",
+    }
+    _, pairs, imports, _ = build_index(sources, max_depth=2)
+
+    assert sorted(imports) == [
+        ("app/api/route.py", "app/core/db.py"),
+        ("app/core/svc.py", "app/core/db.py"),
+    ]
+    # the module aggregate keeps only the one crossing edge
+    assert pairs == [("app/api", "app/core")]

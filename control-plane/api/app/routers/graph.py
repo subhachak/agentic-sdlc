@@ -1,6 +1,6 @@
 """Graph endpoints that are not scoped to a single run.
 
-Seeding indexes a repository and writes its component and dependency
+Seeding indexes a repository and writes its module and dependency
 structure. It is separate from the run-scoped endpoints because the code
 intelligence graph describes the codebase, not any one delivery.
 """
@@ -36,8 +36,8 @@ async def seed_graph(request: Request, body: SeedRequest) -> dict:
     )
 
 
-@router.get("/components")
+@router.get("/modules")
 async def list_components(request: Request) -> dict:
-    """Components and their dependencies, as derived from the last index."""
+    """Modules and their dependencies, as derived from the last index."""
     graph = request.app.state.context_graph
-    return {"counts": await graph.counts(), "components": await graph.components()}
+    return {"counts": await graph.counts(), "modules": await graph.modules()}

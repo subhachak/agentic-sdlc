@@ -1,6 +1,6 @@
 import type {
   AuditEntry,
-  ComponentEntry,
+  ModuleEntry,
   ConfigData,
   DashboardData,
   RunDetail,
@@ -79,8 +79,8 @@ export async function saveConfig(
   return json(res);
 }
 
-export async function listComponents(): Promise<{ components: ComponentEntry[] }> {
-  const res = await fetch(`${API_URL}/api/graph/components`, { cache: "no-store" });
+export async function listModules(): Promise<{ modules: ModuleEntry[] }> {
+  const res = await fetch(`${API_URL}/api/graph/modules`, { cache: "no-store" });
   return json(res);
 }
 

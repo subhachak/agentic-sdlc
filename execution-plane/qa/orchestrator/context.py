@@ -30,22 +30,22 @@ CODE_SYSTEM = "code"
 
 def _load_code_graph() -> dict[str, Any]:
     if not CODE_GRAPH_FILE.exists():
-        return {"components": [], "depends_on": []}
+        return {"modules": [], "depends_on": []}
     return json.loads(CODE_GRAPH_FILE.read_text())
 
 
-def components_for_paths(changed_paths: list[str]) -> set[str]:
-    """Which components a set of changed files belongs to."""
+def modules_for_paths(changed_paths: list[str]) -> set[str]:
+    """Which modules a set of changed files belongs to."""
     graph = _load_code_graph()
     hits: set[str] = set()
-    for component in graph.get("components", []):
-        for path in component.get("paths", []):
+    for module in graph.get("modules", []):
+        for path in module.get("paths", []):
             if any(path in changed for changed in changed_paths):
-                hits.add(component["id"])
+                hits.add(module["id"])
     return hits
 
 
-def blast_radius(component_ids: set[str]) -> set[str]:
+def blast_radius(module_ids: set[str]) -> set[str]:
     """Components that depend on the ones given, plus the ones given.
 
     One hop. Unbounded traversal over a real dependency graph is the query
@@ -56,28 +56,28 @@ def blast_radius(component_ids: set[str]) -> set[str]:
     dependents = {
         edge["from"]
         for edge in graph.get("depends_on", [])
-        if edge["to"] in component_ids
+        if edge["to"] in module_ids
     }
-    return component_ids | dependents
+    return module_ids | dependents
 
 
-def scenarios_covering(component_ids: set[str]) -> set[str]:
+def scenarios_covering(module_ids: set[str]) -> set[str]:
     graph = _load_code_graph()
     return {
         scenario
-        for component in graph.get("components", [])
-        if component["id"] in component_ids
-        for scenario in component.get("covered_by", [])
+        for module in graph.get("modules", [])
+        if module["id"] in module_ids
+        for scenario in module.get("covered_by", [])
     }
 
 
 def regression_candidates(changed_paths: list[str]) -> dict[str, Any]:
     """Scenarios worth re-running for a change, and why.
 
-    The `why` matters: a scenario proposed because a component two hops away
+    The `why` matters: a scenario proposed because a module two hops away
     changed is a claim the test plan should be able to justify.
     """
-    direct = components_for_paths(changed_paths)
+    direct = modules_for_paths(changed_paths)
     widened = blast_radius(direct)
     return {
         "changed_components": sorted(direct),
@@ -102,7 +102,7 @@ def criterion_ids() -> dict[str, dict[str, Any]]:
             if isinstance(criterion, dict) and criterion.get("id"):
                 out[criterion["id"]] = {
                     "feature": feature.get("id"),
-                    "component": feature.get("component"),
+                    "module": feature.get("module"),
                     "text": criterion.get("text", ""),
                 }
     return out
@@ -197,12 +197,12 @@ def build_assertions(state: dict[str, Any]) -> list[dict[str, Any]]:
                 "src": _node("ACCEPTANCE_CRITERION", FEATURES_SYSTEM, ac_ref, known[ac_ref]),
                 "dst": scenario_node,
             })
-            component = known[ac_ref].get("component")
-            if component:
+            module = known[ac_ref].get("module")
+            if module:
                 assertions.append({
                     "edge": "COVERS",
                     "src": scenario_node,
-                    "dst": _node("COMPONENT", CODE_SYSTEM, component, {}),
+                    "dst": _node("MODULE", CODE_SYSTEM, module, {}),
                 })
 
         assignment = assignments.get(scenario_id)
@@ -233,12 +233,12 @@ def build_assertions(state: dict[str, Any]) -> list[dict[str, Any]]:
             "dst": _node("DEFECT", QA_SYSTEM, title, {"title": title}),
         })
 
-    # component dependency edges, so blast radius is queryable centrally too
+    # module dependency edges, so blast radius is queryable centrally too
     for edge in _load_code_graph().get("depends_on", []):
         assertions.append({
             "edge": "DEPENDS_ON",
-            "src": _node("COMPONENT", CODE_SYSTEM, edge["from"], {}),
-            "dst": _node("COMPONENT", CODE_SYSTEM, edge["to"], {}),
+            "src": _node("MODULE", CODE_SYSTEM, edge["from"], {}),
+            "dst": _node("MODULE", CODE_SYSTEM, edge["to"], {}),
         })
 
     return assertions

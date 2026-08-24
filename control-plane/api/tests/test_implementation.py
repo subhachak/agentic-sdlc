@@ -41,11 +41,11 @@ KNOWN = {
 def test_a_change_inside_the_named_components_is_allowed():
     verdict = review(
         [{"path": "demo-app/app/claims/page.tsx", "content": "x"}],
-        allowed_components=["demo-app/app/claims"],
-        known_components=KNOWN,
+        allowed_modules=["demo-app/app/claims"],
+        known_modules=KNOWN,
     )
     assert verdict.allowed is True
-    assert verdict.components == ["demo-app/app/claims"]
+    assert verdict.modules == ["demo-app/app/claims"]
 
 
 def test_a_change_outside_them_is_refused():
@@ -53,8 +53,8 @@ def test_a_change_outside_them_is_refused():
     so an agent editing something nobody agreed to is caught before it runs."""
     verdict = review(
         [{"path": "demo-app/app/api/claims/route.ts", "content": "x"}],
-        allowed_components=["demo-app/app/claims"],
-        known_components=KNOWN,
+        allowed_modules=["demo-app/app/claims"],
+        known_modules=KNOWN,
     )
     assert verdict.allowed is False
     assert "demo-app/app/api" in verdict.reasons[0]
@@ -63,8 +63,8 @@ def test_a_change_outside_them_is_refused():
 def test_a_new_file_is_attributed_by_directory():
     verdict = review(
         [{"path": "demo-app/app/claims/filter.tsx", "content": "x"}],
-        allowed_components=["demo-app/app/claims"],
-        known_components=KNOWN,
+        allowed_modules=["demo-app/app/claims"],
+        known_modules=KNOWN,
     )
     assert verdict.allowed is True
 

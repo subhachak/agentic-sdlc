@@ -6,7 +6,7 @@ involved in the QA gate: an agent must never be the thing that approves its
 own work.
 
 The containment check is what the context graph was built for. A design
-decision names the components it affects; a change that edits a component
+decision names the modules it affects; a change that edits a module
 outside that set is doing something nobody agreed to, and that is knowable
 before a line of it runs.
 """
@@ -32,34 +32,34 @@ FORBIDDEN_SUFFIXES = (".env", ".pem", ".key", "id_rsa")
 class ChangeReview:
     allowed: bool
     reasons: list[str] = field(default_factory=list)
-    components: list[str] = field(default_factory=list)
+    modules: list[str] = field(default_factory=list)
 
 
-def _component_of(path: str, known: dict[str, set[str]]) -> str | None:
-    """Which known component owns a path, longest prefix wins."""
+def _module_of(path: str, known: dict[str, set[str]]) -> str | None:
+    """Which known module owns a path, longest prefix wins."""
     best: str | None = None
-    for component, paths in known.items():
-        if path in paths and (best is None or len(component) > len(best)):
-            best = component
+    for module, paths in known.items():
+        if path in paths and (best is None or len(module) > len(best)):
+            best = module
     if best:
         return best
     # A new file has no row in the graph yet; attribute it by directory.
-    for component in sorted(known, key=len, reverse=True):
-        if path.startswith(f"{component}/"):
-            return component
+    for module in sorted(known, key=len, reverse=True):
+        if path.startswith(f"{module}/"):
+            return module
     return None
 
 
 def review(
     edits: list[dict],
     *,
-    allowed_components: list[str] | None = None,
-    known_components: dict[str, set[str]] | None = None,
+    allowed_modules: list[str] | None = None,
+    known_modules: dict[str, set[str]] | None = None,
 ) -> ChangeReview:
     """Decide whether a proposed change may be opened.
 
-    `known_components` maps a component id to the file paths it owns, as the
-    context graph has them. `allowed_components` is what the design phase said
+    `known_modules` maps a module id to the file paths it owns, as the
+    context graph has them. `allowed_modules` is what the design phase said
     this change would touch.
     """
     reasons: list[str] = []
@@ -100,16 +100,16 @@ def review(
                 reasons.append(f"{path}: does not parse ({exc.msg} at line {exc.lineno})")
                 continue
 
-        if known_components:
-            component = _component_of(path, known_components)
-            if component:
-                touched.add(component)
+        if known_modules:
+            module = _module_of(path, known_modules)
+            if module:
+                touched.add(module)
 
-    if allowed_components and touched:
-        outside = sorted(touched - set(allowed_components))
+    if allowed_modules and touched:
+        outside = sorted(touched - set(allowed_modules))
         if outside:
             reasons.append(
-                "changes components the design did not name: " + ", ".join(outside)
+                "changes modules the design did not name: " + ", ".join(outside)
             )
 
     return ChangeReview(not reasons, reasons, sorted(touched))

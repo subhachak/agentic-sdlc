@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listComponents, seedGraph } from "@/lib/api";
-import type { ComponentEntry } from "@/lib/types";
+import { listModules, seedGraph } from "@/lib/api";
+import type { ModuleEntry } from "@/lib/types";
 
 export default function GraphPage() {
-  const [components, setComponents] = useState<ComponentEntry[] | null>(null);
+  const [modules, setModules] = useState<ModuleEntry[] | null>(null);
   const [repo, setRepo] = useState("");
   const [ref, setRef] = useState("main");
   const [seeding, setSeeding] = useState(false);
@@ -14,7 +14,7 @@ export default function GraphPage() {
 
   async function load() {
     try {
-      setComponents((await listComponents()).components);
+      setModules((await listModules()).modules);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -31,7 +31,7 @@ export default function GraphPage() {
     try {
       const summary = await seedGraph(repo.trim(), ref.trim() || "main");
       setMessage(
-        `Indexed ${summary.components} components and ${summary.files} files, ` +
+        `Indexed ${summary.modules} modules and ${summary.files} files, ` +
           `${summary.dependencies} dependencies, ${summary.edges_written} edges written.`
       );
       await load();
@@ -47,7 +47,7 @@ export default function GraphPage() {
       <h1>Context graph</h1>
       <p className="muted" style={{ marginTop: "-0.5rem" }}>
         The code half is derived. Point it at a repository and it reads the source, parses
-        imports, and works out which components exist and what depends on what. It never
+        imports, and works out which modules exist and what depends on what. It never
         executes anything it fetches.
       </p>
 
@@ -82,10 +82,10 @@ export default function GraphPage() {
       </div>
 
       <div className="card">
-        <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Components</h2>
-        {components === null ? (
+        <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Modules</h2>
+        {modules === null ? (
           <p className="muted" style={{ marginBottom: 0 }}>Loading...</p>
-        ) : components.length === 0 ? (
+        ) : modules.length === 0 ? (
           <p className="muted" style={{ marginBottom: 0 }}>
             Nothing indexed yet — seed from a repository above.
           </p>
@@ -93,13 +93,13 @@ export default function GraphPage() {
           <table>
             <thead>
               <tr>
-                <th>Component</th>
+                <th>Module</th>
                 <th className="num">Files</th>
                 <th>Depends on</th>
               </tr>
             </thead>
             <tbody>
-              {components.map((c) => (
+              {modules.map((c) => (
                 <tr key={c.id}>
                   <td><code>{c.id}</code></td>
                   <td className="num">{c.files}</td>

@@ -7,7 +7,7 @@ from __future__ import annotations
 from orchestrator.context import (
     blast_radius,
     build_assertions,
-    components_for_paths,
+    modules_for_paths,
     criterion_ids,
     regression_candidates,
     scenarios_covering,
@@ -23,11 +23,11 @@ from orchestrator.identity import node_id
 def test_criteria_have_stable_ids():
     known = criterion_ids()
     assert "claims-status-filter/ac-2" in known
-    assert known["claims-status-filter/ac-2"]["component"] == "claims-filter"
+    assert known["claims-status-filter/ac-2"]["module"] == "claims-filter"
 
 
 def test_a_changed_file_maps_to_its_component():
-    assert components_for_paths(["demo-app/app/api/claims/route.ts"]) == {"claims-api"}
+    assert modules_for_paths(["demo-app/app/api/claims/route.ts"]) == {"claims-api"}
 
 
 def test_blast_radius_includes_dependents_not_just_the_change():
@@ -41,7 +41,7 @@ def test_regression_scope_widens_beyond_the_diff():
 
     assert scope["changed_components"] == ["claims-api"]
     assert set(scope["impacted_components"]) == {"claims-api", "claims-filter", "claims-table"}
-    # Scenarios for components the diff never touched
+    # Scenarios for modules the diff never touched
     assert "claims-table-renders" in scope["scenarios"]
     assert "filter-denied" in scope["scenarios"]
 

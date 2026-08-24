@@ -24,10 +24,11 @@ from app.adapters.code_intelligence.parsing import (
     load_aliases,
 )
 from app.ports.code_intelligence import (
-    CodeComponent,
     CodeDependency,
     CodeFile,
     CodeIndex,
+    CodeModule,
+    FileImport,
 )
 
 _API = "https://api.github.com"
@@ -153,13 +154,13 @@ def _index_from_sources(
     max_depth: int,
 ) -> CodeIndex:
     aliases = load_aliases(tsconfig)
-    components, pairs, unresolved = build_index(
+    modules, pairs, imports, unresolved = build_index(
         sources, aliases=aliases, alias_root="", max_depth=max_depth
     )
 
     by_component: dict[str, list[str]] = {}
-    for path, component in components.items():
-        by_component.setdefault(component, []).append(path)
+    for path, module in modules.items():
+        by_component.setdefault(module, []).append(path)
 
     weights: dict[tuple[str, str], int] = {}
     for pair in pairs:
@@ -168,15 +169,16 @@ def _index_from_sources(
     return CodeIndex(
         repo=repo,
         ref=ref,
-        components=[
-            CodeComponent(id=cid, paths=sorted(paths))
+        modules=[
+            CodeModule(id=cid, paths=sorted(paths))
             for cid, paths in sorted(by_component.items())
         ],
-        files=[CodeFile(path=p, component=c) for p, c in sorted(components.items())],
+        files=[CodeFile(path=p, module=c) for p, c in sorted(modules.items())],
         dependencies=[
             CodeDependency(source=s, target=t, weight=w)
             for (s, t), w in sorted(weights.items())
         ],
+        imports=[FileImport(source=a, target=b) for a, b in sorted(set(imports))],
         unresolved_imports=unresolved,
         skipped_files=skipped,
     )

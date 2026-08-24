@@ -5,8 +5,8 @@ decides. What makes this one load-bearing is that the implementation phase is
 constrained to what this phase names. If the design is a guess, containment
 constrains nothing — it merely refuses whatever the guess missed.
 
-The agent is given a catalogue of components that actually exist, drawn from
-the context graph, and must name components and files from it. Anything it
+The agent is given a catalogue of modules that actually exist, drawn from
+the context graph, and must name modules and files from it. Anything it
 invents is rejected before a human is asked to approve it.
 """
 
@@ -20,32 +20,32 @@ SYSTEM = """You are a software architect deciding how to implement a change in
 an existing system.
 
 You are given the requirement, its acceptance criteria, a catalogue of the
-components that exist with their dependencies, and grounding excerpts from the
-codebase. Decide the smallest set of components and files the change needs to
+modules that exist with their dependencies, and grounding excerpts from the
+codebase. Decide the smallest set of modules and files the change needs to
 touch.
 
 Rules:
-- Name components and files ONLY from the catalogue. Anything not in it is
+- Name modules and files ONLY from the catalogue. Anything not in it is
   rejected, and the run stops.
-- Name specific files, not whole components. The implementation agent is shown
+- Name specific files, not whole modules. The implementation agent is shown
   the contents of exactly the files you name, so naming too few blocks it and
   naming too many buries the relevant code.
-- Every acceptance criterion must be addressed by at least one component, or
+- Every acceptance criterion must be addressed by at least one module, or
   listed in `out_of_scope` with a reason.
-- `rationale` explains why these components and not their neighbours. A human
+- `rationale` explains why these modules and not their neighbours. A human
   approves or rejects this change on the strength of that sentence.
 - `risks` names what could break that the change does not touch directly —
   callers, contracts, stored data.
 
 If the requirement cannot be implemented within the catalogue you were given,
 say so in `blocked`. That is a useful answer. A design that names plausible
-components it has not verified is not."""
+modules it has not verified is not."""
 
 
 class DesignProposal(BaseModel):
     summary: str
     rationale: str
-    components: list[str] = Field(default_factory=list)
+    modules: list[str] = Field(default_factory=list)
     files: list[str] = Field(default_factory=list)
     criteria_addressed: list[str] = Field(default_factory=list)
     out_of_scope: list[str] = Field(default_factory=list)
@@ -82,7 +82,7 @@ def build_prompt(
     return (
         f"Requirement:\n{requirement}\n\n"
         f"Acceptance criteria:\n{criteria_text}\n\n"
-        f"Component catalogue:\n{catalogue_text}\n\n"
+        f"Module catalogue:\n{catalogue_text}\n\n"
         f"Name at most {max_files} files.\n\n"
         f"Grounding excerpts:\n{snippet_text}"
     )

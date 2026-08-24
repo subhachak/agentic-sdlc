@@ -21,7 +21,7 @@ class NodeType(StrEnum):
     REQUIREMENT = "REQUIREMENT"
     ACCEPTANCE_CRITERION = "ACCEPTANCE_CRITERION"
     DESIGN_DECISION = "DESIGN_DECISION"
-    COMPONENT = "COMPONENT"
+    MODULE = "MODULE"
     SOURCE_ARTIFACT = "SOURCE_ARTIFACT"
     TEST_SCENARIO = "TEST_SCENARIO"
     TEST_SCRIPT = "TEST_SCRIPT"
@@ -41,6 +41,7 @@ class EdgeType(StrEnum):
     IMPLEMENTS = "IMPLEMENTS"
     BELONGS_TO = "BELONGS_TO"
     DEPENDS_ON = "DEPENDS_ON"
+    IMPORTS = "IMPORTS"
     GOVERNED_BY = "GOVERNED_BY"
     VERIFIED_BY = "VERIFIED_BY"
     IMPLEMENTED_BY = "IMPLEMENTED_BY"
@@ -58,20 +59,23 @@ class EdgeType(StrEnum):
 SIGNATURES: dict[EdgeType, tuple[NodeType, NodeType]] = {
     EdgeType.DECOMPOSES_TO: (NodeType.REQUIREMENT, NodeType.ACCEPTANCE_CRITERION),
     EdgeType.SATISFIES: (NodeType.DESIGN_DECISION, NodeType.ACCEPTANCE_CRITERION),
-    EdgeType.AFFECTS: (NodeType.DESIGN_DECISION, NodeType.COMPONENT),
+    EdgeType.AFFECTS: (NodeType.DESIGN_DECISION, NodeType.MODULE),
     EdgeType.IMPLEMENTS: (NodeType.SOURCE_ARTIFACT, NodeType.ACCEPTANCE_CRITERION),
-    EdgeType.BELONGS_TO: (NodeType.SOURCE_ARTIFACT, NodeType.COMPONENT),
-    EdgeType.DEPENDS_ON: (NodeType.COMPONENT, NodeType.COMPONENT),
-    EdgeType.GOVERNED_BY: (NodeType.COMPONENT, NodeType.CONTROL),
+    EdgeType.BELONGS_TO: (NodeType.SOURCE_ARTIFACT, NodeType.MODULE),
+    EdgeType.DEPENDS_ON: (NodeType.MODULE, NodeType.MODULE),
+    # File-level, and the unit of truth for impact. DEPENDS_ON is the
+    # rolled-up view of these, kept for legibility rather than analysis.
+    EdgeType.IMPORTS: (NodeType.SOURCE_ARTIFACT, NodeType.SOURCE_ARTIFACT),
+    EdgeType.GOVERNED_BY: (NodeType.MODULE, NodeType.CONTROL),
     EdgeType.VERIFIED_BY: (NodeType.ACCEPTANCE_CRITERION, NodeType.TEST_SCENARIO),
     EdgeType.IMPLEMENTED_BY: (NodeType.TEST_SCENARIO, NodeType.TEST_SCRIPT),
     EdgeType.EXERCISED_IN: (NodeType.TEST_SCRIPT, NodeType.TEST_RUN),
-    EdgeType.COVERS: (NodeType.TEST_SCENARIO, NodeType.COMPONENT),
+    EdgeType.COVERS: (NodeType.TEST_SCENARIO, NodeType.MODULE),
     EdgeType.PRODUCED: (NodeType.TEST_RUN, NodeType.EVIDENCE),
     EdgeType.RAISED: (NodeType.TEST_RUN, NodeType.DEFECT),
     EdgeType.CONTAINS: (NodeType.RELEASE, NodeType.SOURCE_ARTIFACT),
     EdgeType.DEPLOYED_TO: (NodeType.RELEASE, NodeType.ENVIRONMENT),
-    EdgeType.IMPACTS: (NodeType.INCIDENT, NodeType.COMPONENT),
+    EdgeType.IMPACTS: (NodeType.INCIDENT, NodeType.MODULE),
 }
 
 

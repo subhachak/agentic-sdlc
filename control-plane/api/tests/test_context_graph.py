@@ -41,14 +41,14 @@ def test_both_planes_derive_the_same_node_id():
     for args in [
         ("ACCEPTANCE_CRITERION", "features", "claims-status-filter/ac-2"),
         ("TEST_SCENARIO", "qa", "filter-denied"),
-        ("COMPONENT", "code", "claims-api"),
+        ("MODULE", "code", "claims-api"),
     ]:
         assert node_id(*args) == other.node_id(*args), args
 
 
 def test_identity_is_stable_and_type_sensitive():
-    a = node_id("COMPONENT", "code", "claims-api")
-    assert a == node_id("COMPONENT", "code", "claims-api")
+    a = node_id("MODULE", "code", "claims-api")
+    assert a == node_id("MODULE", "code", "claims-api")
     assert a != node_id("TEST_SCENARIO", "code", "claims-api")
 
 
@@ -66,7 +66,7 @@ def test_a_reversed_edge_is_rejected():
 
 def test_an_invented_edge_type_is_rejected():
     with pytest.raises(OntologyError, match="unknown edge type"):
-        validate_edge("SORT_OF_RELATES_TO", NodeType.COMPONENT, NodeType.COMPONENT)
+        validate_edge("SORT_OF_RELATES_TO", NodeType.MODULE, NodeType.MODULE)
 
 
 def test_an_invented_node_type_is_rejected():
@@ -77,7 +77,7 @@ def test_an_invented_node_type_is_rejected():
 def test_clients_extend_through_namespaced_types():
     """Room for a client's own taxonomy without forking the semantics: stored
     and displayed, never gated on."""
-    validate_edge("x_acme:BOOKED_TO", "x_acme:CostCentre", NodeType.COMPONENT)
+    validate_edge("x_acme:BOOKED_TO", "x_acme:CostCentre", NodeType.MODULE)
     validate_node_type("x_acme:RiskTier")
 
 
@@ -183,15 +183,15 @@ async def test_trace_walks_criterion_to_defect():
 @pytest.mark.asyncio
 async def test_blast_radius_reaches_scenarios_through_a_dependency():
     graph = InMemoryContextGraph()
-    api = NodeSpec("COMPONENT", "code", "claims-api", {})
-    filt = NodeSpec("COMPONENT", "code", "claims-filter", {})
+    api = NodeSpec("MODULE", "code", "claims-api", {})
+    filt = NodeSpec("MODULE", "code", "claims-filter", {})
     await graph.ingest("run-1", "qa", [
         Assertion("DEPENDS_ON", filt, api),
         Assertion("COVERS", _scenario("filter-denied"), filt),
     ])
 
     reached = {s["external_id"] for s in await graph.blast_radius(
-        node_id("COMPONENT", "code", "claims-api")
+        node_id("MODULE", "code", "claims-api")
     )}
 
     assert reached == {"filter-denied"}

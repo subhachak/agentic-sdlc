@@ -60,17 +60,19 @@ class ContextGraphStore(Protocol):
 
     async def trace(self, criterion_id: str) -> dict[str, Any]: ...
 
-    async def blast_radius(self, component_id: str) -> list[dict[str, Any]]: ...
+    async def blast_radius(self, module_id: str) -> list[dict[str, Any]]: ...
 
     async def counts(self) -> dict[str, int]: ...
 
-    async def components(self) -> list[dict[str, Any]]: ...
+    async def modules(self) -> list[dict[str, Any]]: ...
 
-    async def component_paths(self) -> dict[str, set[str]]: ...
+    async def module_paths(self) -> dict[str, set[str]]: ...
 
-    async def component_catalogue(self) -> list[dict[str, Any]]: ...
+    async def module_catalogue(self) -> list[dict[str, Any]]: ...
 
-    async def component_dependents(self) -> dict[str, set[str]]: ...
+    async def module_dependents(self) -> dict[str, set[str]]: ...
+
+    async def file_dependents(self) -> dict[str, set[str]]: ...
 
     async def criteria(self) -> list[dict[str, Any]]: ...
 
@@ -93,7 +95,7 @@ class SqlContextGraph:
         nothing.
 
         Projections are merged, never replaced. The code seeder names a
-        component once with its file count and again as the endpoint of a
+        module once with its file count and again as the endpoint of a
         dependency; the second mention must not erase what the first knew.
         """
         if not assertions:
@@ -266,8 +268,8 @@ class SqlContextGraph:
             "defects": render(defects),
         }
 
-    async def blast_radius(self, component_id: str) -> list[dict[str, Any]]:
-        """Scenarios that cover a component, directly or through a dependent.
+    async def blast_radius(self, module_id: str) -> list[dict[str, Any]]:
+        """Scenarios that cover a module, directly or through a dependent.
 
         Two hops is deliberate: it is what the code intelligence graph can
         support honestly today, and unbounded traversal is the query that
@@ -286,9 +288,9 @@ class SqlContextGraph:
 
         dependents = {
             e.src_id for e in edges
-            if e.type == EdgeType.DEPENDS_ON and e.dst_id == component_id
+            if e.type == EdgeType.DEPENDS_ON and e.dst_id == module_id
         }
-        targets = dependents | {component_id}
+        targets = dependents | {module_id}
         scenario_ids = {
             e.src_id for e in edges if e.type == EdgeType.COVERS and e.dst_id in targets
         }
@@ -315,14 +317,14 @@ class SqlContextGraph:
             "edges": {t: c for t, c in edges},
         }
 
-    async def components(self) -> list[dict[str, Any]]:
-        """Derived components with their outgoing dependencies, heaviest first."""
+    async def modules(self) -> list[dict[str, Any]]:
+        """Derived modules with their outgoing dependencies, heaviest first."""
         async with get_sessionmaker()() as session:
             nodes = {
                 n.id: n
                 for n in (
                     await session.execute(
-                        select(GraphNode).where(GraphNode.type == NodeType.COMPONENT)
+                        select(GraphNode).where(GraphNode.type == NodeType.MODULE)
                     )
                 ).scalars().all()
             }
@@ -354,11 +356,11 @@ class SqlContextGraph:
             )
         return sorted(out, key=lambda c: -c["files"])
 
-    async def component_paths(self) -> dict[str, set[str]]:
-        """Component id to the file paths it owns.
+    async def module_paths(self) -> dict[str, set[str]]:
+        """Module id to the file paths it owns.
 
         What the change review needs to decide whether an edit lands inside
-        the components the design named.
+        the modules the design named.
         """
         async with get_sessionmaker()() as session:
             nodes = {
@@ -375,9 +377,9 @@ class SqlContextGraph:
 
         out: dict[str, set[str]] = {}
         for edge in edges:
-            artifact, component = nodes.get(edge.src_id), nodes.get(edge.dst_id)
-            if artifact and component:
-                out.setdefault(component.external_id, set()).add(artifact.external_id)
+            artifact, module = nodes.get(edge.src_id), nodes.get(edge.dst_id)
+            if artifact and module:
+                out.setdefault(module.external_id, set()).add(artifact.external_id)
         return out
 
     async def criteria(self) -> list[dict[str, Any]]:
@@ -389,20 +391,33 @@ class SqlContextGraph:
             ).scalars().all()
         return [
             {"id": r.external_id, "text": r.projection.get("text", ""),
-             "component": r.projection.get("component")}
+             "module": r.projection.get("module")}
             for r in rows
         ]
 
-    async def component_catalogue(self) -> list[dict[str, Any]]:
+    async def module_catalogue(self) -> list[dict[str, Any]]:
         """What the design agent is allowed to choose from.
 
-        Components with their dependencies in both directions and a sample of
+        Modules with their dependencies in both directions and a sample of
         their files. An agent given only names guesses at what is inside them;
         an agent given every path drowns.
         """
-        components = await self.components()
-        paths = await self.component_paths()
-        dependents = await self.component_dependents()
+        modules = await self.modules()
+        paths = await self.module_paths()
+        dependents = await self.module_dependents()
+        fan_in = await self.file_dependents()
+
+        def hubs(module_paths: set[str]) -> list[str]:
+            """The files inside a module that most things import.
+
+            A change to one of these is genuinely wide, and an agent choosing
+            where to work has no other way to know that.
+            """
+            ranked = sorted(
+                ((len(fan_in.get(p, ())), p) for p in module_paths), reverse=True
+            )
+            return [f"{p} ({n} importers)" for n, p in ranked[:3] if n > 1]
+
         return [
             {
                 "id": c["id"],
@@ -410,12 +425,13 @@ class SqlContextGraph:
                 "depends_on": [d["target"] for d in c["depends_on"]],
                 "dependents": sorted(dependents.get(c["id"], set())),
                 "paths": sorted(paths.get(c["id"], set())),
+                "hubs": hubs(paths.get(c["id"], set())),
             }
-            for c in components
+            for c in modules
         ]
 
-    async def component_dependents(self) -> dict[str, set[str]]:
-        """Reverse dependency edges: component -> what depends on it.
+    async def module_dependents(self) -> dict[str, set[str]]:
+        """Reverse dependency edges: module -> what depends on it.
 
         The impact set is derived from this rather than proposed, because an
         architect can be wrong about consequences and the edges cannot.
@@ -425,7 +441,7 @@ class SqlContextGraph:
                 n.id: n
                 for n in (
                     await session.execute(
-                        select(GraphNode).where(GraphNode.type == NodeType.COMPONENT)
+                        select(GraphNode).where(GraphNode.type == NodeType.MODULE)
                     )
                 ).scalars().all()
             }
@@ -443,4 +459,36 @@ class SqlContextGraph:
             src, dst = nodes.get(edge.src_id), nodes.get(edge.dst_id)
             if src and dst:
                 out.setdefault(dst.external_id, set()).add(src.external_id)
+        return out
+
+    async def file_dependents(self) -> dict[str, set[str]]:
+        """File to the files that import it.
+
+        The unit of truth for impact. Rolling this up to modules before
+        traversing gives every file in a directory the same blast radius,
+        which cannot distinguish a leaf from a hub.
+        """
+        async with get_sessionmaker()() as session:
+            nodes = {
+                n.id: n.external_id
+                for n in (
+                    await session.execute(
+                        select(GraphNode).where(GraphNode.type == NodeType.SOURCE_ARTIFACT)
+                    )
+                ).scalars().all()
+            }
+            edges = (
+                await session.execute(
+                    select(GraphEdge).where(
+                        GraphEdge.type == EdgeType.IMPORTS,
+                        GraphEdge.superseded_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+
+        out: dict[str, set[str]] = {}
+        for edge in edges:
+            src, dst = nodes.get(edge.src_id), nodes.get(edge.dst_id)
+            if src and dst:
+                out.setdefault(dst, set()).add(src)
         return out

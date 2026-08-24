@@ -84,12 +84,12 @@ class InMemoryContextGraph:
             "defects": render(self._forward(EdgeType.RAISED, runs)),
         }
 
-    async def blast_radius(self, component_id: str) -> list[dict[str, Any]]:
+    async def blast_radius(self, module_id: str) -> list[dict[str, Any]]:
         dependents = {
             e["src_id"] for e in self.edges
-            if e["type"] == EdgeType.DEPENDS_ON and e["dst_id"] == component_id
+            if e["type"] == EdgeType.DEPENDS_ON and e["dst_id"] == module_id
         }
-        targets = dependents | {component_id}
+        targets = dependents | {module_id}
         ids = {e["src_id"] for e in self.edges if e["type"] == EdgeType.COVERS and e["dst_id"] in targets}
         return [self.nodes[i] for i in sorted(ids) if i in self.nodes]
 
@@ -102,25 +102,25 @@ class InMemoryContextGraph:
             edges[e["type"]] = edges.get(e["type"], 0) + 1
         return {"nodes": nodes, "edges": edges}
 
-    async def component_paths(self) -> dict[str, set[str]]:
+    async def module_paths(self) -> dict[str, set[str]]:
         out: dict[str, set[str]] = {}
         for e in self.edges:
             if e["type"] != EdgeType.BELONGS_TO:
                 continue
-            artifact, component = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
-            if artifact and component:
-                out.setdefault(component["external_id"], set()).add(artifact["external_id"])
+            artifact, module = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
+            if artifact and module:
+                out.setdefault(module["external_id"], set()).add(artifact["external_id"])
         return out
 
     async def criteria(self) -> list[dict[str, Any]]:
         return [
             {"id": n["external_id"], "text": n["projection"].get("text", ""),
-             "component": n["projection"].get("component")}
+             "module": n["projection"].get("module")}
             for n in self.nodes.values()
             if n["type"] == NodeType.ACCEPTANCE_CRITERION
         ]
 
-    async def component_dependents(self) -> dict[str, set[str]]:
+    async def module_dependents(self) -> dict[str, set[str]]:
         out: dict[str, set[str]] = {}
         for e in self.edges:
             if e["type"] != EdgeType.DEPENDS_ON:
@@ -130,11 +130,22 @@ class InMemoryContextGraph:
                 out.setdefault(dst["external_id"], set()).add(src["external_id"])
         return out
 
-    async def component_catalogue(self) -> list[dict[str, Any]]:
-        paths = await self.component_paths()
-        dependents = await self.component_dependents()
+    async def module_catalogue(self) -> list[dict[str, Any]]:
+        paths = await self.module_paths()
+        dependents = await self.module_dependents()
         return [
-            {"id": cid, "files": len(p), "depends_on": [], 
-             "dependents": sorted(dependents.get(cid, set())), "paths": sorted(p)}
+            {"id": cid, "files": len(p), "depends_on": [],
+             "dependents": sorted(dependents.get(cid, set())),
+             "paths": sorted(p), "hubs": []}
             for cid, p in paths.items()
         ]
+
+    async def file_dependents(self) -> dict[str, set[str]]:
+        out: dict[str, set[str]] = {}
+        for e in self.edges:
+            if e["type"] != EdgeType.IMPORTS:
+                continue
+            src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
+            if src and dst:
+                out.setdefault(dst["external_id"], set()).add(src["external_id"])
+        return out

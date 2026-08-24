@@ -1,12 +1,44 @@
 {
-  "_comment": "Seeded code-intelligence graph. In production this is derived from the repository — imports, ownership, historical co-change. Seeded here so blast-radius test selection is demonstrable without building the deriver first.",
-  "components": [
-    { "id": "claims-table", "paths": ["app/claims/page.tsx"], "covered_by": ["claims-table-renders"] },
-    { "id": "claims-filter", "paths": ["app/claims/page.tsx"], "covered_by": ["filter-approved", "filter-denied", "filter-empty-state"] },
-    { "id": "claims-api", "paths": ["app/api/claims/route.ts"], "covered_by": ["api-status-param"] }
-  ],
+  "_comment": "Seeded code-intelligence graph. In production this is derived from the repository \u2014 imports, ownership, historical co-change. Seeded here so blast-radius test selection is demonstrable without building the deriver first.",
   "depends_on": [
-    { "from": "claims-table", "to": "claims-api" },
-    { "from": "claims-filter", "to": "claims-api" }
+    {
+      "from": "claims-table",
+      "to": "claims-api"
+    },
+    {
+      "from": "claims-filter",
+      "to": "claims-api"
+    }
+  ],
+  "modules": [
+    {
+      "id": "claims-table",
+      "paths": [
+        "app/claims/page.tsx"
+      ],
+      "covered_by": [
+        "claims-table-renders"
+      ]
+    },
+    {
+      "id": "claims-filter",
+      "paths": [
+        "app/claims/page.tsx"
+      ],
+      "covered_by": [
+        "filter-approved",
+        "filter-denied",
+        "filter-empty-state"
+      ]
+    },
+    {
+      "id": "claims-api",
+      "paths": [
+        "app/api/claims/route.ts"
+      ],
+      "covered_by": [
+        "api-status-param"
+      ]
+    }
   ]
 }

@@ -38,12 +38,12 @@ class WritingLLMProvider:
         *,
         blocked: str = "",
         path: str | None = None,
-        components: list[str] | None = None,
+        modules: list[str] | None = None,
         criteria: list[str] | None = None,
     ) -> None:
         self._blocked = blocked
         self._path = path
-        self._components = components or ["demo-app/app/claims"]
+        self._components = modules or ["demo-app/app/claims"]
         self._criteria = criteria or []
 
     async def complete(self, system_prompt, user_prompt, *, max_tokens=1024):
@@ -55,8 +55,8 @@ class WritingLLMProvider:
         if schema.__name__ == "DesignProposal":
             return schema(
                 summary="render the table only when there are rows",
-                rationale="the criterion is about the claims list, which this component owns",
-                components=self._components,
+                rationale="the criterion is about the claims list, which this module owns",
+                modules=self._components,
                 files=[self._path or "demo-app/app/claims/page.tsx"],
                 criteria_addressed=list(self._criteria),
             )

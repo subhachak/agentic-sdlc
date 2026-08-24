@@ -139,7 +139,7 @@ approve  →  human, at a tier set by risk
 | Phase | Predicate that decides |
 |---|---|
 | test_plan | `expected_outcome` assertable ∧ `ac_ref` resolves ∧ `required_data` satisfiable |
-| implementation | parses ∧ within named components ∧ ¬forbidden path ∧ ≤25 files |
+| implementation | parses ∧ within named modules ∧ ¬forbidden path ∧ ≤25 files |
 | qa gate | `assigned ≥ planned` ∧ `ran ≥ assigned` ∧ `∀ tests: status = expected` |
 | release readiness | `∀ criteria: ∃ path(criterion → scenario → script → run[passed])` |
 
@@ -187,7 +187,7 @@ source control. A refused change leaves no branch, no PR, no artifact.
 
 | Check | Rule | Rationale |
 |---|---|---|
-| Containment | `component_of(path) ∈ design.components` | Graph makes "what may this touch" checkable |
+| Containment | `component_of(path) ∈ design.modules` | Graph makes "what may this touch" checkable |
 | Syntax | `ast.parse` for `.py`; build for TS | Catch unparseable before execution |
 | Path safety | ¬`.github/workflows/`, ¬`.env`, ¬`../`, ¬absolute | Pipeline must not edit its own controls |
 | Size | ≤25 files, ≤120 KB/file | Bounded review burden |
@@ -195,7 +195,7 @@ source control. A refused change leaves no branch, no PR, no artifact.
 
 ```python
 verdict = review(edits,
-                 allowed_components=design["components"],
+                 allowed_components=design["modules"],
                  known_components=await graph.component_paths())
 if not verdict.allowed:
     return {"status": "implementation_rejected", "reasons": verdict.reasons}
@@ -248,7 +248,7 @@ flowchart LR
   TR -->|PRODUCED| EV[EVIDENCE]
   TR -->|RAISED| DEF[DEFECT]
   DD[DESIGN_DECISION] -->|SATISFIES| AC
-  DD -->|AFFECTS| CMP[COMPONENT]
+  DD -->|AFFECTS| CMP[MODULE]
   SA[SOURCE_ARTIFACT] -->|BELONGS_TO| CMP
   CMP -->|DEPENDS_ON| CMP
   SC -->|COVERS| CMP
@@ -308,13 +308,13 @@ Measured, on the proven cycle:
 | | Whole application | Scoped to change |
 |---|---|---|
 | Scenarios planned | 21 | **11** |
-| Components exercised | all | claims-filter, claims-table |
+| Modules exercised | all | claims-filter, claims-table |
 | Browser tests | ~40 | 12 |
 
 - One-hop reverse traversal. Unbounded depth is the query that would justify a
   graph database — we do not have it yet
 
-**Notes:** The diff touched the API only. Two components it never touched were
+**Notes:** The diff touched the API only. Two modules it never touched were
 still tested, because they depend on it. That is the difference between scoping
 from a diff summary and scoping from a dependency graph.
 
@@ -332,7 +332,7 @@ class SourceControl(Protocol):
     async def open_change(self, repo, base_ref, branch, title, body, edits) -> ChangeRef
 
 class CodeIntelligence(Protocol):
-    async def index(self, repo, ref) -> CodeIndex     # components, files, dependencies
+    async def index(self, repo, ref) -> CodeIndex     # modules, files, dependencies
 
 class EntityResolver(Protocol):
     async def resolve(self, node_type, system, external_id, projection) -> NodeRef

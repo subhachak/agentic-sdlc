@@ -1,4 +1,4 @@
-"""Import extraction and component assignment.
+"""Import extraction and module assignment.
 
 Shared by every adapter, because which imports a file declares is a property
 of the file, not of where it was fetched from. Deliberately regex-based and
@@ -63,8 +63,8 @@ def parse_imports(path: str, text: str) -> list[ImportRef]:
     return []
 
 
-def component_of(path: str, max_depth: int = 4) -> str:
-    """A component is the directory a file lives in, collapsed to max_depth.
+def module_of(path: str, max_depth: int = 4) -> str:
+    """A module is the directory a file lives in, collapsed to max_depth.
 
     A heuristic, and named as one. It matches how people talk about a
     codebase — "the nodes package", "the claims API" — without needing build
@@ -140,7 +140,7 @@ def resolve_py(spec: str, from_path: str, known: set[str]) -> str | None:
 
     # A namespace package: a directory with no __init__.py, which has been
     # legal since Python 3.3 and is common in src-layout projects. Resolve to
-    # any file inside it — the caller only needs the component it maps to.
+    # any file inside it — the caller only needs the module it maps to.
     for prefix in (f"{base}/", ):
         match = next((k for k in sorted(known) if k.startswith(prefix)), None)
         if match:
@@ -159,12 +159,19 @@ def build_index(
     alias_root: str = "",
     max_depth: int = 4,
 ) -> tuple[dict[str, str], list[tuple[str, str]], int]:
-    """Return (path -> component), cross-component import pairs, unresolved count."""
+    """Return (path -> module), cross-module pairs, file-level imports, unresolved.
+
+    The file-level pairs used to be computed and thrown away — only the module
+    aggregate survived. That aggregate gives every file in a directory the same
+    blast radius, so it cannot distinguish a leaf from a hub, which is the
+    distinction impact analysis exists to make.
+    """
     known = set(sources)
     aliases = aliases or {}
-    components = {path: component_of(path, max_depth) for path in sources}
+    modules = {path: module_of(path, max_depth) for path in sources}
 
     pairs: list[tuple[str, str]] = []
+    imports: list[tuple[str, str]] = []
     unresolved = 0
     for path, text in sources.items():
         for ref in parse_imports(path, text):
@@ -177,8 +184,9 @@ def build_index(
                 if ref.relative:
                     unresolved += 1  # a local import we failed to resolve
                 continue
-            src, dst = components[path], components.get(target)
+            imports.append((path, target))
+            src, dst = modules[path], modules.get(target)
             if dst and src != dst:
                 pairs.append((src, dst))
 
-    return components, pairs, unresolved
+    return modules, pairs, imports, unresolved

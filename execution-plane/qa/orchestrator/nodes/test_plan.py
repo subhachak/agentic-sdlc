@@ -121,7 +121,7 @@ def run(state: PipelineState) -> PipelineState:
     known = criterion_ids()
     shape = data_store.shape()
     # Regression scope comes from the dependency graph, not from the change
-    # summary: a component the diff never touched can still be the one that
+    # summary: a module the diff never touched can still be the one that
     # breaks, and only the graph knows that.
     scope = regression_candidates(state.get("changed_paths", []))
 
@@ -132,7 +132,7 @@ def run(state: PipelineState) -> PipelineState:
         + "\n".join(f"  {cid}: {meta['text']}" for cid, meta in known.items())
         + f"\n\nComponents impacted by this change, directly or through a dependency: "
         f"{scope['impacted_components']}\n"
-        f"Existing scenarios covering those components, worth reusing as regression: "
+        f"Existing scenarios covering those modules, worth reusing as regression: "
         f"{scope['scenarios']}"
     )
 

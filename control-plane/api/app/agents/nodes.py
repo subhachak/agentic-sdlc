@@ -136,7 +136,7 @@ def build_nodes(
 
         This phase is load-bearing: the implementation phase may only edit what
         it names, so a design that guesses makes containment meaningless. The
-        agent chooses from a catalogue of components that actually exist, and
+        agent chooses from a catalogue of modules that actually exist, and
         every name it returns is checked against the graph before a human is
         asked to approve anything.
 
@@ -147,9 +147,9 @@ def build_nodes(
         query = (state.get("requirements_synthesis") or {}).get("summary", "") or requirement
         snippets = [s.model_dump() for s in await code_design_context.retrieve_context(query)]
 
-        catalogue = await context_graph.component_catalogue()
-        known_paths = await context_graph.component_paths()
-        dependents = await context_graph.component_dependents()
+        catalogue = await context_graph.module_catalogue()
+        known_paths = await context_graph.module_paths()
+        file_dependents = await context_graph.file_dependents()
         criteria = await context_graph.criteria()
         known_criteria = {c["id"] for c in criteria if c.get("id")}
 
@@ -168,7 +168,7 @@ def build_nodes(
                 base_prompt
                 + "\n\nYour previous design was rejected:\n"
                 + "\n".join(f"- {r}" for r in reasons)
-                + "\n\nName only components and files from the catalogue above."
+                + "\n\nName only modules and files from the catalogue above."
             )
             proposal = await llm_provider.complete_json(DESIGN_SYSTEM, prompt, DesignProposal)
 
@@ -180,8 +180,8 @@ def build_nodes(
 
             verdict = review_design(
                 proposal.model_dump(),
-                known_components=known_paths,
-                dependents=dependents,
+                known_modules=known_paths,
+                file_dependents=file_dependents,
                 known_criteria=known_criteria,
             )
             if verdict.allowed:
@@ -212,7 +212,7 @@ def build_nodes(
             "type": "design_approval",
             "summary": design.get("summary"),
             "rationale": design.get("rationale"),
-            "components": design.get("components"),
+            "modules": design.get("modules"),
             "files": design.get("files"),
             "impact": design.get("impact"),
             "criteria_addressed": design.get("criteria_addressed"),
@@ -246,13 +246,13 @@ def build_nodes(
     async def implementation(state: dict[str, Any]) -> dict[str, Any]:
         """Write the change, review it deterministically, propose it.
 
-        The review is the load-bearing part. An agent that edits a component
+        The review is the load-bearing part. An agent that edits a module
         the design never mentioned is not implementing the design, and the
         context graph is what makes that checkable rather than a matter of
         opinion.
         """
         design = state.get("design_proposal") or {}
-        allowed = [c for c in design.get("components", []) if c]
+        allowed = [c for c in design.get("modules", []) if c]
         candidate_paths = [p for p in design.get("files", []) if p]
 
         files = (
@@ -268,7 +268,7 @@ def build_nodes(
                 design=design,
                 criteria=await context_graph.criteria(),
                 files=files,
-                allowed_components=allowed,
+                allowed_modules=allowed,
             ),
             Implementation,
         )
@@ -280,9 +280,9 @@ def build_nodes(
             }
 
         edits = [e.model_dump() for e in proposal.edits]
-        known = await context_graph.component_paths()
+        known = await context_graph.module_paths()
         verdict = review_change(
-            edits, allowed_components=allowed, known_components=known
+            edits, allowed_modules=allowed, known_modules=known
         )
 
         if not verdict.allowed:
@@ -309,7 +309,7 @@ def build_nodes(
             "implementation": {
                 "summary": proposal.summary,
                 "files": change.files,
-                "components": verdict.components,
+                "modules": verdict.modules,
                 "branch": change.branch,
                 "url": change.url,
                 "commit": change.commit,

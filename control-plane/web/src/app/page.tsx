@@ -71,7 +71,7 @@ export default async function DashboardPage() {
           note={coverage.criteria === 0 ? "graph not seeded" : "no passing test"}
           tone={coverage.untested ? "critical" : "good"}
         />
-        <StatTile label="Components" value={graph.components} note={`${graph.dependencies} dependencies`} />
+        <StatTile label="Modules" value={graph.modules} note={`${graph.dependencies} dependencies`} />
       </div>
 
       <div className="card">

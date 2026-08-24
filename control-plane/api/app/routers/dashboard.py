@@ -89,7 +89,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
         "graph": {
             "nodes": counts["nodes"],
             "edges": counts["edges"],
-            "components": counts["nodes"].get("COMPONENT", 0),
+            "modules": counts["nodes"].get("MODULE", 0),
             "dependencies": counts["edges"].get("DEPENDS_ON", 0),
         },
         "dispatches": dispatch_states,

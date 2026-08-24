@@ -32,7 +32,7 @@ def _after_gate(decision_key: str, next_node: str):
 
 def _after_design(state: dict[str, Any]) -> str:
     design = state.get("design_proposal") or {}
-    return "gate_2" if design.get("components") and not design.get("rejected") else END
+    return "gate_2" if design.get("modules") and not design.get("rejected") else END
 
 
 def _after_implementation(state: dict[str, Any]) -> str:

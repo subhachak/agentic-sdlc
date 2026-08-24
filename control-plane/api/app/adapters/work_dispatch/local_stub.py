@@ -52,10 +52,10 @@ _CANNED_ASSERTIONS = [
 
     {"edge": "COVERS",
      "src": _n("TEST_SCENARIO", "qa", "filter-denied"),
-     "dst": _n("COMPONENT", "code", "claims-filter")},
+     "dst": _n("MODULE", "code", "claims-filter")},
     {"edge": "DEPENDS_ON",
-     "src": _n("COMPONENT", "code", "claims-filter"),
-     "dst": _n("COMPONENT", "code", "claims-api")},
+     "src": _n("MODULE", "code", "claims-filter"),
+     "dst": _n("MODULE", "code", "claims-api")},
 
     {"edge": "PRODUCED", "src": _RUN,
      "dst": _n("EVIDENCE", "qa", "evidence/html-report/index.html", screenshots=2, traces=2)},

@@ -1,4 +1,4 @@
-"""Port: derive a component and dependency graph from a repository.
+"""Port: derive a module and dependency graph from a repository.
 
 This is the third of the three graphs — derived, rebuildable, approximate.
 Unlike the traceability graph it is regenerated rather than accumulated, so
@@ -15,10 +15,10 @@ from pydantic import BaseModel, Field
 
 class CodeFile(BaseModel):
     path: str
-    component: str
+    module: str
 
 
-class CodeComponent(BaseModel):
+class CodeModule(BaseModel):
     id: str
     paths: list[str] = Field(default_factory=list)
     owners: list[str] = Field(default_factory=list)
@@ -32,12 +32,18 @@ class CodeDependency(BaseModel):
     weight: int = 1
 
 
+class FileImport(BaseModel):
+    source: str
+    target: str
+
+
 class CodeIndex(BaseModel):
     repo: str
     ref: str
-    components: list[CodeComponent] = Field(default_factory=list)
+    modules: list[CodeModule] = Field(default_factory=list)
     files: list[CodeFile] = Field(default_factory=list)
     dependencies: list[CodeDependency] = Field(default_factory=list)
+    imports: list[FileImport] = Field(default_factory=list)
     unresolved_imports: int = 0
     skipped_files: int = 0
 

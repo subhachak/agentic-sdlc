@@ -44,7 +44,7 @@ what it touched.
 
 The code half of the graph is derived, not written by hand. Point it at a
 repository and it fetches the source archive, parses imports, and works out
-which components exist and what depends on what:
+which modules exist and what depends on what:
 
 ```bash
 make seed-preview REPO=owner/name    # index without writing
@@ -119,7 +119,7 @@ make test    # both test suites
 The console has four views: a **dashboard** showing what is running, what is
 waiting on a person versus on CI, and how many acceptance criteria have
 reached a passing test; the **runs** list and detail; the **context graph**,
-where you point it at a repository and watch the component structure appear;
+where you point it at a repository and watch the module structure appear;
 and **configuration**.
 
 Configuration lives in the control plane, not only in `.env`. Adapter choices

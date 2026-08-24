@@ -7,7 +7,7 @@
 features:
   - id: claims-list
     route: /claims
-    component: claims-table
+    module: claims-table
     description: Policyholder-facing table listing all claims with id, policyholder, status, and last updated date.
     acceptance_criteria:
       - id: claims-list/ac-1
@@ -16,7 +16,7 @@ features:
         text: Each row shows id, policyholder, status, last updated date
   - id: claims-status-filter
     route: /claims
-    component: claims-filter
+    module: claims-filter
     description: A status filter dropdown lets the user narrow the claims table to one status (Under Review, Approved, Denied) or view all.
     acceptance_criteria:
       - id: claims-status-filter/ac-1

@@ -44,8 +44,8 @@ class Settings(BaseSettings):
     # The repository the demo indexes when none is given in the request.
     code_index_repo: str | None = None
     code_index_ref: str = "main"
-    # A component is a directory collapsed to this many path segments. Deeper
-    # means finer components; too shallow and a whole service is one node.
+    # A module is a directory collapsed to this many path segments. Deeper
+    # means finer modules; too shallow and a whole service is one node.
     code_index_max_depth: int = 4
     code_index_local_root: str = "."
 

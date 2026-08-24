@@ -99,8 +99,8 @@ SPECS: tuple[SettingSpec, ...] = (
     SettingSpec("code_index_repo", "Repository to index", "Context graph",
                 placeholder="owner/name"),
     SettingSpec("code_index_ref", "Ref to index", "Context graph", placeholder="main"),
-    SettingSpec("code_index_max_depth", "Component depth", "Context graph", type="int",
-                help="A component is a directory collapsed to this many path segments."),
+    SettingSpec("code_index_max_depth", "Module depth", "Context graph", type="int",
+                help="A module is a directory collapsed to this many path segments."),
     SettingSpec("code_index_local_root", "Local path", "Context graph",
                 help="Used when the index source is local."),
 

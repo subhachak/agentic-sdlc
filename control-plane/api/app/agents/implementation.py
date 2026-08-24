@@ -2,7 +2,7 @@
 it may be proposed.
 
 The prompt is deliberately narrow. The agent is given only the files the
-design phase implicated, is told which components it may touch, and returns
+design phase implicated, is told which modules it may touch, and returns
 whole files rather than a diff — diffs are where generated changes go wrong,
 because a patch that does not apply is a failure with no useful message.
 
@@ -24,7 +24,7 @@ files you may edit. Make the smallest change that satisfies the criteria.
 
 Rules:
 - Return the COMPLETE new contents of every file you change, not a diff.
-- Only edit files you were given, or create new files inside the components
+- Only edit files you were given, or create new files inside the modules
   you were told you may touch. A change outside them is rejected without
   being run.
 - Match the surrounding code: its imports, its naming, its formatting, its
@@ -63,7 +63,7 @@ def build_prompt(
     design: dict[str, Any],
     criteria: list[dict[str, Any]],
     files: dict[str, str],
-    allowed_components: list[str],
+    allowed_modules: list[str],
 ) -> str:
     criteria_text = "\n".join(f"  {c.get('id', '?')}: {c.get('text', '')}" for c in criteria)
     files_text = "\n\n".join(
@@ -73,6 +73,6 @@ def build_prompt(
         f"Requirement:\n{requirement}\n\n"
         f"Design decision:\n{design.get('summary', '(none recorded)')}\n\n"
         f"Acceptance criteria this change must satisfy:\n{criteria_text or '  (none declared)'}\n\n"
-        f"Components you may touch: {', '.join(allowed_components) or '(unrestricted)'}\n\n"
+        f"Modules you may touch: {', '.join(allowed_modules) or '(unrestricted)'}\n\n"
         f"Current file contents:\n{files_text or '(no files provided)'}"
     )

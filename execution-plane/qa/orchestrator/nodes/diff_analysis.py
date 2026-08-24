@@ -13,7 +13,7 @@ from orchestrator.state import PipelineState
 
 SYSTEM = """You are a QA discovery agent. Given a git diff and known feature
 context, summarize what changed in plain language and list the affected
-user-facing areas (routes, components, API endpoints). Be concrete — name
+user-facing areas (routes, modules, API endpoints). Be concrete — name
 routes and elements, don't generalize. affected_areas entries look like
 "/claims (status filter added)"."""
 
