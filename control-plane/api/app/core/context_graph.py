@@ -66,6 +66,10 @@ class ContextGraphStore(Protocol):
 
     async def components(self) -> list[dict[str, Any]]: ...
 
+    async def component_paths(self) -> dict[str, set[str]]: ...
+
+    async def criteria(self) -> list[dict[str, Any]]: ...
+
 
 class SqlContextGraph:
     def __init__(self, resolver: EntityResolver) -> None:
@@ -345,3 +349,42 @@ class SqlContextGraph:
                 }
             )
         return sorted(out, key=lambda c: -c["files"])
+
+    async def component_paths(self) -> dict[str, set[str]]:
+        """Component id to the file paths it owns.
+
+        What the change review needs to decide whether an edit lands inside
+        the components the design named.
+        """
+        async with get_sessionmaker()() as session:
+            nodes = {
+                n.id: n for n in (await session.execute(select(GraphNode))).scalars().all()
+            }
+            edges = (
+                await session.execute(
+                    select(GraphEdge).where(
+                        GraphEdge.type == EdgeType.BELONGS_TO,
+                        GraphEdge.superseded_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+
+        out: dict[str, set[str]] = {}
+        for edge in edges:
+            artifact, component = nodes.get(edge.src_id), nodes.get(edge.dst_id)
+            if artifact and component:
+                out.setdefault(component.external_id, set()).add(artifact.external_id)
+        return out
+
+    async def criteria(self) -> list[dict[str, Any]]:
+        async with get_sessionmaker()() as session:
+            rows = (
+                await session.execute(
+                    select(GraphNode).where(GraphNode.type == NodeType.ACCEPTANCE_CRITERION)
+                )
+            ).scalars().all()
+        return [
+            {"id": r.external_id, "text": r.projection.get("text", ""),
+             "component": r.projection.get("component")}
+            for r in rows
+        ]

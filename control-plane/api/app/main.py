@@ -46,6 +46,7 @@ def build_runtime(app: FastAPI, settings, checkpointer=None) -> None:
         test_management=adapters.test_management,
         build_deploy=adapters.build_deploy,
         work_dispatch=adapters.work_dispatch,
+        source_control=adapters.source_control,
         dispatch_store=app.state.dispatch_store,
         context_graph=app.state.context_graph,
         llm_provider=adapters.llm_provider,
@@ -54,6 +55,9 @@ def build_runtime(app: FastAPI, settings, checkpointer=None) -> None:
         max_retries=settings.max_node_retries,
         dispatch_timeout_seconds=settings.dispatch_timeout_seconds,
         dispatch_provider=settings.work_dispatch_adapter,
+        target_repo=settings.target_repo or "",
+        target_ref=settings.target_ref,
+        target_environment=settings.target_environment,
     )
     app.state.graph = build_graph(nodes, checkpointer=checkpointer or app.state.checkpointer)
 

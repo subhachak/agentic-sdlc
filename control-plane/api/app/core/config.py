@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     llm_provider_adapter: Literal["claude", "mock"] = "mock"
     work_dispatch_adapter: Literal["github-actions", "local"] = "local"
     code_intelligence_adapter: Literal["github", "local"] = "github"
+    source_control_adapter: Literal["github", "local"] = "local"
     claude_model: str = "claude-opus-5"
     anthropic_api_key: str | None = None
 
@@ -47,6 +48,14 @@ class Settings(BaseSettings):
     # means finer components; too shallow and a whole service is one node.
     code_index_max_depth: int = 4
     code_index_local_root: str = "."
+
+    # --- implementation phase ---
+    # The repository the implementation agent proposes changes against, and
+    # the working copy the local adapter writes to.
+    target_repo: str | None = None
+    target_ref: str = "main"
+    target_working_copy: str = "."
+    target_environment: str = "staging"
     reconciler_interval_seconds: float = 5.0
     local_dispatch_duration_seconds: float = 3.0
 

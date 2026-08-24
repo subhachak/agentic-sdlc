@@ -20,6 +20,7 @@ from app.core.gate_controller import GateController
 from app.core.graph_runtime import spawn_run
 from app.ports.work_dispatch import DispatchResult
 from tests.graph_doubles import InMemoryContextGraph
+from tests.implementation_doubles import StubSourceControl, WritingLLMProvider
 from tests.dispatch_doubles import (
     SUCCESS,
     ExplodingWorkDispatch,
@@ -46,7 +47,8 @@ def _graph(work_dispatch, store):
         work_dispatch=work_dispatch,
         dispatch_store=store,
         context_graph=InMemoryContextGraph(),
-        llm_provider=StubLLMProvider(),
+        llm_provider=WritingLLMProvider(),
+        source_control=StubSourceControl(),
         audit_logger=logger,
         gate_controller=GateController(logger),
         max_retries=1,

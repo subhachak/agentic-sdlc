@@ -101,3 +101,21 @@ class InMemoryContextGraph:
         for e in self.edges:
             edges[e["type"]] = edges.get(e["type"], 0) + 1
         return {"nodes": nodes, "edges": edges}
+
+    async def component_paths(self) -> dict[str, set[str]]:
+        out: dict[str, set[str]] = {}
+        for e in self.edges:
+            if e["type"] != EdgeType.BELONGS_TO:
+                continue
+            artifact, component = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
+            if artifact and component:
+                out.setdefault(component["external_id"], set()).add(artifact["external_id"])
+        return out
+
+    async def criteria(self) -> list[dict[str, Any]]:
+        return [
+            {"id": n["external_id"], "text": n["projection"].get("text", ""),
+             "component": n["projection"].get("component")}
+            for n in self.nodes.values()
+            if n["type"] == NodeType.ACCEPTANCE_CRITERION
+        ]

@@ -14,6 +14,7 @@ from app.ports.code_design_context import CodeDesignContext
 from app.ports.code_intelligence import CodeIntelligence
 from app.ports.llm_provider import LLMProvider
 from app.ports.requirements_source import RequirementsSource
+from app.ports.source_control import SourceControl
 from app.ports.test_management import TestManagement
 from app.ports.work_dispatch import WorkDispatch
 
@@ -35,6 +36,7 @@ class Adapters:
     work_dispatch: WorkDispatch
     entity_resolver: EntityResolver
     code_intelligence: CodeIntelligence
+    source_control: SourceControl
 
 
 def build_llm_provider(settings: Settings) -> LLMProvider:
@@ -94,6 +96,21 @@ def build_code_intelligence(settings: Settings) -> CodeIntelligence:
     )
 
 
+def build_source_control(settings: Settings) -> SourceControl:
+    if settings.source_control_adapter == "github":
+        if not settings.github_token:
+            raise ValueError("source_control_adapter=github needs GITHUB_TOKEN")
+        from app.adapters.source_control.github import GitHubSourceControl
+
+        return GitHubSourceControl(token=settings.github_token)
+
+    from pathlib import Path as _Path
+
+    from app.adapters.source_control.local_working_copy import LocalWorkingCopy
+
+    return LocalWorkingCopy(_Path(settings.target_working_copy))
+
+
 def build_adapters(settings: Settings) -> Adapters:
     from app.adapters.audit_sink.sqlite_audit_sink import SqliteAuditSink
     from app.adapters.build_deploy.noop import NoOpBuildDeploy
@@ -105,6 +122,7 @@ def build_adapters(settings: Settings) -> Adapters:
         work_dispatch=build_work_dispatch(settings),
         entity_resolver=build_entity_resolver(settings),
         code_intelligence=build_code_intelligence(settings),
+        source_control=build_source_control(settings),
         requirements_source=PlainTextCSVRequirementsSource(),
         code_design_context=StubSimilarityCodeDesignContext(),
         test_management=JsonFileTestManagement(),

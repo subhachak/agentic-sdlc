@@ -19,6 +19,7 @@ from app.ports.code_design_context import ContextSnippet
 from app.ports.requirements_source import RequirementsDoc
 from app.ports.test_management import TestCaseRecord
 from tests.graph_doubles import InMemoryContextGraph
+from tests.implementation_doubles import StubSourceControl, WritingLLMProvider
 from tests.dispatch_doubles import SUCCESS, InMemoryDispatchStore, StubWorkDispatch
 
 
@@ -65,7 +66,7 @@ class StubLLMProvider:
         raise AssertionError("stub node logic must not call the LLM in this phase")
 
 
-def _build_test_graph(work_dispatch=None, dispatch_store=None):
+def _build_test_graph(work_dispatch=None, dispatch_store=None, llm=None, source_control=None):
     sink = InMemoryAuditSink()
     logger = AuditLogger(sink)
     gate_controller = GateController(logger)
@@ -79,7 +80,8 @@ def _build_test_graph(work_dispatch=None, dispatch_store=None):
         work_dispatch=work_dispatch,
         dispatch_store=dispatch_store,
         context_graph=InMemoryContextGraph(),
-        llm_provider=StubLLMProvider(),
+        llm_provider=llm or WritingLLMProvider(),
+        source_control=source_control or StubSourceControl(),
         audit_logger=logger,
         gate_controller=gate_controller,
         max_retries=1,
@@ -110,8 +112,9 @@ async def test_pipeline_pauses_at_three_gates_and_completes_on_approval():
     assert "__interrupt__" in result
     assert result["status"] == "awaiting_gate_2"
 
-    # Approving gate 2 now hands the QA phase to a remote executor, so the
-    # graph parks on the machine pause rather than going straight to gate 3.
+    # Approving gate 2 now runs the implementation phase and then hands the QA
+    # phase to a remote executor, so the graph parks on the machine pause
+    # rather than going straight to gate 3.
     result = await graph.ainvoke(Command(resume={"approved": True}), config=thread)
     assert "__interrupt__" in result
     assert result["status"] == "awaiting_qa_execution"

@@ -80,6 +80,17 @@ SPECS: tuple[SettingSpec, ...] = (
     SettingSpec("local_dispatch_duration_seconds", "Simulated job duration (s)",
                 "Remote execution", type="float"),
 
+    # --- implementation ---
+    SettingSpec("source_control_adapter", "Change target", "Implementation", type="enum",
+                options=("local", "github"),
+                help="local writes a branch in a working copy and pushes nothing."),
+    SettingSpec("target_repo", "Repository", "Implementation", placeholder="owner/name"),
+    SettingSpec("target_ref", "Base branch", "Implementation", placeholder="main"),
+    SettingSpec("target_working_copy", "Working copy", "Implementation",
+                help="Used when the change target is local."),
+    SettingSpec("target_environment", "Deploy environment", "Implementation",
+                placeholder="staging"),
+
     # --- context graph ---
     SettingSpec("code_intelligence_adapter", "Index source", "Context graph", type="enum",
                 options=("github", "local"),

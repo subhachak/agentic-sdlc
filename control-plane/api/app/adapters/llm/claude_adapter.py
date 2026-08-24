@@ -26,3 +26,30 @@ class ClaudeLLMProvider:
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
         )
+
+    async def complete_json(
+        self, system_prompt: str, user_prompt: str, schema, *, max_tokens: int = 16000
+    ):
+        """Structured output: the model is constrained to the schema and the
+        SDK validates before this returns, so a caller never parses prose.
+
+        Adaptive thinking is on — the implementation phase is the one place in
+        this pipeline where the model is reasoning about existing code rather
+        than restating a summary, and it is worth the tokens.
+        """
+        response = await self._client.beta.messages.parse(
+            model=self._model,
+            max_tokens=max_tokens,
+            thinking={"type": "adaptive"},
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=schema,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+        if response.stop_reason == "refusal":
+            detail = getattr(response.stop_details, "explanation", None) or "no explanation"
+            raise RuntimeError(f"the model declined this request: {detail}")
+        if response.parsed_output is None:
+            raise RuntimeError("the model returned no parsable output")
+        return response.parsed_output

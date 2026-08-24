@@ -22,6 +22,11 @@ TERMINAL_STATUSES = {
     "design_proposal_failed",
     "test_case_generation_failed",
     "build_deploy_failed",
+    "release_failed",
+    # A change nobody would want proposed stops here rather than being run.
+    "implementation_failed",
+    "implementation_blocked",
+    "implementation_rejected",
     # A remote execution that never produced a usable verdict ends the run.
     # Both must be listed here or stream_events never closes the SSE stream.
     "qa_failed",

@@ -13,6 +13,9 @@ from uuid import uuid4
 
 from app.agents.state import GateDecision
 from app.core.audit import AuditLogger, NodeFn, audited
+from app.agents.implementation import SYSTEM as IMPLEMENTATION_SYSTEM
+from app.agents.implementation import Implementation, build_prompt
+from app.core.change_review import review as review_change
 from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
 from app.core.dispatches import DispatchStore
 from app.core.gate_controller import GateController
@@ -21,6 +24,7 @@ from app.ports.build_deploy import BuildDeploy
 from app.ports.code_design_context import CodeDesignContext
 from app.ports.llm_provider import LLMProvider
 from app.ports.requirements_source import RequirementsInput, RequirementsSource
+from app.ports.source_control import ChangeRef, FileEdit, SourceControl
 from app.ports.test_management import TestCaseRecord, TestManagement
 from app.ports.work_dispatch import DispatchResult, WorkDispatch
 
@@ -55,6 +59,7 @@ def build_nodes(
     test_management: TestManagement,
     build_deploy: BuildDeploy,
     work_dispatch: WorkDispatch,
+    source_control: SourceControl,
     dispatch_store: DispatchStore,
     context_graph: ContextGraphStore,
     llm_provider: LLMProvider,  # unused by stub logic this phase; wired for later phases
@@ -63,6 +68,9 @@ def build_nodes(
     max_retries: int,
     dispatch_timeout_seconds: int = 1800,
     dispatch_provider: str = "local",
+    target_repo: str = "",
+    target_ref: str = "main",
+    target_environment: str = "staging",
 ) -> dict[str, NodeFn]:
     def business(name: str, fallback: dict[str, Any]):
         def decorator(fn: NodeFn) -> NodeFn:
@@ -115,11 +123,36 @@ def build_nodes(
 
     @business("design_proposal", fallback={"status": "design_proposal_failed"})
     async def design_proposal(state: dict[str, Any]) -> dict[str, Any]:
+        """Ground the change in components that actually exist.
+
+        The reasoning is still a stub, but which components a change may touch
+        is not something to guess: it comes from the context graph, and it is
+        what the implementation phase is later held to.
+        """
         query = (state.get("requirements_synthesis") or {}).get("summary", "")
         snippets = await code_design_context.retrieve_context(query)
+
+        component_paths = await context_graph.component_paths()
+        wanted = {w for w in (query or "").lower().split() if len(w) > 3}
+        scored = sorted(
+            (
+                (len(wanted & set(component.lower().replace("/", " ").split())), component)
+                for component in component_paths
+            ),
+            reverse=True,
+        )
+        components = [c for score, c in scored if score > 0][:3] or [
+            c for _, c in scored[:1]
+        ]
+        files = sorted(
+            path for component in components for path in component_paths.get(component, ())
+        )[:12]
+
         proposal = {
             "summary": "stub design proposal grounded in retrieved context",
             "context_snippets": [s.model_dump() for s in snippets],
+            "components": components,
+            "files": files,
         }
         return {"design_proposal": proposal, "status": "awaiting_gate_2"}
 
@@ -148,6 +181,82 @@ def build_nodes(
         await test_management.create_test_case(state["run_id"], tc)
         return {"test_cases": [tc.model_dump()], "status": "awaiting_qa_execution"}
 
+    @business("implementation", fallback={"status": "implementation_failed"})
+    async def implementation(state: dict[str, Any]) -> dict[str, Any]:
+        """Write the change, review it deterministically, propose it.
+
+        The review is the load-bearing part. An agent that edits a component
+        the design never mentioned is not implementing the design, and the
+        context graph is what makes that checkable rather than a matter of
+        opinion.
+        """
+        design = state.get("design_proposal") or {}
+        allowed = [c for c in design.get("components", []) if c]
+        candidate_paths = [p for p in design.get("files", []) if p]
+
+        files = (
+            await source_control.read_files(target_repo, target_ref, candidate_paths)
+            if candidate_paths
+            else {}
+        )
+
+        proposal = await llm_provider.complete_json(
+            IMPLEMENTATION_SYSTEM,
+            build_prompt(
+                requirement=state.get("raw_input", {}).get("text", ""),
+                design=design,
+                criteria=await context_graph.criteria(),
+                files=files,
+                allowed_components=allowed,
+            ),
+            Implementation,
+        )
+
+        if proposal.blocked:
+            return {
+                "implementation": {"blocked": proposal.blocked, "summary": proposal.summary},
+                "status": "implementation_blocked",
+            }
+
+        edits = [e.model_dump() for e in proposal.edits]
+        known = await context_graph.component_paths()
+        verdict = review_change(
+            edits, allowed_components=allowed, known_components=known
+        )
+
+        if not verdict.allowed:
+            return {
+                "implementation": {
+                    "summary": proposal.summary,
+                    "rejected": verdict.reasons,
+                    "files": [e["path"] for e in edits],
+                },
+                "status": "implementation_rejected",
+            }
+
+        change: ChangeRef = await source_control.open_change(
+            target_repo,
+            target_ref,
+            f"agentic/{state['run_id'][:8]}",
+            f"{proposal.summary[:70]}",
+            f"{proposal.summary}\n\nProposed by the agentic SDLC pipeline for run "
+            f"{state['run_id']}.",
+            [FileEdit(path=e["path"], content=e["content"]) for e in edits],
+        )
+
+        return {
+            "implementation": {
+                "summary": proposal.summary,
+                "files": change.files,
+                "components": verdict.components,
+                "branch": change.branch,
+                "url": change.url,
+                "commit": change.commit,
+            },
+            "changed_paths": change.files,
+            "status": "awaiting_qa_execution",
+        }
+
     async def qa_execution(state: dict[str, Any]) -> dict[str, Any]:
         """Hand the QA phase to whatever actually runs it, then park.
 
@@ -173,6 +282,10 @@ def build_nodes(
                     {
                         "base_sha": state.get("base_sha", ""),
                         "head_sha": state.get("head_sha", ""),
+                        # What the implementation phase actually touched. The QA
+                        # pipeline widens this to the blast radius itself.
+                        "changed_paths": state.get("changed_paths", []),
+                        "branch": (state.get("implementation") or {}).get("branch", ""),
                     },
                 )
                 await dispatch_store.attach_external(
@@ -223,12 +336,50 @@ def build_nodes(
             "status": "building" if gate_decision.approved else "rejected_at_gate_3",
         }
 
-    @business("build_deploy_stub", fallback={"status": "build_deploy_failed"})
-    async def build_deploy_stub(state: dict[str, Any]) -> dict[str, Any]:
+    @business("release", fallback={"status": "release_failed"})
+    async def release(state: dict[str, Any]) -> dict[str, Any]:
+        """Ship, and record what shipped.
+
+        The deployment itself is still whatever the BuildDeploy adapter does.
+        What is new is the trail: a release node with edges to the files it
+        contains and the environment it reached, which is what turns "when did
+        this criterion last ship" into a query.
+        """
+        implementation = state.get("implementation") or {}
         result = await build_deploy.trigger_build(
-            state["run_id"], {"test_case_count": len(state.get("test_cases", []))}
+            state["run_id"],
+            {
+                "branch": implementation.get("branch", ""),
+                "files": implementation.get("files", []),
+            },
         )
-        return {"build_result": result.model_dump(), "status": "completed"}
+
+        release_id = f"{state['run_id'][:8]}"
+        release_node = NodeSpec("RELEASE", "pipeline", release_id, {
+            "build_id": result.build_id, "branch": implementation.get("branch", "")
+        })
+        assertions = [
+            Assertion(
+                "CONTAINS",
+                release_node,
+                NodeSpec("SOURCE_ARTIFACT", "code", path, {}),
+            )
+            for path in implementation.get("files", [])
+        ]
+        assertions.append(
+            Assertion(
+                "DEPLOYED_TO",
+                release_node,
+                NodeSpec("ENVIRONMENT", "pipeline", target_environment, {}),
+            )
+        )
+        await context_graph.ingest(state["run_id"], "release", assertions)
+
+        return {
+            "build_result": result.model_dump(),
+            "release": {"id": release_id, "environment": target_environment},
+            "status": "completed",
+        }
 
     return {
         "requirements_intake": requirements_intake,
@@ -238,7 +389,8 @@ def build_nodes(
         "design_proposal": design_proposal,
         "gate_2": gate_2,
         "test_case_generation": test_case_generation,
+        "implementation": implementation,
         "qa_execution": qa_execution,
         "gate_3": gate_3,
-        "build_deploy_stub": build_deploy_stub,
+        "release": release,
     }
