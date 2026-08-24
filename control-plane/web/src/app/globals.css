@@ -257,6 +257,11 @@ main.wide { max-width: 1040px; }
   .field { grid-template-columns: 15rem 1fr; align-items: start; column-gap: 1.25rem; }
 }
 
+/* A step's action is a button, not a form control: it takes the width it
+   needs rather than filling the column an input would. */
+.field-action { display: flex; align-items: flex-start; }
+.field-action button { white-space: nowrap; }
+
 .field-label { font-size: 0.9rem; }
 .field-help { font-size: 0.78rem; color: var(--muted); }
 
@@ -293,3 +298,17 @@ main.wide { max-width: 1040px; }
 }
 
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Visually hidden, still announced. The setup steps encode their state in a
+   colour and a glyph; a screen reader needs the word. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

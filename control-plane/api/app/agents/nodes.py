@@ -20,6 +20,7 @@ from app.agents.implementation import SYSTEM as IMPLEMENTATION_SYSTEM
 from app.agents.implementation import Implementation, build_prompt
 from app.core.change_review import review as review_change
 from app.core.design_review import MAX_FILES as MAX_DESIGN_FILES
+from app.core.seeding import refresh as refresh_index
 from app.core.design_review import review as review_design
 from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
 from app.core.dispatches import DispatchStore
@@ -27,6 +28,7 @@ from app.core.gate_controller import GateController
 from app.core.reliability import with_retry_fallback
 from app.ports.build_deploy import BuildDeploy
 from app.ports.code_design_context import CodeDesignContext
+from app.ports.code_intelligence import CodeIntelligence
 from app.ports.llm_provider import LLMProvider
 from app.ports.requirements_source import RequirementsInput, RequirementsSource
 from app.ports.source_control import ChangeRef, FileEdit, SourceControl
@@ -76,6 +78,7 @@ def build_nodes(
     build_deploy: BuildDeploy,
     work_dispatch: WorkDispatch,
     source_control: SourceControl,
+    code_intelligence: CodeIntelligence | None = None,
     dispatch_store: DispatchStore,
     context_graph: ContextGraphStore,
     llm_provider: LLMProvider,  # unused by stub logic this phase; wired for later phases
@@ -477,9 +480,32 @@ def build_nodes(
         )
         await context_graph.ingest(state["run_id"], "release", assertions)
 
+        # The run just changed the codebase, so the graph now describes the
+        # commit before it. Refreshing here is what keeps "what depends on
+        # what" true between runs rather than only after someone remembers to
+        # re-index — and it reports the delta, so a release says what it moved
+        # in the graph as well as what it shipped.
+        graph_update: dict[str, Any] = {"skipped": "no indexer configured"}
+        if code_intelligence is not None and target_repo:
+            try:
+                summary = await refresh_index(
+                    context_graph,
+                    code_intelligence,
+                    repo=target_repo,
+                    ref=implementation.get("branch") or target_ref,
+                    run_id=state["run_id"],
+                )
+                graph_update = {
+                    "commit_sha": summary.get("commit_sha"),
+                    **summary.get("delta", {}),
+                }
+            except Exception as exc:  # noqa: BLE001 — a stale graph is not a failed release
+                graph_update = {"failed": str(exc)}
+
         return {
             "build_result": result.model_dump(),
             "release": {"id": release_id, "environment": target_environment},
+            "graph_update": graph_update,
             "status": "completed",
         }
 

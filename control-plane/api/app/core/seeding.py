@@ -201,3 +201,76 @@ async def seed(
         ),
         "skipped_files": prov.skipped_files,
     }
+
+
+def _edge_keys(assertions: list[Assertion]) -> set[tuple[str, str, str]]:
+    return {(a.edge, a.src.external_id, a.dst.external_id) for a in assertions}
+
+
+async def refresh(
+    graph: ContextGraphStore,
+    indexer: CodeIntelligence,
+    repo: str,
+    ref: str = "main",
+    run_id: str = "seed",
+) -> dict[str, Any]:
+    """Bring the graph up to date, and say what changed.
+
+    A rebuild would produce the same graph. This exists because "the same
+    graph" is not the same answer as "these four files appeared, these two
+    are gone, eleven edges moved" — and a platform whose graph updates
+    invisibly is one nobody can audit. The delta is computed by comparing what
+    this phase currently asserts against what the index now supports, so it is
+    exact rather than inferred from a diff.
+
+    Note what is *not* incremental: the index itself. The adapter reads the
+    whole tree either way, because resolving one file's imports needs to know
+    every file that exists — a newly added module changes how an untouched
+    file's import resolves. What this avoids is rewriting a graph that mostly
+    did not change, and losing the ability to report on the part that did.
+    """
+    index = await indexer.index(repo, ref)
+    assertions = assertions_from_index(index)
+
+    before = await graph.phase_edges(CODE_INDEX_PHASE)
+    after = _edge_keys(assertions)
+
+    added = after - before
+    removed = before - after
+
+    retracted = await graph.retract(CODE_INDEX_PHASE, removed) if removed else {"edges": 0, "nodes": 0}
+    written = await graph.ingest(run_id, CODE_INDEX_PHASE, assertions)
+
+    prov = index.provenance
+    return {
+        "repo": index.repo,
+        "ref": index.ref,
+        "commit_sha": prov.commit_sha,
+        "pinned": prov.commit_sha is not None,
+        "indexer_version": prov.indexer_version,
+        "indexed_at": prov.indexed_at,
+        "modules": len(index.modules),
+        "files": len(index.files),
+        "edges_written": written,
+        "delta": {
+            "edges_added": len(added),
+            "edges_removed": retracted["edges"],
+            "nodes_removed": retracted["nodes"],
+            "unchanged": len(before & after),
+            # Named rather than only counted: "eleven edges changed" is a
+            # number, "this file no longer imports that one" is a fact someone
+            # can act on.
+            "added_sample": sorted(f"{e} {s} -> {d}" for e, s, d in added)[:20],
+            "removed_sample": sorted(f"{e} {s} -> {d}" for e, s, d in removed)[:20],
+        },
+        "resolution": prov.model_dump(
+            include={
+                "total_imports", "resolved", "external_package",
+                "unresolved_relative", "unresolved_internal",
+                "type_only", "from_tests", "runtime_product",
+                "contract_edges", "unmatched_calls", "uncalled_routes",
+                "internal_capture_rate", "most_missed",
+            }
+        ),
+        "skipped_files": prov.skipped_files,
+    }

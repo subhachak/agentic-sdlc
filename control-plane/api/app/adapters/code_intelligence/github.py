@@ -105,6 +105,17 @@ class GitHubCodeIntelligence:
     async def _fetch_archive(self, repo: str, ref: str) -> bytes:
         last_status: int | None = None
 
+        try:
+            return await self._try_urls(repo, ref)
+        except httpx.HTTPError as exc:
+            # Wrapped here rather than left to propagate: transport is this
+            # adapter's concern, and a caller that had to catch httpx would be
+            # coupled to the fact that this one speaks HTTP at all.
+            raise ValueError(f"could not reach GitHub for {repo}@{ref}: {exc}") from exc
+
+    async def _try_urls(self, repo: str, ref: str) -> bytes:
+        last_status: int | None = None
+
         async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
             for url in self._archive_urls(repo, ref):
                 for attempt in range(1, MAX_ATTEMPTS + 1):

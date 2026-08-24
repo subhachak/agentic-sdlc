@@ -90,3 +90,35 @@ class IndexedRepoCodeDesignContext:
                 # agent with no grounding at all.
                 continue
         return sources
+
+    async def status(self) -> dict[str, Any]:
+        """Whether the design agent has anything to be grounded in.
+
+        Reported rather than inferred from a successful query: an index built
+        over zero files answers every question with nothing, which looks
+        exactly like a question with no good answer.
+        """
+        provenance = await self._graph.index_provenance()
+        return {
+            "built": self._index is not None,
+            "chunks": len(self._index) if self._index is not None else 0,
+            "built_for": self._built_for,
+            "current_commit": provenance.get("commit_sha"),
+            "stale": self._index is not None
+            and self._built_for != (provenance.get("commit_sha") or f"unpinned:{self._ref}"),
+            "repo": self._repo,
+            "ref": self._ref,
+        }
+
+    async def rebuild(self) -> dict[str, Any]:
+        """Discard the index and build it again.
+
+        Exists so first-time setup is a thing someone can do and watch,
+        rather than something that happens invisibly on whichever request
+        happens to be first.
+        """
+        async with self._lock:
+            self._index = None
+            self._built_for = None
+        await self._ensure_index()
+        return await self.status()

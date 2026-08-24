@@ -1,15 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listModules, seedGraph } from "@/lib/api";
+import { listModules } from "@/lib/api";
+import { HydrationPanel } from "@/components/hydration-panel";
 import type { ModuleEntry } from "@/lib/types";
 
 export default function GraphPage() {
   const [modules, setModules] = useState<ModuleEntry[] | null>(null);
-  const [repo, setRepo] = useState("");
-  const [ref, setRef] = useState("main");
-  const [seeding, setSeeding] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -24,32 +21,6 @@ export default function GraphPage() {
     void load();
   }, []);
 
-  async function onSeed() {
-    setSeeding(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const summary = await seedGraph(repo.trim(), ref.trim() || "main");
-      const pin = summary.commit_sha
-        ? summary.commit_sha.slice(0, 7)
-        : "no commit — this index cannot be compared with another";
-      const capture = (summary.resolution.internal_capture_rate * 100).toFixed(1);
-      setMessage(
-        `Indexed ${summary.repo} at ${pin}: ${summary.modules} modules, ` +
-          `${summary.files} files, ${summary.file_imports} file imports, ` +
-          `${summary.dependencies} module dependencies. ` +
-          `Captured ${capture}% of imports that look internal — ` +
-          `${summary.resolution.unresolved_internal} dropped. ` +
-          `Replaced the previous index (${summary.removed.edges} edges removed).`
-      );
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSeeding(false);
-    }
-  }
-
   return (
     <main className="wide">
       <h1>Context graph</h1>
@@ -59,35 +30,11 @@ export default function GraphPage() {
         executes anything it fetches.
       </p>
 
-      <div className="card">
-        <div className="field">
-          <div>
-            <div className="field-label">Repository</div>
-            <div className="field-help">Public, or private with a token configured</div>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <input
-              type="text"
-              placeholder="owner/name"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-              style={{ flex: "2 1 14rem" }}
-            />
-            <input
-              type="text"
-              placeholder="main"
-              value={ref}
-              onChange={(e) => setRef(e.target.value)}
-              style={{ flex: "1 1 6rem" }}
-            />
-            <button onClick={onSeed} disabled={seeding || !repo.trim()}>
-              {seeding ? "Indexing..." : "Seed graph"}
-            </button>
-          </div>
-        </div>
-        {message && <p style={{ color: "var(--success)", marginBottom: 0 }}>{message}</p>}
-        {error && <p style={{ color: "var(--danger)", marginBottom: 0 }}>{error}</p>}
-      </div>
+      <HydrationPanel onChanged={load} />
+
+      {error && (
+        <p style={{ color: "var(--danger)" }}>{error}</p>
+      )}
 
       <div className="card">
         <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Modules</h2>
@@ -95,7 +42,7 @@ export default function GraphPage() {
           <p className="muted" style={{ marginBottom: 0 }}>Loading...</p>
         ) : modules.length === 0 ? (
           <p className="muted" style={{ marginBottom: 0 }}>
-            Nothing indexed yet — seed from a repository above.
+            Nothing indexed yet — index a repository above.
           </p>
         ) : (
           <table>

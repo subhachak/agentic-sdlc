@@ -108,6 +108,89 @@ export interface SeedSummary {
   skipped_files: number;
 }
 
+export interface HydrationStep {
+  id: string;
+  title: string;
+  detail: string;
+  ready: boolean;
+  blocked_by: string | null;
+  quality: {
+    internal_capture_rate: number;
+    sufficient: boolean;
+    most_missed: [string, number][];
+  } | null;
+}
+
+export interface HydrationStatus {
+  hydrated: boolean;
+  provenance: {
+    repo: string | null;
+    commit_sha: string | null;
+    indexer_version: string | null;
+    indexed_at: string | null;
+    pinned: boolean;
+    internal_capture_rate: number | null;
+  };
+  counts: { nodes: Record<string, number>; edges: Record<string, number> };
+  steps: HydrationStep[];
+}
+
+export interface RefreshSummary extends SeedSummary {
+  delta: {
+    edges_added: number;
+    edges_removed: number;
+    nodes_removed: number;
+    unchanged: number;
+    added_sample: string[];
+    removed_sample: string[];
+  };
+}
+
+export interface ExportSummary {
+  path: string;
+  scope: string;
+  modules: number;
+  depends_on: number;
+  routes: number;
+  commit_sha: string | null;
+}
+
+export interface RetrievalStatus {
+  built: boolean;
+  chunks: number;
+  built_for: string | null;
+  current_commit: string | null;
+  stale: boolean;
+}
+
+export async function hydrationStatus(): Promise<HydrationStatus> {
+  const res = await fetch(`${API_URL}/api/graph/status`, { cache: "no-store" });
+  return json(res);
+}
+
+export async function refreshGraph(repo: string, ref: string): Promise<RefreshSummary> {
+  const res = await fetch(`${API_URL}/api/graph/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, ref }),
+  });
+  return json(res);
+}
+
+export async function exportGraph(scope: string): Promise<ExportSummary> {
+  const res = await fetch(`${API_URL}/api/graph/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope }),
+  });
+  return json(res);
+}
+
+export async function rebuildRetrieval(): Promise<RetrievalStatus> {
+  const res = await fetch(`${API_URL}/api/graph/retrieval/rebuild`, { method: "POST" });
+  return json(res);
+}
+
 export async function seedGraph(repo: string, ref: string): Promise<SeedSummary> {
   const res = await fetch(`${API_URL}/api/graph/seed`, {
     method: "POST",

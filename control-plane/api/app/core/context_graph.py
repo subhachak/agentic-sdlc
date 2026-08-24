@@ -56,6 +56,10 @@ class ContextGraphStore(Protocol):
 
     async def purge_phase(self, phase: str) -> dict[str, int]: ...
 
+    async def phase_edges(self, phase: str) -> set[tuple[str, str, str]]: ...
+
+    async def retract(self, phase: str, edges: set[tuple[str, str, str]]) -> dict[str, int]: ...
+
     async def index_provenance(self) -> dict[str, Any]: ...
 
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]: ...
@@ -211,6 +215,85 @@ class SqlContextGraph:
             await session.commit()
 
         return {"edges": len(edges), "nodes": len(orphans)}
+
+    async def phase_edges(self, phase: str) -> set[tuple[str, str, str]]:
+        """What one phase currently asserts, in the terms a caller thinks in.
+
+        Keyed by external ids rather than node ids so a caller can compare
+        against freshly derived assertions without resolving them first —
+        which is what makes an incremental update a comparison rather than a
+        rebuild.
+        """
+        async with get_sessionmaker()() as session:
+            nodes = {
+                n.id: n.external_id
+                for n in (await session.execute(select(GraphNode))).scalars().all()
+            }
+            edges = (
+                await session.execute(select(GraphEdge).where(GraphEdge.phase == phase))
+            ).scalars().all()
+
+        out: set[tuple[str, str, str]] = set()
+        for edge in edges:
+            src, dst = nodes.get(edge.src_id), nodes.get(edge.dst_id)
+            if src and dst:
+                out.add((edge.type, src, dst))
+        return out
+
+    async def retract(
+        self, phase: str, edges: set[tuple[str, str, str]]
+    ) -> dict[str, int]:
+        """Withdraw specific assertions, and drop whatever they orphan.
+
+        The narrow counterpart to purge_phase. An incremental update removes
+        only the edges the new index no longer supports, so an edge another
+        phase wrote — and a node that still carries one — survives untouched.
+        """
+        if not edges:
+            return {"edges": 0, "nodes": 0}
+
+        async with get_sessionmaker()() as session:
+            nodes = {
+                n.id: n.external_id
+                for n in (await session.execute(select(GraphNode))).scalars().all()
+            }
+            stored = (
+                await session.execute(select(GraphEdge).where(GraphEdge.phase == phase))
+            ).scalars().all()
+
+            doomed = [
+                edge
+                for edge in stored
+                if (edge.type, nodes.get(edge.src_id), nodes.get(edge.dst_id)) in edges
+            ]
+            touched = {e.src_id for e in doomed} | {e.dst_id for e in doomed}
+            for edge in doomed:
+                await session.delete(edge)
+            await session.flush()
+
+            still: set[str] = set()
+            if touched:
+                rows = (
+                    await session.execute(
+                        select(GraphEdge.src_id, GraphEdge.dst_id).where(
+                            or_(
+                                GraphEdge.src_id.in_(touched),
+                                GraphEdge.dst_id.in_(touched),
+                            )
+                        )
+                    )
+                ).all()
+                for src, dst in rows:
+                    still.update((src, dst))
+
+            orphans = touched - still
+            for orphan in orphans:
+                node = await session.get(GraphNode, orphan)
+                if node is not None:
+                    await session.delete(node)
+            await session.commit()
+
+        return {"edges": len(doomed), "nodes": len(orphans)}
 
     async def index_provenance(self) -> dict[str, Any]:
         """Which snapshot of the codebase this graph currently holds.

@@ -52,6 +52,7 @@ def build_runtime(app: FastAPI, settings, checkpointer=None) -> None:
         build_deploy=adapters.build_deploy,
         work_dispatch=adapters.work_dispatch,
         source_control=adapters.source_control,
+        code_intelligence=adapters.code_intelligence,
         dispatch_store=app.state.dispatch_store,
         context_graph=app.state.context_graph,
         llm_provider=adapters.llm_provider,

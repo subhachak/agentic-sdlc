@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # means finer modules; too shallow and a whole service is one node.
     code_index_max_depth: int = 4
     code_index_local_root: str = "."
+    # Where the execution plane reads its copy of the graph. It runs in client
+    # CI with no route to this database, so the handover is a generated file.
+    qa_export_path: str = "execution-plane/qa/code-graph.json"
+    qa_export_scope: str = "demo-app"
 
     # --- implementation phase ---
     # The repository the implementation agent proposes changes against, and

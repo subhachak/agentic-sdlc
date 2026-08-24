@@ -17,18 +17,18 @@
   "scope": "demo-app",
   "provenance": {
     "repo": "subhachak/agentic-sdlc",
-    "commit_sha": "c104dc5915d1d27da7c95cc9684a351eeb4e265b",
+    "commit_sha": "c6f0df2e934ffa1f51a5807cacc4fb2e7c508b20",
     "indexer_version": "2.0.0",
-    "indexed_at": "2026-08-24T16:31:43.112486+00:00",
+    "indexed_at": "2026-08-24T18:26:14.284430+00:00",
     "pinned": true,
-    "internal_capture_rate": 0.9903,
+    "internal_capture_rate": 0.9915,
     "most_missed": [
       [
-        "./.next/types/root-params.d.ts",
+        "./.next/dev/types/root-params.d.ts",
         1
       ],
       [
-        "./.next/types/routes.d.ts",
+        "./.next/dev/types/routes.d.ts",
         1
       ],
       [

@@ -33,6 +33,30 @@ class InMemoryContextGraph:
         }
         return nid
 
+    async def phase_edges(self, phase: str) -> set[tuple[str, str, str]]:
+        out = set()
+        for e in self.edges:
+            if e.get("phase") != phase:
+                continue
+            src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
+            if src and dst:
+                out.add((e["type"], src["external_id"], dst["external_id"]))
+        return out
+
+    async def retract(self, phase: str, edges: set[tuple[str, str, str]]) -> dict[str, int]:
+        def key(e):
+            src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
+            return (e["type"], src and src["external_id"], dst and dst["external_id"])
+
+        doomed = [e for e in self.edges if e.get("phase") == phase and key(e) in edges]
+        touched = {e["src_id"] for e in doomed} | {e["dst_id"] for e in doomed}
+        self.edges = [e for e in self.edges if e not in doomed]
+        still = {e["src_id"] for e in self.edges} | {e["dst_id"] for e in self.edges}
+        orphans = touched - still
+        for nid in orphans:
+            self.nodes.pop(nid, None)
+        return {"edges": len(doomed), "nodes": len(orphans)}
+
     async def index_provenance(self) -> dict[str, Any]:
         node = next(
             (n for n in self.nodes.values() if n["type"] == "MODULE"), {"projection": {}}
