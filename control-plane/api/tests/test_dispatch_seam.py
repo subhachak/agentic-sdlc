@@ -247,3 +247,78 @@ async def test_polling_resolves_a_finished_job():
     assert resolved.state == "succeeded"
     assert resolved.result_payload["gate_passed"] is True
     assert resolved.id == row.id
+
+
+# --- driving a workflow that knows nothing about this platform -------------
+
+
+class _FakeGitHub:
+    """Just enough of the GitHub API surface to exercise check()."""
+
+    def __init__(self, run, artifacts):
+        self._run, self._artifacts = run, artifacts
+        self.links = {}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get(self, url, **kwargs):
+        if "artifacts" in url:
+            return _Resp({"artifacts": self._artifacts})
+        # /actions/runs/{id} returns one run; /workflows/{file}/runs returns a list.
+        if "/actions/runs/" in url:
+            return _Resp(self._run)
+        return _Resp({"workflow_runs": [self._run]})
+
+
+class _Resp:
+    def __init__(self, payload):
+        self._payload = payload
+        self.status_code = 200
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_a_workflow_with_no_state_artifact_still_reports_a_verdict(monkeypatch):
+    """An existing CI pipeline should be governable without first being taught
+    to emit our state file. The result is thinner and says so."""
+    from app.adapters.work_dispatch import github_actions as gh
+    from app.ports.work_dispatch import DispatchHandle
+
+    run = {"id": 42, "status": "completed", "conclusion": "success",
+           "html_url": "https://gh/run/42", "name": "frontend-e2e abc123"}
+    monkeypatch.setattr(gh.httpx, "AsyncClient", lambda **kw: _FakeGitHub(run, []))
+
+    adapter = gh.GitHubActionsWorkDispatch(repo="acme/app", token="t")
+    result = await adapter.check(DispatchHandle(provider="github-actions",
+                                                correlation_id="abc123", external_id="42"))
+
+    assert result.state == "succeeded"
+    assert result.payload["gate_passed"] is True
+    assert result.payload["assertions"] == []
+    assert "no state artifact" in result.detail
+
+
+@pytest.mark.asyncio
+async def test_a_failed_workflow_is_still_a_failure(monkeypatch):
+    from app.adapters.work_dispatch import github_actions as gh
+    from app.ports.work_dispatch import DispatchHandle
+
+    run = {"id": 43, "status": "completed", "conclusion": "failure",
+           "html_url": "https://gh/run/43", "name": "frontend-e2e abc123"}
+    monkeypatch.setattr(gh.httpx, "AsyncClient", lambda **kw: _FakeGitHub(run, []))
+
+    adapter = gh.GitHubActionsWorkDispatch(repo="acme/app", token="t")
+    result = await adapter.check(DispatchHandle(provider="github-actions",
+                                                correlation_id="abc123", external_id="43"))
+
+    assert result.state == "failed"
+    assert "failure" in result.detail

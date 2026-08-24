@@ -9,6 +9,11 @@ not reach a local callback URL anyway.
 `workflow_dispatch` returns no run id, so trigger() plants a correlation
 nonce in the workflow inputs and check() resolves the run by matching the
 nonce against recent runs of that workflow.
+
+A workflow that emits a qa-state artifact gives full detail: scenarios,
+evidence and the graph edges the run observed. A workflow that knows nothing
+about this platform still gives a conclusion, and that is enough to govern a
+run — so an existing CI pipeline can be driven without being modified first.
 """
 
 from __future__ import annotations
@@ -83,9 +88,26 @@ class GitHubActionsWorkDispatch:
 
             artifact = await self._find_artifact(client, run["id"], handle.correlation_id)
             if artifact is None:
+                # A workflow that does not know about this platform still gives
+                # a verdict: it either passed or it did not. Reporting that as
+                # a failure would mean any repository with existing CI had to
+                # adopt our state artifact before it could be governed at all.
+                # The result is thinner — a conclusion, no scenarios and no
+                # traceability edges — and says so.
                 return DispatchResult(
-                    state="failed",
-                    detail="workflow succeeded but produced no state artifact",
+                    state="succeeded",
+                    payload={
+                        "gate_passed": True,
+                        "gate_reasons": [
+                            f"workflow {run.get('name') or self._workflow} concluded success"
+                        ],
+                        "test_plan": [],
+                        "assertions": [],
+                        "evidence_summary": {"html_report": run["html_url"]},
+                        "detail": "no state artifact — conclusion only, no scenario detail",
+                    },
+                    evidence_ref=run["html_url"],
+                    detail="conclusion only: the workflow produced no state artifact",
                     **common,
                 )
             return DispatchResult(
