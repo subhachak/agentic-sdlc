@@ -7,6 +7,9 @@ const LINKS = [
   { href: "/", label: "Dashboard" },
   { href: "/runs", label: "Runs" },
   { href: "/graph", label: "Context graph" },
+  // Things you do, then things you set. Setup used to be buried in the graph
+  // view, which made it a matter of knowing where to look.
+  { href: "/operations", label: "Operations" },
   { href: "/config", label: "Configuration" },
 ];
 

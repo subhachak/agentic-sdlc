@@ -73,6 +73,30 @@ export interface DashboardData {
     dependencies: number;
   };
   dispatches: Record<string, number>;
+  engagement: {
+    indexed_repo: string | null;
+    indexed_ref: string | null;
+    target_repo: string | null;
+    target_ref: string | null;
+    environment: string | null;
+    ci_repo: string | null;
+    export_scope: string | null;
+    commit: string | null;
+    indexed_at: string | null;
+  };
+  platform: {
+    model_provider: string;
+    model: string;
+    execution_target: string;
+    index_source: string;
+    change_target: string;
+    gates: string;
+  };
+  credentials: Record<string, boolean>;
+  hydration: {
+    hydrated: boolean;
+    steps: { id: string; title: string; ready: boolean; detail: string }[];
+  };
   active: {
     model_provider: string;
     execution_target: string;
@@ -86,6 +110,7 @@ export interface SettingEntry {
   key: string;
   label: string;
   group: string;
+  section: "engagement" | "platform" | "credential";
   kind: "mutable" | "secret" | "static";
   type: "enum" | "text" | "int" | "float" | "bool";
   options: string[];

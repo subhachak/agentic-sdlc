@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { listModules } from "@/lib/api";
-import { HydrationPanel } from "@/components/hydration-panel";
 import type { ModuleEntry } from "@/lib/types";
 
 export default function GraphPage() {
@@ -25,12 +25,10 @@ export default function GraphPage() {
     <main className="wide">
       <h1>Context graph</h1>
       <p className="muted" style={{ marginTop: "-0.5rem" }}>
-        The code half is derived. Point it at a repository and it reads the source, parses
-        imports, and works out which modules exist and what depends on what. It never
-        executes anything it fetches.
+        What the platform knows about the codebase: which modules exist, and what depends
+        on what. Derived by reading source and parsing imports — it never executes anything
+        it fetches. To index, update or export it, see <Link href="/operations">Operations</Link>.
       </p>
-
-      <HydrationPanel onChanged={load} />
 
       {error && (
         <p style={{ color: "var(--danger)" }}>{error}</p>
@@ -42,7 +40,7 @@ export default function GraphPage() {
           <p className="muted" style={{ marginBottom: 0 }}>Loading...</p>
         ) : modules.length === 0 ? (
           <p className="muted" style={{ marginBottom: 0 }}>
-            Nothing indexed yet — index a repository above.
+            Nothing indexed yet — index a repository from Operations.
           </p>
         ) : (
           <table>

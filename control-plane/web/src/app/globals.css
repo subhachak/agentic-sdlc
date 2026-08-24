@@ -312,3 +312,47 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   white-space: nowrap;
   border: 0;
 }
+
+/* Config splits into sections that different people change at different
+   times. The heading has to read as a divider between concerns, not as
+   another card title. */
+.section-heading {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 2rem 0 0.25rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-blurb {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+  max-width: 60ch;
+}
+
+/* Configured facts: a label column that stays put so the values line up and
+   can be scanned, rather than a bulleted list of sentences. */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1.25rem;
+  margin: 0;
+  font-size: 0.88rem;
+  align-items: baseline;
+}
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 520px) {
+  .facts { grid-template-columns: 1fr; gap: 0 0; }
+  .facts dd { margin-bottom: 0.5rem; }
+}
+
+/* A blocking condition, not a decoration: the border carries the severity so
+   it still reads when colour is unavailable. */
+.notice {
+  border-left: 3px solid var(--warning);
+}

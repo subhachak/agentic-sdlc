@@ -31,6 +31,20 @@ from app.models.setting import SettingChange, SettingOverride
 
 Kind = Literal["mutable", "secret", "static"]
 ValueType = Literal["enum", "text", "int", "float", "bool"]
+# The axis that decides who changes a setting and how often.
+#
+#   engagement — what this deployment is pointed at: repositories, branches,
+#                environments, how coarse a module is in *this* codebase.
+#                Changes per client and per project, and is the first thing
+#                anyone touches on a new engagement.
+#   platform   — how the platform itself runs: which adapters, which model,
+#                retry and gate policy. Changes per deployment, rarely.
+#   credential — secrets. Never read back, only reported as present.
+#
+# Separated because presenting them as one list makes a client-specific
+# repository name look like a platform decision, and buries the four fields
+# someone actually needs to fill in among twenty they should not touch.
+Section = Literal["engagement", "platform", "credential"]
 
 
 @dataclass(frozen=True)
@@ -38,6 +52,7 @@ class SettingSpec:
     key: str
     label: str
     group: str
+    section: Section = "platform"
     kind: Kind = "mutable"
     type: ValueType = "text"
     options: tuple[str, ...] = ()
@@ -52,7 +67,7 @@ SPECS: tuple[SettingSpec, ...] = (
                 help="mock runs the pipeline with no API key and no network."),
     SettingSpec("claude_model", "Claude model", "Agents",
                 placeholder="claude-opus-5"),
-    SettingSpec("anthropic_api_key", "Anthropic API key", "Agents", kind="secret",
+    SettingSpec("anthropic_api_key", "Anthropic API key", "Credentials", section="credential", kind="secret",
                 help="Read from the environment. Required when the provider is claude."),
     SettingSpec("max_node_retries", "Node retries", "Agents", type="int",
                 help="Business nodes only. Gates and dispatches are never retried."),
@@ -67,12 +82,12 @@ SPECS: tuple[SettingSpec, ...] = (
                 options=("local", "local-pipeline", "github-actions"),
                 help="local simulates a job; local-pipeline runs the real QA pipeline "
                      "against the working copy; github-actions dispatches to CI."),
-    SettingSpec("github_repo", "Repository", "Remote execution",
+    SettingSpec("github_repo", "CI repository", "Delivery targets", section="engagement",
                 placeholder="owner/name"),
-    SettingSpec("github_workflow_file", "Workflow file", "Remote execution",
+    SettingSpec("github_workflow_file", "Workflow file", "Delivery targets", section="engagement",
                 placeholder="agentic-qa.yml"),
-    SettingSpec("github_ref", "Ref", "Remote execution", placeholder="main"),
-    SettingSpec("github_token", "GitHub token", "Remote execution", kind="secret",
+    SettingSpec("github_ref", "Workflow ref", "Delivery targets", section="engagement", placeholder="main"),
+    SettingSpec("github_token", "GitHub token", "Credentials", section="credential", kind="secret",
                 help="Needs actions:write to dispatch and actions:read to fetch results."),
     SettingSpec("dispatch_timeout_seconds", "Dispatch timeout (s)", "Remote execution", type="int",
                 help="How long a dispatched phase may run before the run is failed."),
@@ -85,28 +100,36 @@ SPECS: tuple[SettingSpec, ...] = (
     SettingSpec("source_control_adapter", "Change target", "Implementation", type="enum",
                 options=("local", "github"),
                 help="local writes a branch in a working copy and pushes nothing."),
-    SettingSpec("target_repo", "Repository", "Implementation", placeholder="owner/name"),
-    SettingSpec("target_ref", "Base branch", "Implementation", placeholder="main"),
-    SettingSpec("target_working_copy", "Working copy", "Implementation",
+    SettingSpec("target_repo", "Repository", "Delivery targets", section="engagement", placeholder="owner/name"),
+    SettingSpec("target_ref", "Base branch", "Delivery targets", section="engagement", placeholder="main"),
+    SettingSpec("target_working_copy", "Working copy", "Delivery targets", section="engagement",
                 help="Used when the change target is local."),
-    SettingSpec("target_environment", "Deploy environment", "Implementation",
+    SettingSpec("target_environment", "Deploy environment", "Delivery targets", section="engagement",
                 placeholder="staging"),
 
     # --- context graph ---
     SettingSpec("code_intelligence_adapter", "Index source", "Context graph", type="enum",
                 options=("github", "local"),
                 help="Where the code graph is derived from."),
-    SettingSpec("code_index_repo", "Repository to index", "Context graph",
+    SettingSpec("code_index_repo", "Repository to index", "Codebase", section="engagement",
                 placeholder="owner/name"),
-    SettingSpec("code_index_ref", "Ref to index", "Context graph", placeholder="main"),
-    SettingSpec("code_index_max_depth", "Module depth", "Context graph", type="int",
+    SettingSpec("code_index_ref", "Ref to index", "Codebase", section="engagement", placeholder="main"),
+    SettingSpec("code_index_max_depth", "Module depth", "Codebase", section="engagement", type="int",
                 help="A module is a directory collapsed to this many path segments."),
-    SettingSpec("code_index_local_root", "Local path", "Context graph",
+    SettingSpec("code_index_local_root", "Local path", "Codebase", section="engagement",
                 help="Used when the index source is local."),
 
     # --- platform ---
     SettingSpec("database_url", "Database", "Platform", kind="static"),
     SettingSpec("web_origin", "Console origin", "Platform", kind="static"),
+
+    # --- where the execution plane reads its copy of the graph ---
+    SettingSpec("qa_export_path", "Graph export path", "Codebase", section="engagement",
+                help="The execution plane runs in client CI with no route to this "
+                     "database, so the graph is handed over as a generated file."),
+    SettingSpec("qa_export_scope", "Export scope", "Codebase", section="engagement",
+                help="The subtree the execution plane tests. A QA run testing the app "
+                     "should not be told a change reaches the control plane."),
 )
 
 BY_KEY = {spec.key: spec for spec in SPECS}
@@ -240,6 +263,7 @@ def describe(base: Settings, overrides: dict[str, Any]) -> list[dict[str, Any]]:
             "key": spec.key,
             "label": spec.label,
             "group": spec.group,
+            "section": spec.section,
             "kind": spec.kind,
             "type": spec.type,
             "options": list(spec.options),

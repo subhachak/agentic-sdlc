@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useEffect, useState } from "react";
 import { getConfig, saveConfig } from "@/lib/api";
 import type { ConfigData, SettingEntry } from "@/lib/types";
@@ -119,33 +121,83 @@ export default function ConfigPage() {
     );
   }
 
-  const groups = Array.from(new Set(data.settings.map((s) => s.group)));
   const dirty = Object.keys(draft).length;
+
+  /**
+   * Three sections, on one page, because they answer different questions and
+   * are changed by different people at different times. Presenting them as
+   * one list makes a client's repository name look like a platform decision,
+   * and buries the handful of fields a new engagement actually needs among
+   * twenty that should be left alone.
+   */
+  const SECTIONS = [
+    {
+      id: "engagement" as const,
+      title: "This engagement",
+      blurb:
+        "What the platform is pointed at — repositories, branches, environments, and how " +
+        "coarse a module is in this codebase. These are the fields a new client or project " +
+        "needs, and the ones to change when moving between them.",
+    },
+    {
+      id: "platform" as const,
+      title: "Platform",
+      blurb:
+        "How the platform itself runs: which integrations it speaks to, which model, and " +
+        "the retry and gate policy. Set once per deployment and rarely revisited.",
+    },
+    {
+      id: "credential" as const,
+      title: "Credentials",
+      blurb:
+        "Read from the environment. Reported as present or absent and never read back — " +
+        "a value entered here would be a secret in a database and in an audit trail.",
+    },
+  ];
 
   return (
     <main className="wide">
       <h1>Configuration</h1>
       <p className="muted" style={{ marginTop: "-0.5rem" }}>
-        Saved changes are applied by rebuilding the adapters — no restart. Secrets stay in
-        the environment and are never read back or accepted here. Every change is recorded
-        below with what it was before.
+        Saved changes are applied by rebuilding the adapters — no restart. Every change is
+        recorded below with what it was before. For indexing, exporting and the rest of
+        setup, see <Link href="/operations">Operations</Link>.
       </p>
 
-      {groups.map((group) => (
-        <div className="card" key={group}>
-          <h2 style={{ marginTop: 0, fontSize: "1rem" }}>{group}</h2>
-          {data.settings
-            .filter((s) => s.group === group)
-            .map((entry) => (
-              <Field
-                key={entry.key}
-                entry={entry}
-                draft={draft}
-                onChange={(key, value) => setDraft((d) => ({ ...d, [key]: value }))}
-              />
+      {SECTIONS.map((section) => {
+        const entries = data.settings.filter((s) => s.section === section.id);
+        if (entries.length === 0) return null;
+        const groups = Array.from(new Set(entries.map((s) => s.group)));
+
+        return (
+          <section key={section.id} aria-labelledby={`section-${section.id}`}>
+            <h2 id={`section-${section.id}`} className="section-heading">
+              {section.title}
+            </h2>
+            <p className="section-blurb">{section.blurb}</p>
+            {groups.map((group) => (
+              <div className="card" key={group}>
+                {groups.length > 1 && (
+                  <h3 style={{ marginTop: 0, fontSize: "0.85rem", color: "var(--muted)",
+                               textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {group}
+                  </h3>
+                )}
+                {entries
+                  .filter((s) => s.group === group)
+                  .map((entry) => (
+                    <Field
+                      key={entry.key}
+                      entry={entry}
+                      draft={draft}
+                      onChange={(key, value) => setDraft((d) => ({ ...d, [key]: value }))}
+                    />
+                  ))}
+              </div>
             ))}
-        </div>
-      ))}
+          </section>
+        );
+      })}
 
       {data.history.length > 0 && (
         <div className="card">
