@@ -50,9 +50,15 @@ def test_regression_scope_widens_beyond_the_diff():
         "demo-app/app/api/claims",
         "demo-app/app/claims",
     }
-    # A script covering a module the diff never touched, required because the
-    # API it depends on changed.
-    assert scope["required_scripts"] == ["claims-list-renders"]
+    # Scripts covering a module the diff never touched, required because the
+    # API it depends on changed. The list and filter scripts exercise the page,
+    # which the route reaches only through the derived HTTP edge.
+    assert scope["required_scripts"] == [
+        "claims-api-contract",
+        "claims-filter-behaviour",
+        "claims-list-renders",
+    ]
+    assert scope["uncovered_components"] == []
 
 
 def test_coverage_is_resolved_against_the_library_not_taken_on_trust():
@@ -63,13 +69,37 @@ def test_coverage_is_resolved_against_the_library_not_taken_on_trust():
     assert scripts_covering({"demo-app/app/claims"}) <= library_script_ids()
 
 
-def test_a_module_with_no_script_is_reported_as_a_gap_not_as_covered():
-    scope = regression_candidates(["demo-app/app/api/claims/route.ts"])
+def test_a_module_with_no_script_is_reported_as_a_gap_not_as_covered(monkeypatch):
+    """Synthetic, because every module the demo app has is now covered. The
+    mechanism still needs pinning: an impacted module nothing exercises must
+    be reported, not quietly counted as fine."""
+    import orchestrator.context as context
 
-    # The route file itself: the list script exercises it through the page,
-    # which is not the same claim as covering it.
-    assert "demo-app/app/api/claims" in scope["uncovered_components"]
+    monkeypatch.setattr(
+        context, "_load_manifest",
+        lambda: [{"id": "claims-list-renders", "covers_modules": ["demo-app/app/claims"]}],
+    )
+    scope = context.regression_candidates(["demo-app/app/api/claims/route.ts"])
+
+    assert scope["required_scripts"] == ["claims-list-renders"]
+    assert scope["uncovered_components"] == ["demo-app/app/api/claims"]
     assert scope["dangling_coverage"] == []
+
+
+def test_every_module_the_demo_app_has_is_covered_by_something():
+    """A standing check on the library rather than on the code. The
+    enforcement gate guarded one script for as long as the library held one,
+    and a mechanism with nothing to enforce is indistinguishable from no
+    mechanism."""
+    from orchestrator.context import _load_code_graph
+
+    every_module = {m["id"] for m in _load_code_graph().get("modules", [])}
+    scope = regression_candidates(
+        ["demo-app/app/claims/page.tsx", "demo-app/app/api/claims/route.ts"]
+    )
+
+    assert scope["uncovered_components"] == []
+    assert every_module >= set(scope["impacted_components"])
 
 
 def test_coverage_recorded_against_a_module_that_no_longer_exists_is_dangling(monkeypatch):
