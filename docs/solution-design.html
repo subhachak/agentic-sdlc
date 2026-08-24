@@ -1,0 +1,1293 @@
+<title>Agentic SDLC Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap">
+
+<style>
+  :root {
+    --ground: #F1F4F3;
+    --surface: #FFFFFF;
+    --surface-2: #E8EDEB;
+    --ink: #121A19;
+    --ink-2: #3A4846;
+    --muted: #61706D;
+    --line: #D2DAD8;
+    --line-strong: #B4C0BD;
+    --accent: #0E6F62;
+    --accent-soft: #DDEBE8;
+    --warn: #9C6413;
+    --warn-soft: #F4E9D6;
+    --crit: #9B3527;
+    --crit-soft: #F5E1DD;
+
+    --f-display: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --measure: 68ch;
+    --pad: clamp(1.25rem, 4vw, 3rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0E1413;
+      --surface: #161E1D;
+      --surface-2: #1E2827;
+      --ink: #E7EDEB;
+      --ink-2: #C0CBC8;
+      --muted: #90A09C;
+      --line: #2A3634;
+      --line-strong: #3B4A47;
+      --accent: #57BFAE;
+      --accent-soft: #16302C;
+      --warn: #D9A253;
+      --warn-soft: #33270F;
+      --crit: #DE8878;
+      --crit-soft: #351B16;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0E1413;
+    --surface: #161E1D;
+    --surface-2: #1E2827;
+    --ink: #E7EDEB;
+    --ink-2: #C0CBC8;
+    --muted: #90A09C;
+    --line: #2A3634;
+    --line-strong: #3B4A47;
+    --accent: #57BFAE;
+    --accent-soft: #16302C;
+    --warn: #D9A253;
+    --warn-soft: #33270F;
+    --crit: #DE8878;
+    --crit-soft: #351B16;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16.5px;
+    line-height: 1.65;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: var(--pad);
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: clamp(2rem, 5vw, 3.5rem);
+  }
+
+  @media (min-width: 1000px) {
+    .page { grid-template-columns: 218px minmax(0, 1fr); align-items: start; }
+  }
+
+  .rail { display: none; }
+
+  @media (min-width: 1000px) {
+    .rail {
+      display: block;
+      position: sticky;
+      top: var(--pad);
+      font-family: var(--f-mono);
+      font-size: 12.5px;
+      line-height: 1.5;
+      max-height: calc(100vh - 2 * var(--pad));
+      overflow-y: auto;
+    }
+  }
+
+  .rail-title {
+    text-transform: uppercase;
+    letter-spacing: 0.11em;
+    color: var(--muted);
+    font-size: 10.5px;
+    margin: 0 0 0.9rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .rail a { color: var(--ink-2); text-decoration: none; display: block; border-left: 2px solid transparent; padding-left: 0.7rem; }
+  .rail a:hover { color: var(--accent); border-left-color: var(--accent); }
+  .rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  main { min-width: 0; display: flex; flex-direction: column; gap: clamp(2.5rem, 5vw, 3.75rem); }
+
+  .masthead { display: flex; flex-direction: column; gap: 0.9rem; }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(2.1rem, 5.5vw, 3.1rem);
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: clamp(1.05rem, 2.2vw, 1.2rem);
+    color: var(--ink-2);
+    max-width: var(--measure);
+    margin: 0;
+  }
+
+  .meta {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.4rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--line);
+  }
+
+  section { display: flex; flex-direction: column; gap: 1.15rem; scroll-margin-top: 1.5rem; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(1.45rem, 3vw, 1.85rem);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin: 0;
+    padding-top: 1.4rem;
+    border-top: 2px solid var(--ink);
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: var(--f-body);
+    font-weight: 600;
+    font-size: 1.02rem;
+    margin: 0.7rem 0 0;
+    color: var(--ink);
+  }
+
+  p { margin: 0; max-width: var(--measure); }
+  main ul, main ol { margin: 0; padding-left: 1.15rem; max-width: var(--measure); display: flex; flex-direction: column; gap: 0.5rem; }
+  li { padding-left: 0.15rem; }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    padding: 0.12em 0.36em;
+    border-radius: 3px;
+  }
+
+  strong { font-weight: 600; }
+  .lede { font-size: 1.06rem; color: var(--ink-2); }
+
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    padding: 1.15rem 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: var(--measure);
+  }
+
+  .callout-label {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+    color: var(--accent);
+  }
+
+  .callout p { font-size: 1.02rem; }
+
+  figure { margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.75rem; }
+
+  .figure-frame {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: clamp(0.75rem, 2.5vw, 1.5rem);
+    overflow-x: auto;
+  }
+
+  .figure-frame svg { display: block; width: 100%; max-width: 100%; height: auto; color: var(--ink-2); }
+  .figure-frame.wide svg { min-width: 640px; }
+  .figure-frame.tall svg { min-width: 460px; max-width: 620px; margin: 0 auto; }
+
+  figcaption { font-size: 0.9rem; color: var(--muted); max-width: var(--measure); }
+
+  .svg-box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.25; }
+  .svg-group { fill: none; stroke: var(--line); stroke-width: 1.25; stroke-dasharray: 3 4; }
+  .svg-hot-box { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+  .svg-warn-box { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.6; }
+  .svg-crit-box { fill: var(--crit-soft); stroke: var(--crit); stroke-width: 1.4; }
+  .svg-label { font-family: "IBM Plex Sans", sans-serif; font-size: 12.5px; fill: var(--ink); }
+  .svg-small { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; fill: var(--muted); }
+  .svg-title { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: 0.09em; fill: var(--muted); }
+  .svg-edge { stroke: var(--line-strong); stroke-width: 1.4; fill: none; }
+  .svg-hot { stroke: var(--accent); stroke-width: 2; fill: none; }
+  .svg-critline { stroke: var(--crit); stroke-width: 1.3; fill: none; }
+  .svg-boundary { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 7 5; }
+  .svg-arrow-hot { fill: var(--accent); }
+  .svg-arrow-crit { fill: var(--crit); }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 580px; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.68rem 0.85rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-weight: 500;
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.mono { font-family: var(--f-mono); font-size: 0.84rem; color: var(--ink); white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .pill {
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.22em 0.55em;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .pill.real { background: var(--accent-soft); color: var(--accent); }
+  .pill.partial { background: var(--warn-soft); color: var(--warn); }
+  .pill.stub { background: var(--surface-2); color: var(--muted); }
+  .pill.absent { background: var(--crit-soft); color: var(--crit); }
+
+  .adr {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .adrs { display: flex; flex-direction: column; gap: 0.85rem; }
+  .adr-top { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: baseline; }
+  .adr-id { font-family: var(--f-mono); font-size: 11px; color: var(--accent); letter-spacing: 0.06em; }
+  .adr-name { font-weight: 600; font-size: 1.01rem; flex: 1 1 16rem; }
+  .adr p { font-size: 0.93rem; color: var(--ink-2); }
+  .adr .because { font-size: 0.93rem; color: var(--ink); }
+  .because-label {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.11em;
+    color: var(--accent);
+    margin-right: 0.5rem;
+  }
+
+  .cols { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+  @media (min-width: 660px) { .cols { grid-template-columns: 1fr 1fr; } }
+
+  .col-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 1.05rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .col-title {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+  }
+  .col-card ul { padding-left: 1.05rem; gap: 0.38rem; font-size: 0.93rem; color: var(--ink-2); }
+
+  .steps { display: flex; flex-direction: column; gap: 0.9rem; }
+  .step { display: grid; grid-template-columns: 2.2rem 1fr; gap: 0.9rem; align-items: start; }
+  .step-num {
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--accent);
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    height: 2rem;
+    display: grid;
+    place-items: center;
+  }
+  .step-body { display: flex; flex-direction: column; gap: 0.25rem; }
+  .step-body h3 { margin: 0; }
+  .step-body p { font-size: 0.93rem; color: var(--ink-2); }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 1.25rem;
+    font-size: 0.88rem;
+    color: var(--muted);
+    max-width: var(--measure);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="page">
+
+  <nav class="rail" aria-label="Contents">
+    <p class="rail-title">Contents</p>
+    <ol>
+      <li><a href="#purpose">1 · Purpose</a></li>
+      <li><a href="#principles">2 · Architecture principles</a></li>
+      <li><a href="#planes">3 · The two planes</a></li>
+      <li><a href="#lifecycle">4 · The delivery lifecycle</a></li>
+      <li><a href="#anatomy">5 · Anatomy of a phase</a></li>
+      <li><a href="#governance">6 · Governance model</a></li>
+      <li><a href="#context">7 · The context graph</a></li>
+      <li><a href="#pluggability">8 · Pluggability</a></li>
+      <li><a href="#data">9 · Data model</a></li>
+      <li><a href="#trust">10 · Trust &amp; security</a></li>
+      <li><a href="#deployment">11 · Deployment</a></li>
+      <li><a href="#decisions">12 · Design decisions</a></li>
+      <li><a href="#proof">13 · What is built</a></li>
+      <li><a href="#roadmap">14 · Roadmap</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <header class="masthead">
+      <p class="eyebrow">Solution design</p>
+      <h1>Agentic SDLC Platform</h1>
+      <p class="standfirst">A governed pipeline for agent-run software delivery. Agents propose; deterministic code decides; humans approve what carries risk; and every decision keeps the evidence that produced it. This is the architecture and the principles it rests on. What has been built so far, and what that proves, is section 13.</p>
+      <div class="meta">
+        <span>13 lifecycle phases</span>
+        <span>10 ports · 16 adapters</span>
+        <span>Control plane + execution plane</span>
+        <span>Reference implementation: one cycle proven end to end</span>
+      </div>
+    </header>
+
+    <section id="purpose">
+      <h2>1 · Purpose</h2>
+      <p class="lede">A delivery pipeline assumes four properties of the work passing through it. An agent violates all four. Everything in this design is a mitigation for one of these rows.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Pipeline assumes</th><th>An agent does</th><th>Consequence</th></tr></thead>
+          <tbody>
+            <tr><td>Deterministic output</td><td>Same input, different output</td><td>Cannot diff, replay, or regression-test the pipeline itself</td></tr>
+            <tr><td>Bounded blast radius</td><td>Edits whatever appears relevant</td><td>No containment; review burden scales with output</td></tr>
+            <tr><td>Explicit provenance</td><td>Reasoning is not an artifact</td><td>Cannot answer "why did this ship"</td></tr>
+            <tr><td>Failure is loud</td><td>Produces plausible wrong output</td><td>Failures stay invisible until they are expensive</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>The platform runs the lifecycle as a state machine, lets agents propose at every step, and puts a deterministic predicate between every proposal and its consequences.</p>
+
+      <div class="callout">
+        <span class="callout-label">The governing principle</span>
+        <p>No model is ever in a position to approve its own work. Every yes/no decision in the system is made by code you can read, or by a person whose identity is recorded.</p>
+      </div>
+
+      <p>Two constraints shape the rest. The platform must work inside a client's existing toolchain rather than replacing it, because the code, the credentials, the runners and the compliance sign-off already live there. And every integration must be swappable, because no two clients have the same stack — one is on Jira and Jenkins, the next on Azure DevOps, and neither is going to move for us.</p>
+    </section>
+
+    <section id="principles">
+      <h2>2 · Architecture principles</h2>
+      <p class="lede">Eight stances. Everything else in this document is a consequence of one of them, and where a later decision looks arbitrary it is usually because a principle here made it inevitable.</p>
+
+      <div class="adrs">
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">P1</span><span class="adr-name">Agents propose, deterministic code decides</span></div>
+          <p>Every gate — testability, change review, pass/fail, release readiness — is plain code with no model in it. An agent that could approve its own output would make the whole audit trail decorative.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">P2</span><span class="adr-name">Own the decisions and the evidence; borrow the execution</span></div>
+          <p>The platform holds run state, gates and evidence. Real work runs in the client's existing CI, where the code, credentials and controls already are. Owning execution is how a platform like this dies in an enterprise.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">P3</span><span class="adr-name">The ontology is fixed; the integrations are pluggable</span></div>
+          <p>Node and edge types are part of the platform and clients cannot redefine them, or no phase logic would be portable. Which system a criterion lives in is an adapter's problem. Clients extend through namespaced types the platform stores but never reasons about.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">P4</span><span class="adr-name">Identity is derived, never allocated</span></div>
+          <p>A node's id is a function of what it is — type, source system, native identifier. Two components that never talk to each other arrive at the same id for the same thing, with no coordination and no round trip.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">P5</span><span class="adr-name">Evidence is a byproduct of gating, not a separate step</span></div>
+          <p>Each phase already knows the relationships it creates at the moment its gate decides, so it asserts them then, stamped with the run that made them. There is no crawler and no reconciliation job, and the record cannot describe something that did not happen.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">P6</span><span class="adr-name">Declare the contract; never let an agent infer it</span></div>
+          <p>What data may exist, which selectors are on which screen, what an endpoint returns — all declared alongside the requirements. Every one of these was once implicit, and every one produced a confident, wrong answer that cost a full test run to discover.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">P7</span><span class="adr-name">Fail closed, and say why</span></div>
+          <p>An unsatisfiable plan, an unparseable change, a job that never reports — each stops the run with a reason a human can act on. Proceeding on a guess is the failure mode that destroys trust in an automated pipeline, because it is invisible until it is expensive.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">P8</span><span class="adr-name">Architecture is asserted by tests, not documented in comments</span></div>
+          <p>Core purity, adapter isolation and import boundaries are subprocess assertions in the suite. Every one of these boundaries is one hurried afternoon away from being crossed, and a comment does not fail a build.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="planes">
+      <h2>3 · The two planes</h2>
+      <p>The system is two planes and a boundary. The <strong>control plane</strong> is long-lived and owns decisions, state and evidence. The <strong>execution plane</strong> is ephemeral, runs inside the client's CI, and is where agent-authored code actually executes. Nothing above the boundary runs untrusted code; nothing below it holds a credential that can change a decision.</p>
+
+      <figure>
+        <div class="figure-frame wide">
+          <svg viewBox="0 0 880 620" role="img" aria-label="The console talks to a FastAPI control plane containing the HTTP API, graph runtime with gate controller, reconciler and deterministic core; below a port boundary sit adapters that reach the Anthropic API, GitHub Actions and SQLite, and GitHub Actions runs the execution plane containing the QA orchestrator, Playwright and the app under test.">
+            <defs>
+              <marker id="s1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0,1 9,5 0,9" fill="currentColor"></polygon>
+              </marker>
+              <marker id="s1h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon class="svg-arrow-hot" points="0,1 9,5 0,9"></polygon>
+              </marker>
+            </defs>
+
+            <rect class="svg-box" x="340" y="20" width="200" height="42" rx="2"></rect>
+            <text class="svg-label" x="440" y="46" text-anchor="middle">Console — Next.js</text>
+            <line class="svg-edge" x1="440" y1="62" x2="440" y2="96" marker-end="url(#s1)"></line>
+            <text class="svg-small" x="450" y="84">REST + SSE</text>
+
+            <rect class="svg-group" x="40" y="100" width="800" height="200" rx="2"></rect>
+            <text class="svg-title" x="56" y="122">CONTROL PLANE — LONG-LIVED, OWNS DECISIONS AND EVIDENCE</text>
+
+            <rect class="svg-box" x="60" y="134" width="240" height="56" rx="2"></rect>
+            <text class="svg-label" x="180" y="158" text-anchor="middle">HTTP API</text>
+            <text class="svg-small" x="180" y="176" text-anchor="middle">runs · approve · audit</text>
+
+            <rect class="svg-hot-box" x="320" y="134" width="240" height="56" rx="2"></rect>
+            <text class="svg-label" x="440" y="158" text-anchor="middle">Graph runtime</text>
+            <text class="svg-small" x="440" y="176" text-anchor="middle">GateController · the one pause</text>
+
+            <rect class="svg-box" x="580" y="134" width="240" height="56" rx="2"></rect>
+            <text class="svg-label" x="700" y="158" text-anchor="middle">Reconciler</text>
+            <text class="svg-small" x="700" y="176" text-anchor="middle">polls · resumes · times out</text>
+
+            <rect class="svg-box" x="60" y="212" width="760" height="56" rx="2"></rect>
+            <text class="svg-label" x="440" y="236" text-anchor="middle">Deterministic core</text>
+            <text class="svg-small" x="440" y="254" text-anchor="middle">audit · confidence · dispatches · reliability — no LLM reachable from here</text>
+
+            <line class="svg-boundary" x1="40" y1="326" x2="840" y2="326"></line>
+            <text class="svg-small" x="40" y="318">PORTS — 7 Protocol interfaces, zero implementations</text>
+
+            <rect class="svg-group" x="40" y="344" width="800" height="82" rx="2"></rect>
+            <text class="svg-title" x="56" y="364">ADAPTERS — ONE PER INTEGRATION, CHOSEN BY CONFIG</text>
+
+            <rect class="svg-box" x="60" y="372" width="170" height="42" rx="2"></rect>
+            <text class="svg-small" x="145" y="397" text-anchor="middle">LLMProvider</text>
+            <rect class="svg-hot-box" x="250" y="372" width="170" height="42" rx="2"></rect>
+            <text class="svg-small" x="335" y="397" text-anchor="middle">WorkDispatch</text>
+            <rect class="svg-box" x="440" y="372" width="170" height="42" rx="2"></rect>
+            <text class="svg-small" x="525" y="397" text-anchor="middle">AuditSink</text>
+            <rect class="svg-box" x="630" y="372" width="190" height="42" rx="2"></rect>
+            <text class="svg-small" x="725" y="397" text-anchor="middle">+ 4 more</text>
+
+            <line class="svg-edge" x1="145" y1="414" x2="145" y2="452" marker-end="url(#s1)"></line>
+            <line class="svg-hot" x1="335" y1="414" x2="335" y2="452" marker-end="url(#s1h)"></line>
+            <line class="svg-edge" x1="525" y1="414" x2="525" y2="452" marker-end="url(#s1)"></line>
+            <line class="svg-edge" x1="725" y1="414" x2="725" y2="452" marker-end="url(#s1)"></line>
+
+            <rect class="svg-box" x="60" y="456" width="170" height="44" rx="2"></rect>
+            <text class="svg-small" x="145" y="483" text-anchor="middle">Anthropic API</text>
+            <rect class="svg-hot-box" x="250" y="456" width="170" height="44" rx="2"></rect>
+            <text class="svg-small" x="335" y="483" text-anchor="middle">GitHub Actions</text>
+            <rect class="svg-box" x="440" y="456" width="170" height="44" rx="2"></rect>
+            <text class="svg-small" x="525" y="483" text-anchor="middle">SQLite</text>
+            <rect class="svg-box" x="630" y="456" width="190" height="44" rx="2"></rect>
+            <text class="svg-small" x="725" y="483" text-anchor="middle">Jira · Zephyr · files</text>
+
+            <line class="svg-hot" x1="335" y1="500" x2="335" y2="532" marker-end="url(#s1h)"></line>
+
+            <rect class="svg-group" x="140" y="536" width="600" height="70" rx="2"></rect>
+            <text class="svg-title" x="156" y="556">EXECUTION PLANE — EPHEMERAL, THE CLIENT'S CI</text>
+            <text class="svg-label" x="440" y="582" text-anchor="middle">QA orchestrator · Playwright · the app under test</text>
+            <text class="svg-small" x="440" y="598" text-anchor="middle">no write credentials while agent-authored code runs here</text>
+          </svg>
+        </div>
+        <figcaption>Every arrow crossing the port boundary passes through an adapter chosen by configuration. The highlighted path is the dispatch seam: the only route by which work leaves the control plane and results come back.</figcaption>
+      </figure>
+
+      <div class="cols">
+        <div class="col-card">
+          <span class="col-title">Control plane owns</span>
+          <ul>
+            <li>Run state, resumable across restarts and deploys</li>
+            <li>Every pause: for a person, or for a remote job</li>
+            <li>The audit trail and the context graph</li>
+            <li>Which adapter each integration resolves to</li>
+          </ul>
+        </div>
+        <div class="col-card">
+          <span class="col-title">Execution plane owns</span>
+          <ul>
+            <li>The real work: build, test, scan, migrate, deploy</li>
+            <li>Executing agent-authored code, under the client's controls</li>
+            <li>Producing a structured result and durable evidence</li>
+            <li>No credential that can alter a decision</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>The seam between them</h3>
+      <p>A phase hands work to the execution plane and parks. Results are <em>pulled</em>, never pushed.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Direction</th><th>Mechanism</th><th>Carries</th><th>Auth</th></tr></thead>
+          <tbody>
+            <tr><td>Control → execution</td><td><code>workflow_dispatch</code> or provider equivalent</td><td>run id, phase, correlation nonce, commit range, changed paths</td><td>Platform credential</td></tr>
+            <tr><td>Execution → control</td><td>Polled: run conclusion + state artifact</td><td>Verdict, scenarios, evidence refs, graph assertions</td><td>Platform credential — result is fetched, not received</td></tr>
+            <tr><td>Optional nudge</td><td>Unauthenticated POST</td><td>Run id only, no data</td><td>None needed — it can only trigger an earlier poll</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Consequences: no inbound network path is required, so the control plane can sit behind a firewall with no ingress; there is no shared secret to rotate and no callback signature to verify; and a lost callback is not a lost run, because the poller reconciles regardless.</p>
+
+      <h3>Correlating an asynchronous result</h3>
+      <p><code>workflow_dispatch</code> returns no run identifier. The platform mints a nonce when it reserves the dispatch row, plants it in the job inputs, and resolves the run by matching it against recent runs of that workflow. The nonce is owned by the caller, not the adapter — an adapter that generated its own would tag the remote job with an identifier nothing on this side could match back.</p>
+    </section>
+
+    <section id="lifecycle">
+      <h2>4 · The delivery lifecycle</h2>
+      <p class="lede">Thirteen phases from demand to production feedback, in five stages, with a loop back from what production tells you.</p>
+
+      <figure>
+        <div class="figure-frame wide">
+          <svg viewBox="0 0 880 360" role="img" aria-label="Five stages — define, design, build, verify, release — containing thirteen phases in total, of which only functional QA is fully implemented; four verification phases run in parallel, and a feedback loop returns production signal from release back to define.">
+            <defs>
+              <marker id="s4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0,1 9,5 0,9" fill="currentColor"></polygon>
+              </marker>
+              <marker id="s4h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon class="svg-arrow-hot" points="0,1 9,5 0,9"></polygon>
+              </marker>
+            </defs>
+
+            <rect class="svg-group" x="10" y="46" width="160" height="212" rx="2"></rect>
+            <text class="svg-title" x="90" y="38" text-anchor="middle">DEFINE</text>
+            <rect class="svg-warn-box" x="20" y="60" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="90" y="81" text-anchor="middle">1 intake</text>
+            <rect class="svg-warn-box" x="20" y="102" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="90" y="123" text-anchor="middle">2 requirements</text>
+
+            <rect class="svg-group" x="185" y="46" width="160" height="212" rx="2"></rect>
+            <text class="svg-title" x="265" y="38" text-anchor="middle">DESIGN</text>
+            <rect class="svg-warn-box" x="195" y="60" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="265" y="81" text-anchor="middle">3 architecture</text>
+
+            <rect class="svg-group" x="360" y="46" width="160" height="212" rx="2"></rect>
+            <text class="svg-title" x="440" y="38" text-anchor="middle">BUILD</text>
+            <rect class="svg-box" x="370" y="60" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="440" y="81" text-anchor="middle">4 implementation</text>
+            <rect class="svg-box" x="370" y="102" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="440" y="123" text-anchor="middle">5 code review</text>
+
+            <rect class="svg-group" x="535" y="46" width="160" height="212" rx="2"></rect>
+            <text class="svg-title" x="615" y="38" text-anchor="middle">VERIFY — PARALLEL</text>
+            <rect class="svg-box" x="545" y="60" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="615" y="81" text-anchor="middle">6 security</text>
+            <rect class="svg-hot-box" x="545" y="102" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="615" y="123" text-anchor="middle">7 functional QA</text>
+            <rect class="svg-box" x="545" y="144" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="615" y="165" text-anchor="middle">8 non-functional</text>
+            <rect class="svg-box" x="545" y="186" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="615" y="207" text-anchor="middle">9 data / migration</text>
+
+            <rect class="svg-group" x="710" y="46" width="160" height="212" rx="2"></rect>
+            <text class="svg-title" x="790" y="38" text-anchor="middle">RELEASE</text>
+            <rect class="svg-box" x="720" y="60" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="790" y="81" text-anchor="middle">10 readiness</text>
+            <rect class="svg-warn-box" x="720" y="102" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="790" y="123" text-anchor="middle">11 deploy</text>
+            <rect class="svg-box" x="720" y="144" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="790" y="165" text-anchor="middle">12 post-deploy</text>
+            <rect class="svg-box" x="720" y="186" width="140" height="34" rx="2"></rect>
+            <text class="svg-small" x="790" y="207" text-anchor="middle">13 operate</text>
+
+            <line class="svg-edge" x1="170" y1="120" x2="181" y2="120" marker-end="url(#s4)"></line>
+            <line class="svg-edge" x1="345" y1="120" x2="356" y2="120" marker-end="url(#s4)"></line>
+            <line class="svg-edge" x1="520" y1="120" x2="531" y2="120" marker-end="url(#s4)"></line>
+            <line class="svg-edge" x1="695" y1="120" x2="706" y2="120" marker-end="url(#s4)"></line>
+
+            <path class="svg-hot" d="M 790 258 V 306 H 90 V 262" marker-end="url(#s4h)"></path>
+            <text class="svg-small" x="440" y="326" text-anchor="middle">incidents · telemetry · production signal re-enter as new demand</text>
+
+            <text class="svg-small" x="10" y="352">teal = implemented</text>
+            <text class="svg-small" x="200" y="352">amber = scaffolded, stub logic</text>
+            <text class="svg-small" x="470" y="352">plain = not built</text>
+          </svg>
+        </div>
+        <figcaption>Only functional QA is real. The four verification phases are drawn stacked because they should run concurrently against one change — which the graph cannot currently express, since it is strictly linear.</figcaption>
+      </figure>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Stage</th><th>Phases</th><th>What the stage is for</th></tr></thead>
+          <tbody>
+            <tr><td>Define</td><td>intake, requirements</td><td>Turn demand into criteria concrete enough to test</td></tr>
+            <tr><td>Design</td><td>architecture</td><td>Decide the approach and name what it will touch</td></tr>
+            <tr><td>Build</td><td>implementation, code review</td><td>Produce the change and check it against house standards</td></tr>
+            <tr><td>Verify</td><td>security, functional, non-functional, data</td><td>Prove the change, in parallel, scoped to its blast radius</td></tr>
+            <tr><td>Release</td><td>readiness, deploy, post-deploy, operate</td><td>Ship it, watch it, and feed what happens back in</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>The verification phases are drawn stacked because they should run concurrently against one change. Fan-out and join is the one structural change the graph still needs; everything else in the lifecycle is a new node against machinery that already exists.</p>
+    </section>
+
+    <section id="anatomy">
+      <h2>5 · Anatomy of a phase</h2>
+      <p class="lede">Every phase has the same four parts. That uniformity is the reason the remaining phases are work rather than research — and the reason a client can add one of their own.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Part</th><th>Who</th><th>What it produces</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Propose</strong></td><td>An agent, constrained to a declared output shape</td><td>A plan, a design, a change, a verdict — never an action</td></tr>
+            <tr><td><strong>Decide</strong></td><td>Deterministic code, no model</td><td>Accept, or reject with a reason the agent can revise against</td></tr>
+            <tr><td><strong>Record</strong></td><td>The phase itself, as its gate decides</td><td>Audit entries, evidence, and typed edges in the context graph</td></tr>
+            <tr><td><strong>Approve</strong></td><td>A person, at a tier set by risk</td><td>A decision attributable to a name</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>The predicates, as implemented</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Gate</th><th>Predicate</th><th>On failure</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">test_plan</td>
+              <td><code>expected_outcome</code> assertable ∧ <code>ac_ref</code> resolves to a declared criterion ∧ every <code>required_data</code> entry names a real entity and field</td>
+              <td>Reasons fed back; up to 3 attempts, then the run stops</td>
+            </tr>
+            <tr>
+              <td class="mono">change_review</td>
+              <td>parses ∧ <code>component_of(path) ∈ design.components</code> ∧ no forbidden path ∧ ≤25 files ∧ ≤120 KB per file</td>
+              <td>Refused; nothing written to source control</td>
+            </tr>
+            <tr>
+              <td class="mono">qa_gate</td>
+              <td><code>assigned ≥ planned</code> ∧ <code>ran ≥ assigned</code> ∧ ∀ tests <code>status = expected</code></td>
+              <td>Defect per failing scenario; run terminal</td>
+            </tr>
+            <tr>
+              <td class="mono">release_readiness</td>
+              <td>∀ criteria ∃ path <code>criterion → scenario → script → run[passed]</code></td>
+              <td>Blocks release; names the uncovered criteria</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+
+      <figure>
+        <div class="figure-frame wide">
+          <svg viewBox="0 0 880 430" role="img" aria-label="The implementation node reads the files the design named, asks the model for whole-file edits, submits them to a deterministic review, and only then opens a change; a refused review writes nothing.">
+            <defs>
+              <marker id="s6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0,1 9,5 0,9" fill="currentColor"></polygon>
+              </marker>
+              <marker id="s6h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon class="svg-arrow-hot" points="0,1 9,5 0,9"></polygon>
+              </marker>
+              <marker id="s6c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon class="svg-arrow-crit" points="0,1 9,5 0,9"></polygon>
+              </marker>
+            </defs>
+
+            <rect class="svg-head" x="25" y="20" width="170" height="38" rx="2"></rect>
+            <text class="svg-label" x="110" y="44" text-anchor="middle">implementation</text>
+            <rect class="svg-head" x="245" y="20" width="170" height="38" rx="2"></rect>
+            <text class="svg-label" x="330" y="44" text-anchor="middle">SourceControl</text>
+            <rect class="svg-head" x="465" y="20" width="170" height="38" rx="2"></rect>
+            <text class="svg-label" x="550" y="44" text-anchor="middle">Model</text>
+            <rect class="svg-hot-box" x="685" y="20" width="170" height="38" rx="2"></rect>
+            <text class="svg-label" x="770" y="44" text-anchor="middle">change_review</text>
+
+            <line class="svg-life" x1="110" y1="58" x2="110" y2="400"></line>
+            <line class="svg-life" x1="330" y1="58" x2="330" y2="400"></line>
+            <line class="svg-life" x1="550" y1="58" x2="550" y2="400"></line>
+            <line class="svg-life" x1="770" y1="58" x2="770" y2="400"></line>
+
+            <text class="svg-small" x="110" y="82" text-anchor="middle">graph: component_paths(), criteria()</text>
+
+            <line class="svg-edge" x1="118" y1="112" x2="322" y2="112" marker-end="url(#s6)"></line>
+            <text class="svg-small" x="220" y="104" text-anchor="middle">read_files(design.files)</text>
+
+            <line class="svg-edge" x1="118" y1="152" x2="542" y2="152" marker-end="url(#s6)"></line>
+            <text class="svg-small" x="330" y="144" text-anchor="middle">complete_json(prompt, Implementation)</text>
+
+            <line class="svg-edge" x1="542" y1="192" x2="118" y2="192" stroke-dasharray="5 4" marker-end="url(#s6)"></line>
+            <text class="svg-small" x="330" y="184" text-anchor="middle">{summary, edits[{path, content}], blocked}</text>
+
+            <line class="svg-hot" x1="118" y1="234" x2="762" y2="234" marker-end="url(#s6h)"></line>
+            <text class="svg-small" x="440" y="226" text-anchor="middle">review(edits, allowed_components, known_components)</text>
+
+            <line class="svg-critline" x1="762" y1="274" x2="118" y2="274" marker-end="url(#s6c)"></line>
+            <text class="svg-warntext" x="440" y="266" text-anchor="middle">refused → implementation_rejected · nothing is written</text>
+
+            <line class="svg-edge" x1="118" y1="316" x2="322" y2="316" marker-end="url(#s6)"></line>
+            <text class="svg-small" x="220" y="308" text-anchor="middle">open_change(branch, edits)</text>
+
+            <line class="svg-edge" x1="322" y1="352" x2="118" y2="352" stroke-dasharray="5 4" marker-end="url(#s6)"></line>
+            <text class="svg-small" x="220" y="344" text-anchor="middle">ChangeRef{branch, commit, url}</text>
+
+            <rect class="svg-box" x="25" y="374" width="230" height="30" rx="2"></rect>
+            <text class="svg-small" x="140" y="393" text-anchor="middle">changed_paths → QA dispatch</text>
+          </svg>
+        </div>
+        <figcaption>Review runs before anything reaches source control, so a refused change leaves no branch, no pull request and no artifact. The model returns whole files rather than a diff: a patch that fails to apply is a failure with no useful message.</figcaption>
+      </figure>
+
+      <p>The containment term in <code>change_review</code> is the one only the graph makes possible. Without it, "the agent edited something nobody agreed to" is a code review opinion; with it, it is a build failure.</p>
+
+      <pre><code>verdict = review(edits,
+                 allowed_components=design["components"],
+                 known_components=await graph.component_paths())
+if not verdict.allowed:
+    return {"status": "implementation_rejected", "reasons": verdict.reasons}</code></pre>
+    </section>
+
+    <section id="governance">
+      <h2>6 · Governance model</h2>
+      <p>Three mechanisms carry the governance claim, deliberately different in kind.</p>
+
+      <h3>A deterministic core that agents cannot reach</h3>
+      <p>Gating, scoring and state transitions live in a core that never imports a model client, directly or transitively. A test asserts it in a clean subprocess for every core module, and exactly one file in the codebase may import the model SDK.</p>
+
+      <h3>Exactly one place pauses the pipeline</h3>
+      <p>All pause and resume logic lives in one controller, with two entry points: one waits for a person, one waits for a remote execution. Keeping both there makes "the pipeline stopped here, and this is why" a single readable code path rather than a property scattered across a dozen nodes.</p>
+
+      <h3>Risk-tiered approval</h3>
+      <p>Requiring a human at every boundary is right for a demonstration and wrong for a team merging daily — they will switch it off wholesale. The gate is always evaluated; policy decides whether a person waits.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tier</th><th>Trigger</th><th>Behaviour</th></tr></thead>
+          <tbody>
+            <tr><td>Auto</td><td>Low blast radius, high confidence, deterministic checks green</td><td>Proceeds; recorded with the evidence that justified it</td></tr>
+            <tr><td>Notify</td><td>Moderate risk, or a pattern seen for the first time</td><td>Proceeds, posts to the owning team</td></tr>
+            <tr><td>Approve</td><td>Regulated surface, migration, public contract</td><td>Pauses for a named person</td></tr>
+            <tr><td>Two-person</td><td>Production deploy, data migration, security-relevant change</td><td>Two approvers, neither the author</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <span class="callout-label">Dependency</span>
+        <p>Tiering is only as good as the confidence signal it routes on. A defensible score is composed of things you can point at — deterministic check outcomes, whether retrieval grounded the answer, agreement between independent samples, historical accuracy for this phase and repository. Never a model's self-report, and never presented to a person as measured when it is not.</p>
+      </div>
+    </section>
+
+    <section id="context">
+      <h2>7 · The context graph</h2>
+      <p class="lede">Every phase needs to know what the system already contains and how it is connected. Without a shared layer each one re-derives that from a diff and a prompt, and nothing a phase learns survives into the next. That does not scale to thirteen phases.</p>
+
+      <div class="callout">
+        <span class="callout-label">The rule that makes it work with any client stack</span>
+        <p>The graph owns identity and relationships. It never owns content. Requirement text stays in the client's tracker, code stays in the repository — the graph holds a stable id, a typed external reference, and only the attributes the platform gates on.</p>
+      </div>
+
+      <p>A graph that stored requirement text would duplicate the system of record and drift from it within a week. One that stores a pointer and a thin projection cannot drift, because it asserts nothing the source also asserts.</p>
+
+      <h3>Three layers, and only the middle one is pluggable</h3>
+      <ul>
+        <li><strong>The ontology is fixed</strong> — fifteen node types and sixteen edge types, each with a signature enforced when an edge is written.</li>
+        <li><strong>Resolution is pluggable</strong> — an adapter maps a native identifier to a graph identity: this Jira key is a requirement, this path is a component.</li>
+        <li><strong>Extension is bounded</strong> — clients add namespaced types that are stored and displayed but never gated on.</li>
+      </ul>
+
+      <h3>The ontology</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Edge</th><th>Signature</th><th>Asserted by</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">DECOMPOSES_TO</td><td>REQUIREMENT → ACCEPTANCE_CRITERION</td><td>requirements</td></tr>
+            <tr><td class="mono">SATISFIES · AFFECTS</td><td>DESIGN_DECISION → CRITERION · COMPONENT</td><td>architecture</td></tr>
+            <tr><td class="mono">IMPLEMENTS · BELONGS_TO</td><td>SOURCE_ARTIFACT → CRITERION · COMPONENT</td><td>implementation, code index</td></tr>
+            <tr><td class="mono">DEPENDS_ON</td><td>COMPONENT → COMPONENT</td><td>code index</td></tr>
+            <tr><td class="mono">VERIFIED_BY</td><td>ACCEPTANCE_CRITERION → TEST_SCENARIO</td><td>QA test plan</td></tr>
+            <tr><td class="mono">IMPLEMENTED_BY · EXERCISED_IN</td><td>SCENARIO → SCRIPT → TEST_RUN</td><td>QA generation, QA gate</td></tr>
+            <tr><td class="mono">COVERS</td><td>TEST_SCENARIO → COMPONENT</td><td>QA test plan</td></tr>
+            <tr><td class="mono">PRODUCED · RAISED</td><td>TEST_RUN → EVIDENCE · DEFECT</td><td>QA gate</td></tr>
+            <tr><td class="mono">CONTAINS · DEPLOYED_TO</td><td>RELEASE → ARTIFACT · ENVIRONMENT</td><td>release</td></tr>
+            <tr><td class="mono">GOVERNED_BY · IMPACTS</td><td>COMPONENT → CONTROL · INCIDENT → COMPONENT</td><td>security, operate</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>15 node types, 16 edge types. Signatures are validated at write; an edge in the wrong direction is rejected, not stored. Every edge carries the run and phase that asserted it, and is superseded rather than rewritten.</p>
+
+      <h3>Identity</h3>
+      <pre><code>NAMESPACE = UUID("6f2a1c7e-9b3d-4a52-8f61-0c4d7e5a2b19")
+
+def node_id(node_type: str, system: str, external_id: str) -> str:
+    return str(uuid5(NAMESPACE, f"{node_type}|{system}|{external_id}"))</code></pre>
+      <p>Derived rather than allocated, so both planes name the same entity with no round trip and ingest is idempotent without a dedupe pass. The function is duplicated across two packages that cannot import each other; a test imports the other copy by path and asserts they agree, because silent divergence would leave every cross-plane edge pointing at a node that does not exist and nothing would error.</p>
+
+      <h3>Three graphs, one identity layer</h3>
+      <figure>
+        <div class="figure-frame wide">
+          <svg viewBox="0 0 880 370" role="img" aria-label="Three graphs — traceability, code intelligence and retrieval — with opposite durability requirements, all resting on one shared identity layer of stable node ids and typed external references.">
+            <defs>
+              <marker id="s5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0,1 9,5 0,9" fill="currentColor"></polygon>
+              </marker>
+            </defs>
+
+            <rect class="svg-hot-box" x="30" y="34" width="260" height="180" rx="2"></rect>
+            <text class="svg-label" x="160" y="60" text-anchor="middle">Traceability</text>
+            <text class="svg-small" x="160" y="86" text-anchor="middle">append-only · audited</text>
+            <text class="svg-small" x="160" y="104" text-anchor="middle">exact · small</text>
+            <text class="svg-small" x="160" y="140" text-anchor="middle">the compliance record</text>
+            <text class="svg-small" x="160" y="182" text-anchor="middle">Postgres edge tables</text>
+
+            <rect class="svg-box" x="310" y="34" width="260" height="180" rx="2"></rect>
+            <text class="svg-label" x="440" y="60" text-anchor="middle">Code intelligence</text>
+            <text class="svg-small" x="440" y="86" text-anchor="middle">derived · rebuildable</text>
+            <text class="svg-small" x="440" y="104" text-anchor="middle">approximate · large</text>
+            <text class="svg-small" x="440" y="140" text-anchor="middle">call graph · ownership</text>
+            <text class="svg-small" x="440" y="182" text-anchor="middle">graph store, when needed</text>
+
+            <rect class="svg-box" x="590" y="34" width="260" height="180" rx="2"></rect>
+            <text class="svg-label" x="720" y="60" text-anchor="middle">Retrieval</text>
+            <text class="svg-small" x="720" y="86" text-anchor="middle">embeddings · fuzzy</text>
+            <text class="svg-small" x="720" y="104" text-anchor="middle">disposable</text>
+            <text class="svg-small" x="720" y="140" text-anchor="middle">grounding for agents</text>
+            <text class="svg-small" x="720" y="182" text-anchor="middle">vector index</text>
+
+            <line class="svg-edge" x1="160" y1="214" x2="160" y2="266" marker-end="url(#s5)"></line>
+            <line class="svg-edge" x1="440" y1="214" x2="440" y2="266" marker-end="url(#s5)"></line>
+            <line class="svg-edge" x1="720" y1="214" x2="720" y2="266" marker-end="url(#s5)"></line>
+            <text class="svg-small" x="300" y="246" text-anchor="middle">same node ids</text>
+            <text class="svg-small" x="580" y="246" text-anchor="middle">same node ids</text>
+
+            <rect class="svg-hot-box" x="30" y="270" width="820" height="66" rx="2"></rect>
+            <text class="svg-label" x="440" y="296" text-anchor="middle">Identity layer — stable node ids + typed external references</text>
+            <text class="svg-small" x="440" y="318" text-anchor="middle">content stays in the client's systems; adapters resolve native identifiers into these ids</text>
+
+            <text class="svg-small" x="30" y="360">they share identity and nothing else — durability, size and accuracy requirements are opposite</text>
+          </svg>
+        </div>
+        <figcaption>Putting all three in one store is the common mistake: it places the audit record in the least mature part of the stack, for queries that are expressible in SQL today. The code intelligence graph is where a real graph store earns its place first, and because it is regenerable, adopting one carries almost no risk.</figcaption>
+      </figure>
+
+      <h3>What it makes possible</h3>
+      <ul>
+        <li><strong>Release readiness becomes a query.</strong> "Every criterion traced to a passing test" is the one gate a regulated client actually asks about, and it is not answerable from a run log.</li>
+        <li><strong>Regression scope is derived, not guessed.</strong> Testing widens from what a diff touched to what depends on it.</li>
+        <li><strong>Change is contained.</strong> An agent editing a component the design never named is caught before the change is proposed.</li>
+        <li><strong>Incidents trace back</strong> through component to criterion to requirement, and re-enter the lifecycle as evidence.</li>
+      </ul>
+    </section>
+
+    <section id="pluggability">
+      <h2>8 · Pluggability</h2>
+      <p>Every integration is a Protocol with adapters chosen by configuration. Phase logic only ever sees the interface; concrete adapters are built once at start-up and passed in.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Answers</th><th>Adapters a client will ask for</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">RequirementsSource</td><td>Where work arrives from</td><td>Jira, Azure DevOps, Confluence</td></tr>
+            <tr><td class="mono">CodeDesignContext</td><td>What the system already does</td><td>Repo index, Confluence, SharePoint</td></tr>
+            <tr><td class="mono">CodeIntelligence</td><td>What depends on what</td><td>GitHub, GitLab, a language server</td></tr>
+            <tr><td class="mono">EntityResolver</td><td>What a native identifier means</td><td>One per system of record</td></tr>
+            <tr><td class="mono">SourceControl</td><td>Where a change is proposed</td><td>GitHub, GitLab, Bitbucket, ADO</td></tr>
+            <tr><td class="mono">WorkDispatch</td><td>How a phase runs remotely</td><td>Actions, Jenkins, ADO Pipelines</td></tr>
+            <tr><td class="mono">LLMProvider</td><td>Which model, whose tenancy</td><td>Direct, Bedrock, Vertex, Foundry</td></tr>
+            <tr><td class="mono">TestManagement</td><td>Where test cases live</td><td>Zephyr, TestRail, qTest, Xray</td></tr>
+            <tr><td class="mono">AuditSink</td><td>Who did what, when</td><td>Postgres, Splunk, Sentinel</td></tr>
+            <tr><td class="mono">BuildDeploy</td><td>How code ships</td><td>Actions, Jenkins, Harness</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>The interfaces</h3>
+      <pre><code>class WorkDispatch(Protocol):
+    async def trigger(self, run_id, phase, correlation_id, inputs) -&gt; DispatchHandle
+    async def check(self, handle) -&gt; DispatchResult   # pending|succeeded|failed|timed_out
+
+class SourceControl(Protocol):
+    async def read_files(self, repo, ref, paths) -&gt; dict[str, str]
+    async def open_change(self, repo, base_ref, branch, title, body, edits) -&gt; ChangeRef
+
+class CodeIntelligence(Protocol):
+    async def index(self, repo, ref) -&gt; CodeIndex     # components, files, dependencies
+
+class EntityResolver(Protocol):
+    async def resolve(self, node_type, system, external_id, projection) -&gt; NodeRef
+
+class LLMProvider(Protocol):
+    async def complete(self, system, user, *, max_tokens) -&gt; LLMResponse
+    async def complete_json(self, system, user, schema, *, max_tokens) -&gt; BaseModel</code></pre>
+      <p><code>SourceControl</code> has no merge method by design. A change is proposed; what happens to it is the client's existing review process.</p>
+
+      <h3>How the boundary survives contact with delivery</h3>
+      <p>Pluggability always erodes under pressure — somebody needs a value quickly and imports the concrete thing where it is convenient. Three assertions make that a build failure rather than a code review conversation: no core module may import a model client; only an adapter may speak HTTP; and importing the core must not pull any concrete integration into memory. Adapter construction uses a lazy import inside each factory branch, which is what lets those assertions hold at all.</p>
+    </section>
+
+    <section id="data">
+      <h2>9 · Data model</h2>
+      <p>Run state, the audit trail, the graph, and a checkpoint store. The split matters: the checkpoint is how a run <em>resumes</em>, the tables are how a run is <em>queried and audited</em>, and conflating them would make the audit trail depend on a serialization format.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Store</th><th>Holds</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">runs</td><td>Status, the original demand, timestamps</td><td>One row per run; its id is also the workflow thread id</td></tr>
+            <tr><td class="mono">audit_log</td><td>Before/after entry per node, confidence, human decision</td><td>Exactly one pair per logical node call, however many retries happened underneath</td></tr>
+            <tr><td class="mono">dispatches</td><td>Remote executions: correlation, state, result, deadline</td><td>Unique per run and phase — the idempotency guard, the result queue and the timeout ledger in one row</td></tr>
+            <tr><td class="mono">graph_nodes</td><td>Identity: type, external reference, thin projection</td><td>No content; the client's system stays the record</td></tr>
+            <tr><td class="mono">graph_edges</td><td>Typed relationships with the run and gate that asserted them</td><td>Append-only; superseded, never rewritten</td></tr>
+            <tr><td class="mono">setting_overrides</td><td>Configuration set through the console</td><td>With a change history recording what each value was before</td></tr>
+            <tr><td class="mono">checkpoints</td><td>Serialized graph state per thread</td><td>Separate store; a paused run survives a restart or a config change</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="trust">
+      <h2>10 · Trust &amp; security</h2>
+      <p>The threat is specific: untrusted input reaches a model, and the model's output is executed as code on a machine that holds credentials. Four controls, in decreasing order of how much weight they carry.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Control</th><th>Stops</th><th>Strength</th></tr></thead>
+          <tbody>
+            <tr><td>Privilege split across two jobs</td><td>Generated code reaching a token that can write</td><td>Structural — enforced by the platform, not by review</td></tr>
+            <tr><td>Results pulled, never pushed</td><td>A forged result becoming run state</td><td>Structural — no signature to get wrong, no secret to rotate</td></tr>
+            <tr><td>Deterministic change review</td><td>A change touching what nobody agreed to</td><td>Strong — the design's named components are checkable</td></tr>
+            <tr><td>Static allowlist on generated tests</td><td>Obvious exfiltration and subprocess paths</td><td>Defence in depth — a text scan, and a determined author can phrase around it</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Secrets stay in the environment. The console reports whether each is configured and never returns or accepts a value — writing credentials into an application database is not something to do before there is a secrets manager behind a port.</p>
+
+      <h3>Failure modes and disposition</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Failure</th><th>Detected by</th><th>Disposition</th></tr></thead>
+          <tbody>
+            <tr><td>Untestable scenario proposed</td><td>testability gate</td><td>Reasons fed back; ≤3 attempts, then terminal</td></tr>
+            <tr><td>Change edits outside the design</td><td>change review</td><td>Refused; nothing written to source control</td></tr>
+            <tr><td>Criteria unsatisfiable from the files given</td><td>agent self-reports <code>blocked</code></td><td>Terminal; no speculative change</td></tr>
+            <tr><td>Generated spec unsafe</td><td>static allowlist</td><td>Never written; gate fails on the assignment count</td></tr>
+            <tr><td>Required data cannot exist</td><td>seeding node</td><td>Reported as unsatisfiable, not silently skipped</td></tr>
+            <tr><td>Duplicate dispatch on resume</td><td><code>UNIQUE(run_id, phase)</code></td><td>Second trigger never issued</td></tr>
+            <tr><td>Result arrives before the thread parks</td><td><code>applied_at IS NULL</code></td><td>Queued; reconciler retries next tick</td></tr>
+            <tr><td>Remote job never reports</td><td><code>deadline_at</code></td><td>Resume with <code>timed_out</code>; terminal</td></tr>
+            <tr><td>Model refuses the request</td><td><code>stop_reason == "refusal"</code></td><td>Server-side fallback, else raise with the category</td></tr>
+            <tr><td>Business node transient failure</td><td>retry wrapper</td><td>≤N retries, then a template fallback</td></tr>
+            <tr><td><strong>Gate or dispatch node</strong></td><td>—</td><td><strong>Never retried, never fallen back</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The last row is the important one. A paused node is not a transient failure; falling back would mean recording an approval nobody gave, or a verdict no test produced.</p>
+    </section>
+
+    <section id="deployment">
+      <h2>11 · Deployment</h2>
+      <p>One codebase, two topologies. The difference is entirely which adapters are configured.</p>
+
+      <div class="cols">
+        <div class="col-card">
+          <span class="col-title">Laptop — demonstration and development</span>
+          <ul>
+            <li>API and console as two local processes, file-backed storage</li>
+            <li>Mock model provider — runs with no key at all</li>
+            <li>Simulated execution, or the real pipeline against a local checkout</li>
+            <li>Fully offline, which is exactly when a demonstration must not depend on a tunnel</li>
+          </ul>
+        </div>
+        <div class="col-card">
+          <span class="col-title">Client environment</span>
+          <ul>
+            <li>Same processes; managed database via the audit port</li>
+            <li>Model through the client's own tenancy</li>
+            <li>Execution dispatched to the client's CI</li>
+            <li>No inbound path required, so it can sit behind a firewall</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Operational characteristics</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Property</th><th>Today</th><th>Determined by</th></tr></thead>
+          <tbody>
+            <tr><td>Model calls per run</td><td>4–6</td><td>diff analysis, plan (+revisions), generation per uncovered scenario, implementation</td></tr>
+            <tr><td>Wall clock, full cycle</td><td>3–6 min</td><td>Dominated by browser execution and the app build, not by inference</td></tr>
+            <tr><td>Concurrency</td><td>1 task per run</td><td>Checkpoint thread; concurrent runs are independent</td></tr>
+            <tr><td>Verification parallelism</td><td>None</td><td>Graph is a chain — the one structural gap</td></tr>
+            <tr><td>Run durability</td><td>Survives restart and config change</td><td>State in the checkpointer, not the process</td></tr>
+            <tr><td>Cost attribution</td><td>Not implemented</td><td>Token counts exist per call; nothing aggregates them</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Inference is not the bottleneck and is unlikely to become one. The dominant costs are building the application under test and running a browser suite, both of which belong to the execution plane and scale with the client's CI rather than with us.</p>
+    </section>
+
+    <section id="decisions">
+      <h2>12 · Design decisions</h2>
+      <p>The choices that would be expensive to revisit, and why they went the way they did.</p>
+
+      <div class="adrs">
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">D1</span><span class="adr-name">A pause is a pause, whoever is answering</span></div>
+          <p>Waiting for a remote job reuses the same machinery as waiting for a person, through a second method on the same controller.</p>
+          <p class="because"><span class="because-label">Because</span>Parking a thread until an external actor answers is not human-specific. Reusing it meant checkpointing, thread identity, the duplicate-launch guard and the event stream all kept working — and the rule that exactly one place pauses the pipeline survived.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">D2</span><span class="adr-name">Pull results, never accept pushed ones</span></div>
+          <p>The platform fetches outcomes with its own credential. Any callback carries a run id and no data.</p>
+          <p class="because"><span class="because-label">Because</span>Nothing a stranger sends can become run state, a lost callback is not a lost run, and it works on a laptop where CI could never reach a local URL.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">D3</span><span class="adr-name">Auto-approval applies to people, never to machines</span></div>
+          <p>Headless mode skips the human gates. It does not skip waiting for a job.</p>
+          <p class="because"><span class="because-label">Because</span>The flag exists so a run does not stop for a person. It cannot manufacture the result of a job that has not run, and a mode that fabricated one would make every headless result meaningless.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">D4</span><span class="adr-name">An agent returns whole files, not a diff</span></div>
+          <p>The implementation phase asks for complete file contents and reconstructs the change itself.</p>
+          <p class="because"><span class="because-label">Because</span>A patch that does not apply is a failure with no useful message. Whole files always apply, and the review that follows can check them properly.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">D5</span><span class="adr-name">A change is proposed, never merged</span></div>
+          <p>The platform opens a branch or a pull request and stops.</p>
+          <p class="because"><span class="because-label">Because</span>What happens to a change is the client's existing review process. A platform that merged its own work would be asking to be switched off.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">D6</span><span class="adr-name">Test the change, not the working copy</span></div>
+          <p>Verification runs against a checkout of the branch under test.</p>
+          <p class="because"><span class="because-label">Because</span>Anything else diffs the change and then exercises the code from before it — a pipeline that appears to work and proves nothing.</p>
+        </div>
+        <div class="adr">
+          <div class="adr-top"><span class="adr-id">D7</span><span class="adr-name">Gates and dispatches are never retried or fallen back</span></div>
+          <p>The reliability wrapper protects business nodes only.</p>
+          <p class="because"><span class="because-label">Because</span>A paused node is not a transient failure. Falling back would mean recording an approval nobody gave, or a verdict no test produced — precisely what this system exists to prevent.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="proof">
+      <h2>13 · What is built, and what it proves</h2>
+      <p class="lede">A reference implementation exists. Its purpose is not to be the product — it is to establish that the architecture above survives contact with a real model, a real browser and a real repository, and to find the places where it does not.</p>
+
+      <div class="callout">
+        <span class="callout-label">The claim</span>
+        <p>One full cycle runs end to end: a requirement becomes a reviewed code change, tests scoped to that change and its blast radius prove it, and a release is recorded against the criterion it satisfies. Everything below was observed, not designed.</p>
+      </div>
+
+      <h3>The cycle, as it ran</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Stage</th><th>What happened</th></tr></thead>
+          <tbody>
+            <tr><td>Requirement</td><td>"Show how many claims are currently listed, updating with the filter"</td></tr>
+            <tr><td>Gates 1 and 2</td><td>Approved by a person, each decision recorded</td></tr>
+            <tr><td>Implementation</td><td>A model wrote the change; the review accepted it; one file, committed to a branch</td></tr>
+            <tr><td>Verification</td><td>11 scenarios — scoped by the dependency graph to two components rather than the 21 the whole application would need. 12 browser tests, no failures</td></tr>
+            <tr><td>Gate 3</td><td>Approved in front of screenshots and traces from that run</td></tr>
+            <tr><td>Release</td><td>Recorded to staging, linked to the files it contains</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Afterwards the graph answered the release-readiness question directly: no acceptance criterion left without a passing test. The change the model produced was four lines, idiomatic, and touched nothing else.</p>
+
+      <h3>Phase maturity</h3>
+      <p>Being precise about what is real is the point of this section.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Phase</th><th>State</th><th>What exists today</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">1 intake</td><td><span class="pill stub">stub</span></td><td>Text and CSV through the port; no parsing intelligence</td></tr>
+            <tr><td class="mono">2 requirements</td><td><span class="pill stub">stub</span></td><td>Echoes a summary; criteria are declared by hand in a feature file</td></tr>
+            <tr><td class="mono">3 architecture</td><td><span class="pill partial">partial</span></td><td>Names the components a change may touch, from the graph; the reasoning is still a stub</td></tr>
+            <tr><td class="mono">4 implementation</td><td><span class="pill real">real</span></td><td>Writes the change, reviewed deterministically, committed to a branch or opened as a pull request</td></tr>
+            <tr><td class="mono">5 code review</td><td><span class="pill absent">absent</span></td><td>—</td></tr>
+            <tr><td class="mono">6 security</td><td><span class="pill absent">absent</span></td><td>—</td></tr>
+            <tr><td class="mono">7 functional QA</td><td><span class="pill real">real</span></td><td>Plans, seeds, generates or selects, executes, gathers evidence, files defects</td></tr>
+            <tr><td class="mono">8 non-functional</td><td><span class="pill absent">absent</span></td><td>—</td></tr>
+            <tr><td class="mono">9 data / migration</td><td><span class="pill absent">absent</span></td><td>—</td></tr>
+            <tr><td class="mono">10 release readiness</td><td><span class="pill partial">partial</span></td><td>The coverage query works; the change record and risk summary do not exist</td></tr>
+            <tr><td class="mono">11 deploy</td><td><span class="pill partial">partial</span></td><td>Records a release and what it contains; the deployment itself is whatever the adapter does</td></tr>
+            <tr><td class="mono">12 post-deploy</td><td><span class="pill absent">absent</span></td><td>—</td></tr>
+            <tr><td class="mono">13 operate</td><td><span class="pill absent">absent</span></td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Six of thirteen phases run. The asymmetry is deliberate: proving one vertical slice end to end — real requirement, real change, real browser, real evidence, real approver — establishes that the architecture works. Filling in the rest is repetitive rather than risky.</p>
+
+      <h3>The QA phase in detail</h3>
+      <p>The most complete phase, and the reference every other one should follow. Eight nodes, of which two are deterministic gates with no model involved.</p>
+      <figure>
+        <div class="figure-frame wide">
+          <svg viewBox="0 0 880 330" role="img" aria-label="Inside a CI job with read-only permissions, the QA pipeline runs diff analysis, a deterministic test-plan gate, data seeding, test generation, execution, evidence indexing and a deterministic pass-fail gate; a separate job holding write permissions consumes the serialized state and posts to GitHub.">
+            <defs>
+              <marker id="s3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0,1 9,5 0,9" fill="currentColor"></polygon>
+              </marker>
+            </defs>
+
+            <rect class="svg-group" x="12" y="42" width="856" height="112" rx="2"></rect>
+            <text class="svg-title" x="26" y="34">JOB qa-run — permissions: contents: read · executes agent-authored specs</text>
+
+            <rect class="svg-box" x="22" y="72" width="108" height="52" rx="2"></rect>
+            <text class="svg-small" x="76" y="96" text-anchor="middle">diff</text>
+            <text class="svg-small" x="76" y="110" text-anchor="middle">analysis</text>
+
+            <rect class="svg-hot-box" x="141" y="72" width="108" height="52" rx="2"></rect>
+            <text class="svg-small" x="195" y="96" text-anchor="middle">test plan</text>
+            <text class="svg-small" x="195" y="110" text-anchor="middle">GATE</text>
+
+            <rect class="svg-box" x="260" y="72" width="108" height="52" rx="2"></rect>
+            <text class="svg-small" x="314" y="96" text-anchor="middle">test</text>
+            <text class="svg-small" x="314" y="110" text-anchor="middle">data</text>
+
+            <rect class="svg-box" x="379" y="72" width="108" height="52" rx="2"></rect>
+            <text class="svg-small" x="433" y="96" text-anchor="middle">test</text>
+            <text class="svg-small" x="433" y="110" text-anchor="middle">gen</text>
+
+            <rect class="svg-box" x="498" y="72" width="108" height="52" rx="2"></rect>
+            <text class="svg-small" x="552" y="96" text-anchor="middle">test</text>
+            <text class="svg-small" x="552" y="110" text-anchor="middle">run</text>
+
+            <rect class="svg-box" x="617" y="72" width="108" height="52" rx="2"></rect>
+            <text class="svg-small" x="671" y="103" text-anchor="middle">evidence</text>
+
+            <rect class="svg-hot-box" x="736" y="72" width="108" height="52" rx="2"></rect>
+            <text class="svg-small" x="790" y="96" text-anchor="middle">pass/fail</text>
+            <text class="svg-small" x="790" y="110" text-anchor="middle">GATE</text>
+
+            <line class="svg-edge" x1="130" y1="98" x2="137" y2="98" marker-end="url(#s3)"></line>
+            <line class="svg-edge" x1="249" y1="98" x2="256" y2="98" marker-end="url(#s3)"></line>
+            <line class="svg-edge" x1="368" y1="98" x2="375" y2="98" marker-end="url(#s3)"></line>
+            <line class="svg-edge" x1="487" y1="98" x2="494" y2="98" marker-end="url(#s3)"></line>
+            <line class="svg-edge" x1="606" y1="98" x2="613" y2="98" marker-end="url(#s3)"></line>
+            <line class="svg-edge" x1="725" y1="98" x2="732" y2="98" marker-end="url(#s3)"></line>
+
+            <text class="svg-small" x="195" y="144" text-anchor="middle">no LLM in the decision</text>
+            <text class="svg-small" x="790" y="144" text-anchor="middle">no LLM in the decision</text>
+
+            <line class="svg-edge" x1="440" y1="154" x2="440" y2="218" marker-end="url(#s3)"></line>
+            <text class="svg-small" x="452" y="182">qa-state.json — the only thing that crosses</text>
+
+            <rect class="svg-group" x="240" y="222" width="400" height="90" rx="2"></rect>
+            <text class="svg-title" x="254" y="244">JOB qa-report — issues:write · runs none of it</text>
+            <rect class="svg-box" x="260" y="254" width="360" height="44" rx="2"></rect>
+            <text class="svg-small" x="440" y="281" text-anchor="middle">PR comment · one issue per failing scenario</text>
+          </svg>
+        </div>
+        <figcaption>The split exists because the pipeline reads an untrusted diff, feeds it to a model, and executes the output as TypeScript. The job that does that holds no token; the job that holds a token executes none of it.</figcaption>
+      </figure>
+
+      <h3>Also built</h3>
+      <ul>
+        <li><strong>The context graph, populated from real repositories.</strong> Point it at a GitHub repository and it derives components and dependencies from source — 25 components and 41 dependencies from one production codebase, with its layering visible in the output.</li>
+        <li><strong>A console</strong> with a dashboard, a runs view, the graph, and configuration that applies without a restart.</li>
+        <li><strong>Ten ports and sixteen adapters</strong>, with an offline default for every one, so the whole system demonstrates with no keys and no network.</li>
+      </ul>
+
+      <h3>What the reference implementation proved by failing</h3>
+      <p>Four findings only a real run produces, each now fixed and covered by a test:</p>
+      <ul>
+        <li><strong>Implicit contracts produce confident, wrong answers.</strong> An agent told a selector exists, but not which screen it is on or what values it accepts, guesses — and a wrong guess costs a full test run to discover. Everything an agent needs is now declared beside the requirements.</li>
+        <li><strong>A pipeline that diffs a branch and tests the working copy proves nothing.</strong> Verification now runs against a checkout of the change.</li>
+        <li><strong>Deterministic seeding and a live planner disagree about what data can exist.</strong> Plans now declare the data they need; the seeder guarantees it, or says it cannot.</li>
+        <li><strong>Shared fixture data breaks once scenarios have conflicting needs.</strong> Cases needing absence intercept the response instead of reshaping the store.</li>
+      </ul>
+
+      <h3>Verification</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Suite</th><th class="num">Tests</th><th>Holds in place</th></tr></thead>
+          <tbody>
+            <tr><td>Architecture purity</td><td class="num">29</td><td>That the core cannot reach a model, a CI client or a repository client</td></tr>
+            <tr><td>Implementation phase</td><td class="num">19</td><td>What a proposed change is not allowed to do</td></tr>
+            <tr><td>Dispatch seam</td><td class="num">12</td><td>Duplicate dispatch, early result, timeout, unmodified workflows</td></tr>
+            <tr><td>Context graph and settings</td><td class="num">~50</td><td>Ontology enforcement, identity across both planes, the coverage query</td></tr>
+            <tr><td>Execution plane</td><td class="num">110</td><td>Gates, selection, spec validation, seeding, contracts, report routing</td></tr>
+            <tr><td colspan="3" style="color: var(--muted)">247 in total, across the two planes</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Not built, and known</h3>
+      <p>No authentication, so approvals are not yet attributable to a named person. No evidence store, so artifacts expire with the CI run that produced them. Confidence is a placeholder, so risk tiering cannot be switched on. Verification runs in sequence rather than in parallel. Each is on the roadmap in dependency order, and none of them is a surprise.</p>
+    </section>
+
+    <section id="roadmap">
+      <h2>14 · Roadmap</h2>
+      <p class="lede">Ordered by dependency, not by appetite.</p>
+
+      <div class="steps">
+        <div class="step"><span class="step-num">1</span><div class="step-body">
+          <h3>Identity, and the audit schema that depends on it</h3>
+          <p>Approvals attributable to a named person. First, because it rewrites the audit tables, and doing that once there are runs worth keeping is far more expensive. Nothing ships to a regulated client without it.</p>
+        </div></div>
+        <div class="step"><span class="step-num">2</span><div class="step-body">
+          <h3>Evidence store, and the edges that point at it</h3>
+          <p>Durable artifacts with a retention policy the client sets. An edge pointing at an expired CI artifact is not traceability, so these are one piece of work.</p>
+        </div></div>
+        <div class="step"><span class="step-num">3</span><div class="step-body">
+          <h3>One live run against a client's own CI</h3>
+          <p>The seam is proven against a local pipeline. Driving a real workflow in a real repository is the outstanding acceptance criterion — and the platform can already do it without that repository changing.</p>
+        </div></div>
+        <div class="step"><span class="step-num">4</span><div class="step-body">
+          <h3>Parallel verification, starting with security scanning</h3>
+          <p>Fan-out and join in the graph, then security as the second verification phase. The structural change first, because adding three more phases to a sequential chain makes each wait for the last for no reason.</p>
+        </div></div>
+        <div class="step"><span class="step-num">5</span><div class="step-body">
+          <h3>Real confidence, then risk-tiered gating</h3>
+          <p>In that order. Policy routing on a fabricated score is worse than no policy, because it looks defensible in a demonstration and fails in an audit.</p>
+        </div></div>
+        <div class="step"><span class="step-num">6</span><div class="step-body">
+          <h3>Code review, release readiness, post-deploy verification</h3>
+          <p>The remaining phases, each a new node against machinery that already exists. Release readiness is where the graph becomes a gate rather than a report.</p>
+        </div></div>
+        <div class="step"><span class="step-num">7</span><div class="step-body">
+          <h3>Eval harness, code intelligence, the feedback loop</h3>
+          <p>The harness first, so a model or prompt change can be told apart from a regression. Then blast-radius selection at scale, and runs triggered by production signal — which closes the lifecycle and is the point where this stops being a pipeline and becomes a system.</p>
+        </div></div>
+      </div>
+    </section>
+
+    <footer>
+      <p>Sections 1 to 12 describe the architecture and the principles behind it, independent of how much of it exists. Section 13 is the reference implementation, written from observed runs: where it says something is real there is a test that fails if it stops being real, and where it says something is absent, no amount of reading the code will find it.</p>
+    </footer>
+
+  </main>
+</div>
