@@ -13,10 +13,12 @@ from uuid import uuid4
 
 from app.agents.state import GateDecision
 from app.core.audit import AuditLogger, NodeFn, audited
-from app.agents.design import SYSTEM as DESIGN_SYSTEM
-from app.agents.design import DesignProposal
-from app.agents.design import build_prompt as build_design_prompt
 from app.agents.handoff import build_task
+from app.ports.design_agent import (
+    DesignAgent,
+    DesignProposal,
+    DesignRequest,
+)
 from app.agents.implementation import SYSTEM as IMPLEMENTATION_SYSTEM
 from app.agents.implementation import Implementation, build_prompt
 from app.core.change_review import review as review_change
@@ -89,12 +91,24 @@ def build_nodes(
     gate_controller: GateController,
     max_retries: int,
     design_attempts: int = DEFAULT_DESIGN_ATTEMPTS,
+    # Defaults to this platform's own agent. A client substitutes one here
+    # rather than forking the phase.
+    design_agent: DesignAgent | None = None,
+    design_dispatch: WorkDispatch | None = None,
     dispatch_timeout_seconds: int = 1800,
     dispatch_provider: str = "local",
     target_repo: str = "",
     target_ref: str = "main",
     target_environment: str = "staging",
 ) -> dict[str, NodeFn]:
+    # The default is this platform's own agent. Resolved here rather than in
+    # the signature so a caller that supplies nothing gets the shipped
+    # behaviour, and a client's adapter is a substitution at one place.
+    if design_agent is None:
+        from app.adapters.design_agent.inline import InlineDesignAgent
+
+        design_agent = InlineDesignAgent(llm_provider)
+
     def business(name: str, fallback: dict[str, Any]):
         def decorator(fn: NodeFn) -> NodeFn:
             wrapped = with_retry_fallback(name, lambda _state: dict(fallback), max_retries)(fn)
@@ -157,6 +171,7 @@ def build_nodes(
         The impact set is not proposed. It is derived from dependency edges,
         because an architect can be wrong about consequences.
         """
+
         requirement = (state.get("raw_input") or {}).get("text", "")
         query = (state.get("requirements_synthesis") or {}).get("summary", "") or requirement
         snippets = [
@@ -174,24 +189,37 @@ def build_nodes(
         # codebase's imports, so the review is told and refuses.
         graph_quality = await context_graph.index_provenance()
 
-        base_prompt = build_design_prompt(
+        request = DesignRequest(
+            run_id=state["run_id"],
             requirement=requirement,
             criteria=criteria,
             catalogue=catalogue,
-            snippets=snippets,
+            context_snippets=snippets,
             max_files=MAX_DESIGN_FILES,
         )
 
         reasons: list[str] = []
         proposal = None
         for attempt in range(1, design_attempts + 1):
-            prompt = base_prompt if not reasons else (
-                base_prompt
-                + "\n\nYour previous design was rejected:\n"
-                + "\n".join(f"- {r}" for r in reasons)
-                + "\n\nName only modules and files from the catalogue above."
+            outcome = await design_agent.propose(
+                request.model_copy(update={"rejected_reasons": reasons})
             )
-            proposal = await llm_provider.complete_json(DESIGN_SYSTEM, prompt, DesignProposal)
+
+            if outcome.state == "pending":
+                # A client's agent that works elsewhere. Parked on the same
+                # seam CI uses, so an hour-long design survives a restart.
+                # Only one attempt is possible in this shape: a retry would
+                # mean a second dispatch, and the reasons a human needs are
+                # better read on the rejected proposal than burned on another
+                # agent run.
+                proposal = await _await_design(state, outcome)
+                if proposal is None:
+                    return {
+                        "design_proposal": {"failed": "the design agent produced nothing"},
+                        "status": "design_rejected",
+                    }
+            else:
+                proposal = outcome.proposal or DesignProposal()
 
             if proposal.blocked:
                 return {
@@ -218,6 +246,8 @@ def build_nodes(
                     "status": "awaiting_gate_2",
                 }
             reasons = verdict.reasons
+            if outcome.state == "pending":
+                break  # see above: no second dispatch
 
         return {
             "design_proposal": {
@@ -227,6 +257,40 @@ def build_nodes(
             },
             "status": "design_rejected",
         }
+
+    async def _await_design(state: dict[str, Any], outcome) -> DesignProposal | None:
+        """Dispatch a design to a client's agent and wait for it.
+
+        The same machinery the implementation and QA phases use: one row per
+        run and phase, a deadline, and a reconciler that resumes the graph
+        when the provider answers.
+        """
+        run_id = state["run_id"]
+        provider = outcome.provider or "design-agent"
+
+        claimed = await dispatch_store.claim(
+            run_id, "design", provider, dispatch_timeout_seconds
+        )
+        if claimed is not None and design_dispatch is not None:
+            try:
+                handle = await design_dispatch.trigger(
+                    run_id, "design", claimed.correlation_id, outcome.dispatch_inputs or {}
+                )
+                await dispatch_store.attach_external(
+                    claimed.id, handle.external_id, handle.external_url
+                )
+            except Exception as exc:  # noqa: BLE001 - surfaced as a failed dispatch
+                await dispatch_store.resolve(
+                    claimed.id,
+                    DispatchResult(state="failed", detail=f"could not start: {exc}"),
+                )
+
+        result = await gate_controller.request_external(
+            state, "design", {"type": "design_handoff", "phase": "design", "agent": provider}
+        )
+        if result.get("state") != "succeeded":
+            return None
+        return design_agent.read_result(result.get("payload") or {})
 
     async def gate_2(state: dict[str, Any]) -> dict[str, Any]:
         design = state.get("design_proposal") or {}

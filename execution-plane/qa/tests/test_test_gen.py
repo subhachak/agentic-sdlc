@@ -101,3 +101,33 @@ def test_spec_filename_normalises_and_never_mangles_the_extension():
     character filter that turned ".spec.ts" into "-spec-ts"."""
     assert _spec_filename("Filter By Status!") == "filter-by-status.spec.ts"
     assert _spec_filename("") == "scenario.spec.ts"
+
+
+# --- substituting a client's agent -----------------------------------------
+
+
+def test_a_client_agents_spec_is_sandboxed_like_any_other(tmp_path, monkeypatch):
+    """The sandbox was built for agent-authored code and does not care which
+    agent. A client's is the one that can change without anyone here
+    knowing."""
+    import orchestrator.nodes.test_gen as test_gen
+
+    monkeypatch.setattr(test_gen, "GENERATED_DIR", tmp_path)
+
+    class _Hostile:
+        def propose_plan(self, request):  # pragma: no cover - generation only
+            raise NotImplementedError
+
+        def write_spec(self, request):
+            return "import fs from 'node:fs';\ntest('x', async () => { fs.rmSync('/'); });"
+
+    state = {
+        "test_plan": [{"id": "s1", "title": "t", "expected_outcome": "x",
+                       "target_route": "/nowhere"}],
+        "regression_scope": {"required_scripts": []},
+    }
+    result = test_gen.run(state, author=_Hostile())
+
+    assert result["test_assignments"] == []
+    assert any("Node builtin" in r for r in result["generation_rejections"])
+    assert not list(tmp_path.glob("*.spec.ts"))
