@@ -1,5 +1,5 @@
 {
-  "_comment": "Seeded code-intelligence graph. In production this is derived from the repository and generated as a pinned export of the context graph \u2014 it is hand-authored here only until that export exists. Paths are repository-relative, matching what `git diff --name-status` emits: they used to be relative to demo-app/ and matched only because the lookup compared by substring, which also matched paths that had nothing to do with the module.",
+  "_comment": "Seeded code-intelligence graph. In production this is derived from the repository and generated as a pinned export of the context graph \u2014 it is hand-authored here only until that export exists. Paths are repository-relative, matching what `git diff --name-status` emits. `covered_by` names ids from test-scripts/manifest.json and is resolved against it: a script that does not exist is a hard error, because a module claiming coverage it does not have hides the gap. Every entry here previously named a script that did not exist, so the whole regression set resolved to nothing.",
   "depends_on": [
     {
       "from": "claims-table",
@@ -17,7 +17,7 @@
         "demo-app/app/claims/page.tsx"
       ],
       "covered_by": [
-        "claims-table-renders"
+        "claims-list-renders"
       ]
     },
     {
@@ -25,20 +25,16 @@
       "paths": [
         "demo-app/app/claims/page.tsx"
       ],
-      "covered_by": [
-        "filter-approved",
-        "filter-denied",
-        "filter-empty-state"
-      ]
+      "covered_by": [],
+      "coverage_note": "no library script covers the status filter yet \u2014 reported as a coverage gap on every change that reaches this module"
     },
     {
       "id": "claims-api",
       "paths": [
         "demo-app/app/api/claims/route.ts"
       ],
-      "covered_by": [
-        "api-status-param"
-      ]
+      "covered_by": [],
+      "coverage_note": "no library script covers the API directly yet \u2014 the list script exercises it indirectly, which is not the same claim"
     }
   ]
 }

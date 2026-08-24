@@ -42,6 +42,35 @@ def _evidence_block(state: PipelineState) -> str:
     return line
 
 
+def _blast_radius_block(state) -> str:
+    """What the dependency graph obliged this run to re-test, and what it
+    could not. Stated on the PR because a reviewer deciding whether to merge
+    needs to know which impacted areas nothing exercised — that is the part
+    a green tick otherwise hides.
+    """
+    scope = state.get("regression_scope") or {}
+    impacted = scope.get("impacted_components") or []
+    if not impacted:
+        return "_no mapped modules were impacted by this change_"
+
+    required = state.get("required_regressions") or []
+    gaps = state.get("coverage_gaps") or []
+    failed = state.get("required_regressions_failed") or []
+    missing = state.get("required_regressions_missing") or []
+
+    lines = [f"Impacted modules: {', '.join(impacted)}"]
+    if required:
+        verdict = "failed" if failed or missing else "passed"
+        lines.append(f"Required regression scripts ({verdict}): {', '.join(required)}")
+    if failed:
+        lines.append(f"Failed: {', '.join(failed)}")
+    if missing:
+        lines.append(f"Did not run: {', '.join(missing)}")
+    if gaps:
+        lines.append(f"No regression coverage: {', '.join(gaps)}")
+    return _bullets(lines)
+
+
 def _plan_table(state: PipelineState) -> str:
     rows = ["| Scenario | Type | Priority | Mode |", "|---|---|---|---|"]
     assignments = {a["scenario_id"]: a for a in state.get("test_assignments", [])}
@@ -75,9 +104,10 @@ def _report_pass(state: PipelineState) -> PipelineState:
         f"## Agentic QA — PASSED\n\n"
         f"**Change:** {state['change_summary']}\n\n"
         f"**Test plan** ({len(state.get('test_plan', []))} scenarios):\n{_plan_table(state)}\n\n"
+        f"**Blast radius:**\n{_blast_radius_block(state)}\n\n"
         f"**Data:** {state.get('seed_summary', '')}\n\n"
         f"**Evidence:** {_evidence_block(state)}\n\n"
-        f"All planned scenarios ran and passed."
+        f"All planned scenarios and required regressions ran and passed."
     )
     url = github_api.post_pr_comment(state["repo"], state["pr_number"], body)
     return {**state, "pr_comment_url": url, "defects_created": []}
@@ -110,6 +140,7 @@ def _report_fail(state: PipelineState) -> PipelineState:
         f"## Agentic QA — FAILED\n\n"
         f"**Change:** {state.get('change_summary', 'unknown')}\n\n"
         f"**Test plan:**\n{_plan_table(state)}\n\n"
+        f"**Blast radius:**\n{_blast_radius_block(state)}\n\n"
         f"**Gate reasons:**\n{_bullets(state.get('gate_reasons', []))}\n\n"
         f"**Evidence:** {evidence_block}\n\n"
         f"**Defects filed:**\n{_bullets(defect_urls)}"

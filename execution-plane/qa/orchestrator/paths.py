@@ -22,6 +22,9 @@ REPO_ROOT = QA_ROOT.parents[1]
 APP_ROOT = Path(os.environ.get("QA_APP_ROOT") or (REPO_ROOT / "demo-app"))
 
 LIBRARY_DIR = QA_ROOT / "test-scripts"
+# The library's index. `covered_by` in the code graph is resolved against
+# it, so a module cannot claim coverage from a script that does not exist.
+MANIFEST_FILE = LIBRARY_DIR / "manifest.json"
 FEATURES_FILE = QA_ROOT / "features.yaml"
 # Seeded code-intelligence graph. Derived from the repository in production.
 CODE_GRAPH_FILE = QA_ROOT / "code-graph.json"

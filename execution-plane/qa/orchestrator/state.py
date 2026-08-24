@@ -22,7 +22,7 @@ class Scenario(TypedDict, total=False):
 
 class TestAssignment(TypedDict, total=False):
     scenario_id: str
-    mode: str  # "selected" | "generated"
+    mode: str  # "selected" | "generated" | "required-regression"
     file_path: str
     source_script_id: str | None
 
@@ -55,6 +55,7 @@ class PipelineState(TypedDict, total=False):
     # --- phase 4: test generation / selection ---
     test_assignments: list[TestAssignment]
     generation_rejections: list[str]
+    required_assignments: list[str]
 
     # --- phase 5: execution ---
     run_exit_code: int
@@ -70,6 +71,11 @@ class PipelineState(TypedDict, total=False):
     gate_passed: bool
     gate_reasons: list[str]
     failing_scenarios: list[str]
+    # What the blast radius obliged this run to re-test, and how that went.
+    required_regressions: list[str]
+    required_regressions_failed: list[str]
+    required_regressions_missing: list[str]
+    coverage_gaps: list[str]
 
     # --- phase 8: report ---
     defects_created: list[str]

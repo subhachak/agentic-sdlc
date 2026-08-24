@@ -5,6 +5,7 @@ regression scope, and what it emits for the control plane to ingest.
 from __future__ import annotations
 
 from orchestrator.context import (
+    library_script_ids,
     blast_radius,
     build_assertions,
     modules_for_paths,
@@ -41,9 +42,44 @@ def test_regression_scope_widens_beyond_the_diff():
 
     assert scope["changed_components"] == ["claims-api"]
     assert set(scope["impacted_components"]) == {"claims-api", "claims-filter", "claims-table"}
-    # Scenarios for modules the diff never touched
-    assert "claims-table-renders" in scope["scenarios"]
-    assert "filter-denied" in scope["scenarios"]
+    # A script covering a module the diff never touched, required because the
+    # API it depends on changed.
+    assert scope["required_scripts"] == ["claims-list-renders"]
+
+
+def test_coverage_is_resolved_against_the_library_not_taken_on_trust():
+    """Every `covered_by` entry in the graph used to name a script that did
+    not exist — the library holds `claims-list-renders` and the graph claimed
+    `claims-table-renders`, `filter-approved` and three more. The whole
+    regression set resolved to nothing, and nothing said so."""
+    assert scenarios_covering({"claims-table"}) <= library_script_ids()
+
+
+def test_a_module_with_no_script_is_reported_as_a_gap_not_as_covered():
+    scope = regression_candidates(["demo-app/app/api/claims/route.ts"])
+
+    assert "claims-filter" in scope["uncovered_components"]
+    assert scope["dangling_coverage"] == []
+
+
+def test_a_coverage_claim_naming_a_missing_script_is_dangling(monkeypatch):
+    """Worse than claiming no coverage: it makes the gap invisible."""
+    import orchestrator.context as context
+
+    monkeypatch.setattr(
+        context,
+        "_load_code_graph",
+        lambda: {
+            "modules": [{"id": "claims-api", "paths": ["demo-app/app/api/claims/route.ts"],
+                         "covered_by": ["does-not-exist"]}],
+            "depends_on": [],
+        },
+    )
+    scope = context.regression_candidates(["demo-app/app/api/claims/route.ts"])
+
+    assert scope["required_scripts"] == []
+    assert scope["dangling_coverage"] == ["claims-api -> does-not-exist"]
+    assert scope["uncovered_components"] == ["claims-api"]
 
 
 def test_an_unrelated_change_pulls_in_nothing():

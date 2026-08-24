@@ -123,6 +123,11 @@ def run(state: PipelineState) -> PipelineState:
     # Regression scope comes from the dependency graph, not from the change
     # summary: a module the diff never touched can still be the one that
     # breaks, and only the graph knows that.
+    #
+    # What the scope names as `required_scripts` is not a suggestion to the
+    # agent. Those scripts are installed into the run by test_gen and enforced
+    # by the gate, so the prompt tells the agent to skip them and spend its
+    # scenarios on the areas nothing covers.
     scope = regression_candidates(state.get("changed_paths", []))
 
     base_user = (
@@ -130,10 +135,12 @@ def run(state: PipelineState) -> PipelineState:
         f"Affected areas: {state['affected_areas']}\n"
         f"Acceptance criteria (use these exact ids for ac_ref):\n"
         + "\n".join(f"  {cid}: {meta['text']}" for cid, meta in known.items())
-        + f"\n\nComponents impacted by this change, directly or through a dependency: "
+        + f"\n\nModules impacted by this change, directly or through a dependency: "
         f"{scope['impacted_components']}\n"
-        f"Existing scenarios covering those modules, worth reusing as regression: "
-        f"{scope['scenarios']}"
+        f"Regression scripts already being run for those modules (do not re-plan "
+        f"these): {scope['required_scripts']}\n"
+        f"Impacted modules with NO regression coverage — nothing else in this run "
+        f"will exercise them: {scope['uncovered_components']}"
     )
 
     accepted: list[dict] = []

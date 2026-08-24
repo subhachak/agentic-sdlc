@@ -119,6 +119,49 @@ def _clear_generated_dir() -> None:
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _install_required_regressions(
+    required_ids: list[str], manifest: list[dict], assignments: list[dict]
+) -> tuple[list[dict], list[str]]:
+    """Put every required regression script into the run, by construction.
+
+    Not asked of the agent. The blast radius used to arrive as a sentence in
+    the planning prompt — "worth reusing as regression" — which a model was
+    free to ignore, and the plan gate only checked that whatever it did
+    propose was testable. A required script is now placed into the run here,
+    where nothing can decline it.
+
+    A script already selected for one of the agent's scenarios counts: it is
+    the same file and the same assertions, so running it twice would prove
+    nothing and cost a browser.
+    """
+    already = {a.get("source_script_id") for a in assignments}
+    by_id = {entry["id"]: entry for entry in manifest}
+
+    added: list[dict] = []
+    missing: list[str] = []
+    for script_id in required_ids:
+        entry = by_id.get(script_id)
+        if entry is None:
+            missing.append(script_id)
+            continue
+        if script_id in already:
+            continue
+        dest = GENERATED_DIR / _spec_filename(f"regression-{script_id}")
+        dest.write_text(
+            f"// required regression: {script_id} (blast radius)\n"
+            + (LIBRARY_DIR / entry["file"]).read_text()
+        )
+        added.append(
+            {
+                "scenario_id": f"regression:{script_id}",
+                "mode": "required-regression",
+                "file_path": str(dest),
+                "source_script_id": script_id,
+            }
+        )
+    return added, missing
+
+
 def run(state: PipelineState) -> PipelineState:
     _clear_generated_dir()
     manifest = json.loads((LIBRARY_DIR / "manifest.json").read_text())["scripts"]
@@ -161,8 +204,21 @@ def run(state: PipelineState) -> PipelineState:
             }
         )
 
+    scope = state.get("regression_scope") or {}
+    required_ids = list(scope.get("required_scripts") or [])
+    installed, missing = _install_required_regressions(required_ids, manifest, assignments)
+    assignments.extend(installed)
+    # A required script the library cannot produce is a broken graph, not a
+    # test failure. It surfaces here so the gate can refuse rather than
+    # reporting a clean run over a regression set that never existed.
+    rejections.extend(
+        f"required regression script {script_id!r} is not in the library" for script_id in missing
+    )
+
     return {
         **state,
         "test_assignments": assignments,
         "generation_rejections": rejections,
+        "required_assignments": [a["source_script_id"] for a in assignments
+                                 if a.get("source_script_id") in set(required_ids)],
     }

@@ -18,7 +18,7 @@ import json
 from typing import Any
 
 from orchestrator.identity import node_id
-from orchestrator.paths import CODE_GRAPH_FILE, FEATURES_FILE
+from orchestrator.paths import CODE_GRAPH_FILE, FEATURES_FILE, MANIFEST_FILE
 
 FEATURES_SYSTEM = "features"
 QA_SYSTEM = "qa"
@@ -93,17 +93,69 @@ def scenarios_covering(module_ids: set[str]) -> set[str]:
     }
 
 
-def regression_candidates(changed_paths: list[str]) -> dict[str, Any]:
-    """Scenarios worth re-running for a change, and why.
+def library_script_ids() -> set[str]:
+    """Every test script the library actually holds.
 
-    The `why` matters: a scenario proposed because a module two hops away
+    `covered_by` claims a module is covered by a script. That claim is only
+    worth anything if the script exists, so it is resolved against the
+    manifest rather than trusted.
+    """
+    if not MANIFEST_FILE.exists():
+        return set()
+    manifest = json.loads(MANIFEST_FILE.read_text())
+    return {entry["id"] for entry in manifest.get("scripts", []) if entry.get("id")}
+
+
+def regression_candidates(changed_paths: list[str]) -> dict[str, Any]:
+    """What a change obliges this run to re-test, and what it cannot.
+
+    Three separate answers, because they carry different weight:
+
+      required        — scripts that exist and cover an impacted module. These
+                        are not suggestions to an agent. They are run, and the
+                        gate fails if any of them does not pass.
+      uncovered       — impacted modules nothing in the library covers. Not a
+                        failure by default, because it would refuse every
+                        change to a codebase that has not finished building a
+                        regression suite. Always reported, because "we did not
+                        test this" is the answer a release decision needs and
+                        silence is not.
+      dangling        — a `covered_by` entry naming a script that does not
+                        exist. A hard error: a module claiming coverage it
+                        does not have is worse than one claiming none, since
+                        it makes the gap invisible.
+
+    The `why` matters too: a scenario required because a module two hops away
     changed is a claim the test plan should be able to justify.
     """
     direct = modules_for_paths(changed_paths)
     widened = blast_radius(direct)
+    graph = _load_code_graph()
+    known_scripts = library_script_ids()
+
+    required: set[str] = set()
+    uncovered: list[str] = []
+    dangling: list[str] = []
+
+    for module in graph.get("modules", []):
+        if module["id"] not in widened:
+            continue
+        claimed = module.get("covered_by") or []
+        resolved = [s for s in claimed if s in known_scripts]
+        dangling.extend(f"{module['id']} -> {s}" for s in claimed if s not in known_scripts)
+        if resolved:
+            required.update(resolved)
+        else:
+            uncovered.append(module["id"])
+
     return {
         "changed_components": sorted(direct),
         "impacted_components": sorted(widened),
+        "required_scripts": sorted(required),
+        "uncovered_components": sorted(uncovered),
+        "dangling_coverage": sorted(dangling),
+        # Retained for the test-plan prompt, which asks the agent to consider
+        # them. What the gate enforces is `required_scripts`.
         "scenarios": sorted(scenarios_covering(widened)),
     }
 
@@ -237,6 +289,40 @@ def build_assertions(state: dict[str, Any]) -> list[dict[str, Any]]:
         )
         assertions.append({"edge": "IMPLEMENTED_BY", "src": scenario_node, "dst": script_node})
         assertions.append({"edge": "EXERCISED_IN", "src": script_node, "dst": run_node})
+
+    # Required regressions are not planned scenarios, so the loop above never
+    # saw them — they ran, the gate enforced them, and the control plane heard
+    # nothing. Their COVERS edges are the stronger kind: not a claim that a
+    # script covers a module, but a record that it did, in this run, at this
+    # commit.
+    scope = state.get("regression_scope") or {}
+    impacted = set(scope.get("impacted_components") or [])
+    graph_modules = _load_code_graph().get("modules", [])
+
+    for assignment in state.get("test_assignments", []):
+        if assignment.get("mode") != "required-regression":
+            continue
+        script_id = assignment.get("source_script_id")
+        scenario_id = assignment.get("scenario_id") or f"regression:{script_id}"
+        scenario_node = _node(
+            "TEST_SCENARIO", QA_SYSTEM, scenario_id,
+            {"title": f"required regression: {script_id}", "type": "regression",
+             "required_by_blast_radius": True},
+        )
+        script_node = _node(
+            "TEST_SCRIPT", QA_SYSTEM, assignment["file_path"].split("/")[-1],
+            {"mode": assignment.get("mode", ""), "library_id": script_id},
+        )
+        assertions.append({"edge": "IMPLEMENTED_BY", "src": scenario_node, "dst": script_node})
+        assertions.append({"edge": "EXERCISED_IN", "src": script_node, "dst": run_node})
+
+        for module in graph_modules:
+            if module["id"] in impacted and script_id in (module.get("covered_by") or []):
+                assertions.append({
+                    "edge": "COVERS",
+                    "src": scenario_node,
+                    "dst": _node("MODULE", CODE_SYSTEM, module["id"], {}),
+                })
 
     evidence = state.get("evidence_summary", {})
     if evidence.get("html_report"):
