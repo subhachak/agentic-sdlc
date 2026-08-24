@@ -140,6 +140,9 @@ def api_contract() -> str:
     for entry in data.get("api") or []:
         note = " ".join((entry.get("note") or "").split())
         lines.append(f"{entry['endpoint']}" + (f" — {note}" if note else ""))
+        testing = " ".join((entry.get("testing") or "").split())
+        if testing:
+            lines.append(f"  testing: {testing}")
     return "\n".join(lines)
 
 

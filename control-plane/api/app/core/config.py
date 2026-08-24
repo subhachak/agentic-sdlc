@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./agentic_sdlc.db"
 
     llm_provider_adapter: Literal["claude", "mock"] = "mock"
-    work_dispatch_adapter: Literal["github-actions", "local"] = "local"
+    work_dispatch_adapter: Literal["github-actions", "local", "local-pipeline"] = "local"
     code_intelligence_adapter: Literal["github", "local"] = "github"
     source_control_adapter: Literal["github", "local"] = "local"
     claude_model: str = "claude-opus-5"

@@ -64,8 +64,9 @@ SPECS: tuple[SettingSpec, ...] = (
 
     # --- remote execution ---
     SettingSpec("work_dispatch_adapter", "Execution target", "Remote execution", type="enum",
-                options=("local", "github-actions"),
-                help="local simulates a CI job with no GitHub, token or network."),
+                options=("local", "local-pipeline", "github-actions"),
+                help="local simulates a job; local-pipeline runs the real QA pipeline "
+                     "against the working copy; github-actions dispatches to CI."),
     SettingSpec("github_repo", "Repository", "Remote execution",
                 placeholder="owner/name"),
     SettingSpec("github_workflow_file", "Workflow file", "Remote execution",

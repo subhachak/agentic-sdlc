@@ -64,6 +64,17 @@ def build_work_dispatch(settings: Settings) -> WorkDispatch:
             workflow_file=settings.github_workflow_file,
             ref=settings.github_ref,
         )
+    if settings.work_dispatch_adapter == "local-pipeline":
+        from pathlib import Path as _Path
+
+        from app.adapters.work_dispatch.local_pipeline import LocalPipelineWorkDispatch
+
+        return LocalPipelineWorkDispatch(
+            _Path(settings.target_working_copy),
+            base_ref=settings.target_ref,
+            secrets={"ANTHROPIC_API_KEY": settings.anthropic_api_key or ""},
+        )
+
     from app.adapters.work_dispatch.local_stub import LocalStubWorkDispatch
 
     return LocalStubWorkDispatch(duration_seconds=settings.local_dispatch_duration_seconds)

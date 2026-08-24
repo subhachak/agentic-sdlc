@@ -45,7 +45,10 @@ test times out.
 
 Do not hard-code row counts that depend on how much data happens to be in the
 store — derive expected counts from the API, whose response shape is given in
-the request. Do not guess that shape: assert against what is described. Assert
+the request. Where the contract says a state must be produced by intercepting
+a response rather than by relying on the stored data, do that: the store is
+shared by every test in the run, and a scenario that reshapes it for itself
+breaks the others. Do not guess that shape: assert against what is described. Assert
 on the scenario's expected_outcome concretely (counts, visible text, attribute
 values); do not write vague assertions.
 

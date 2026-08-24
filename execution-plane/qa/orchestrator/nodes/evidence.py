@@ -5,7 +5,7 @@ node both work from one summary.
 from __future__ import annotations
 
 
-from orchestrator.paths import EVIDENCE_DIR, REPO_ROOT
+from orchestrator.paths import CHECKOUT_ROOT, EVIDENCE_DIR
 from orchestrator.state import PipelineState
 
 
@@ -16,7 +16,9 @@ def run(state: PipelineState) -> PipelineState:
     html_report = EVIDENCE_DIR / "html-report" / "index.html"
 
     def rel(path: Path) -> str:
-        return str(path.relative_to(REPO_ROOT))
+        # Relative to the checkout under test, not the repository root: a run
+        # against a branch produces its evidence beside that checkout.
+        return str(path.relative_to(CHECKOUT_ROOT))
 
     summary = {
         "html_report": rel(html_report) if html_report.exists() else None,

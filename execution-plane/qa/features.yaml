@@ -66,3 +66,10 @@ api:
       parameter filters case-insensitively; a status matching nothing returns
       {"claims": []} with HTTP 200, not an error, and an omitted or empty
       parameter returns every claim.
+    testing: >-
+      Scenarios needing a state the shared data cannot produce — no claims at
+      all, or a status with zero matches — must intercept this endpoint with
+      page.route and serve their own body rather than relying on the data
+      store. The store is shared by every test in the run: seeding it for one
+      scenario breaks another, and interception gives a scenario its own data
+      without touching anyone else's.
