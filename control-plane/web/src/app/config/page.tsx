@@ -3,7 +3,8 @@
 import Link from "next/link";
 
 import { useEffect, useState } from "react";
-import { getConfig, saveConfig } from "@/lib/api";
+import { getConfig, preflightConfig, saveConfig } from "@/lib/api";
+import AgentCheck from "@/components/agent-check";
 import EngagementSection from "@/components/engagement-section";
 import type { ConfigData, SettingEntry } from "@/lib/types";
 
@@ -165,6 +166,14 @@ export default function ConfigPage() {
         setup, see <Link href="/operations">Operations</Link>.
       </p>
 
+      {data.problem && (
+        <div className="card notice" style={{ borderLeftColor: "var(--danger)" }}>
+          <strong>Saved configuration was not applied.</strong> {data.problem} Correct the
+          setting below and save again — the platform is running, so this page is the way
+          back.
+        </div>
+      )}
+
       {SECTIONS.map((section) => {
         const entries = data.settings.filter((s) => s.section === section.id);
         if (entries.length === 0) return null;
@@ -209,6 +218,9 @@ export default function ConfigPage() {
                       onChange={(key, value) => setDraft((d) => ({ ...d, [key]: value }))}
                     />
                   ))}
+                {group === "Implementation" && (
+                  <AgentCheck agent={String(data.active.implementation_agent ?? "inline")} />
+                )}
               </div>
             ))}
           </section>
@@ -246,6 +258,27 @@ export default function ConfigPage() {
       )}
 
       <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+        <button
+          onClick={async () => {
+            setResult(null);
+            setError(null);
+            try {
+              const { ok, problems } = await preflightConfig(draft);
+              setResult(
+                ok
+                  ? "These changes would apply cleanly."
+                  : null
+              );
+              if (!ok) setError(problems.join("; "));
+            } catch (err) {
+              setError(err instanceof Error ? err.message : String(err));
+            }
+          }}
+          disabled={saving || dirty === 0}
+          style={{ marginRight: "0.5rem" }}
+        >
+          Check
+        </button>
         <button onClick={onSave} disabled={saving || dirty === 0}>
           {saving ? "Applying..." : dirty === 0 ? "No changes" : `Apply ${dirty} change${dirty === 1 ? "" : "s"}`}
         </button>

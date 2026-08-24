@@ -85,7 +85,25 @@ async def reload_runtime(app: FastAPI) -> None:
 
     await projects.ensure_default(settings)
     record = await projects.get(settings.active_project)
-    build_runtime(app, projects.applied_to(settings, record))
+    effective = projects.applied_to(settings, record)
+
+    try:
+        build_runtime(app, effective)
+        app.state.config_problem = None
+    except Exception as exc:  # noqa: BLE001
+        # Start anyway, on the environment's settings alone. A stored override
+        # that cannot be built used to stop the process from starting at all,
+        # and the only way back was editing the database by hand — which is
+        # not a recovery path for a console whose API has to be up to offer
+        # one. The problem is carried so the console can say what is wrong.
+        if not overrides:
+            raise
+        build_runtime(app, projects.applied_to(base, record))
+        app.state.config_problem = (
+            f"saved configuration could not be applied and was ignored: {exc}. "
+            f"The platform is running on its environment defaults."
+        )
+
     app.state.project = record
 
 

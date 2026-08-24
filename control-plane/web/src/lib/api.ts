@@ -238,6 +238,26 @@ export async function archiveProject(id: string): Promise<{ archived: string }> 
   return result;
 }
 
+export async function preflightConfig(
+  changes: Record<string, unknown>
+): Promise<{ ok: boolean; problems: string[] }> {
+  const res = await fetch(`${API_URL}/api/config/preflight`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ changes }),
+  });
+  return json(res);
+}
+
+export async function checkImplementationAgent(): Promise<{
+  ok: boolean;
+  agent: string;
+  detail: string;
+}> {
+  const res = await fetch(`${API_URL}/api/config/check-agent`, { method: "POST" });
+  return json(res);
+}
+
 export async function hydrationStatus(): Promise<HydrationStatus> {
   const res = await fetch(`${API_URL}/api/graph/status`, { cache: "no-store" });
   return json(res);

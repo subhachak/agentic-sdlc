@@ -131,6 +131,7 @@ export interface SettingChange {
 }
 
 export interface ConfigData {
+  problem?: string | null;
   settings: SettingEntry[];
   history: SettingChange[];
   active: Record<string, string>;

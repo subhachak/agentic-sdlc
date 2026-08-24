@@ -113,6 +113,49 @@ class GitHubCopilotWorkDispatch:
             external_url=task.get("html_url"),
         )
 
+    async def check_access(self) -> dict[str, Any]:
+        """Can this token start tasks on this repository?
+
+        Read-only on purpose. Listing tasks exercises exactly the auth and
+        the entitlement that starting one needs, without starting one —
+        a connection test that costs a real agent run and opens a real pull
+        request is not a connection test.
+        """
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            response = await client.get(
+                f"{_API}/agents/repos/{self._repo}/tasks",
+                headers=self._headers,
+                params={"per_page": 1},
+            )
+
+        if response.status_code == 200:
+            tasks = (response.json() or {}).get("tasks") or []
+            return {
+                "ok": True,
+                "detail": (
+                    f"Copilot cloud agent is reachable on {self._repo}"
+                    + (f"; {len(tasks)} recent task(s)" if tasks else "; no tasks yet")
+                ),
+            }
+        if response.status_code in (401, 403):
+            return {
+                "ok": False,
+                "detail": (
+                    f"{response.status_code}: the token is not authorised for the Copilot "
+                    f"cloud agent on {self._repo}. It needs Copilot access as well as "
+                    f"repository access, and the agent must be enabled for the repository."
+                ),
+            }
+        if response.status_code == 404:
+            return {
+                "ok": False,
+                "detail": (
+                    f"{self._repo} was not found. Check the owner/name, and note that a "
+                    f"private repository needs a token that can see it."
+                ),
+            }
+        return {"ok": False, "detail": f"{response.status_code}: {response.text[:200]}"}
+
     async def check(self, handle: DispatchHandle) -> DispatchResult:
         if not handle.external_id:
             # Unlike workflow_dispatch there is no correlation search to fall

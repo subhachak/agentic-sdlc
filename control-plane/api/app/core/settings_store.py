@@ -293,3 +293,26 @@ def describe(base: Settings, overrides: dict[str, Any]) -> list[dict[str, Any]]:
         out.append(entry)
 
     return out
+
+
+def check(settings: Settings) -> list[str]:
+    """Why this configuration cannot be built, if it cannot.
+
+    Every adapter factory raises when its prerequisites are missing — a
+    GitHub target with no token, a coding agent with no repository. That is
+    right at construction time and wrong as a way to find out: a change saved
+    through the console used to persist first and rebuild second, so an
+    unbuildable choice was written to the database and then failed. The
+    process could not restart, and the only way back was editing SQLite by
+    hand, which is not a recovery path for a console.
+
+    Called with the settings a change *would* produce, before anything is
+    written.
+    """
+    from app.adapters.registry import build_adapters
+
+    try:
+        build_adapters(settings, graph=None)
+    except Exception as exc:  # noqa: BLE001 - any construction failure is the answer
+        return [str(exc)]
+    return []
