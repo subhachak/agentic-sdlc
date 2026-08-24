@@ -42,8 +42,33 @@ class Adapters:
     implementation_dispatch: WorkDispatch | None
 
 
+def _require_directory(path: str | None, selection: str, setting: str) -> None:
+    """A local adapter pointed at nothing cannot work.
+
+    Checked at construction because it is checkable there, and because the
+    alternative is discovering it when a run reaches the phase that uses it.
+    Existence only — not that it is a git repository, since the local
+    adapters degrade sensibly on a plain directory and that is deliberate.
+    """
+    from pathlib import Path as _Path
+
+    if not path or not _Path(path).is_dir():
+        raise ValueError(
+            f"{selection} needs {setting} to be a directory that exists; "
+            f"{path!r} is not"
+        )
+
+
 def build_llm_provider(settings: Settings) -> LLMProvider:
     if settings.llm_provider_adapter == "claude":
+        if not settings.anthropic_api_key:
+            # The SDK constructs happily without a key and fails at the first
+            # call, which is deep inside a run and after the gates have been
+            # approved. Refusing here turns that into a configuration error
+            # someone can read.
+            raise ValueError(
+                "llm_provider_adapter=claude needs ANTHROPIC_API_KEY"
+            )
         from app.adapters.llm.claude_adapter import ClaudeLLMProvider
 
         return ClaudeLLMProvider(api_key=settings.anthropic_api_key, model=settings.claude_model)
@@ -72,6 +97,11 @@ def build_work_dispatch(settings: Settings) -> WorkDispatch:
 
         from app.adapters.work_dispatch.local_pipeline import LocalPipelineWorkDispatch
 
+        _require_directory(
+            settings.target_working_copy,
+            "work_dispatch_adapter=local-pipeline",
+            "TARGET_WORKING_COPY",
+        )
         return LocalPipelineWorkDispatch(
             _Path(settings.target_working_copy),
             base_ref=settings.target_ref,
@@ -97,6 +127,11 @@ def build_code_intelligence(settings: Settings) -> CodeIntelligence:
 
         from app.adapters.code_intelligence.local_path import LocalPathCodeIntelligence
 
+        _require_directory(
+            settings.code_index_local_root,
+            "code_intelligence_adapter=local",
+            "CODE_INDEX_LOCAL_ROOT",
+        )
         return LocalPathCodeIntelligence(
             Path(settings.code_index_local_root), max_depth=settings.code_index_max_depth
         )
@@ -149,6 +184,11 @@ def build_source_control(settings: Settings) -> SourceControl:
 
     from app.adapters.source_control.local_working_copy import LocalWorkingCopy
 
+    _require_directory(
+        settings.target_working_copy,
+        "source_control_adapter=local",
+        "TARGET_WORKING_COPY",
+    )
     return LocalWorkingCopy(_Path(settings.target_working_copy))
 
 

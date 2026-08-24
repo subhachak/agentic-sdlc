@@ -87,24 +87,61 @@ async def reload_runtime(app: FastAPI) -> None:
     record = await projects.get(settings.active_project)
     effective = projects.applied_to(settings, record)
 
-    try:
-        build_runtime(app, effective)
-        app.state.config_problem = None
-    except Exception as exc:  # noqa: BLE001
-        # Start anyway, on the environment's settings alone. A stored override
-        # that cannot be built used to stop the process from starting at all,
-        # and the only way back was editing the database by hand — which is
-        # not a recovery path for a console whose API has to be up to offer
-        # one. The problem is carried so the console can say what is wrong.
-        if not overrides:
-            raise
-        build_runtime(app, projects.applied_to(base, record))
-        app.state.config_problem = (
-            f"saved configuration could not be applied and was ignored: {exc}. "
-            f"The platform is running on its environment defaults."
-        )
+    problem: str | None = None
+    failure: str | None = None
+    for candidate, means in _fallbacks(base, effective, record, bool(overrides)):
+        try:
+            build_runtime(app, candidate)
+        except Exception as exc:  # noqa: BLE001
+            failure = str(exc)
+            continue
+        # The explanation belongs to the rung that worked, not the one that
+        # did not: what an admin needs is what is running now and why, and
+        # the error that caused the fall.
+        problem = f"{means}{failure}" if means and failure else None
+        break
+    else:
+        # Unreachable: the last fallback is a configuration with no external
+        # dependency at all. Kept so a future adapter that breaks even that
+        # fails loudly here rather than leaving `app.state.adapters` unset.
+        raise RuntimeError(f"no configuration could be built: {failure}")
 
+    app.state.config_problem = problem
     app.state.project = record
+
+
+# Everything local, nothing credentialed. The configuration a fresh install
+# has, and the one the platform falls back to so the console is always
+# reachable — a control plane that will not start cannot be used to fix the
+# setting that stopped it.
+SAFE_MODE = {
+    "llm_provider_adapter": "mock",
+    "work_dispatch_adapter": "local",
+    "implementation_agent": "inline",
+    "source_control_adapter": "local",
+    "code_intelligence_adapter": "local",
+    "code_design_context_adapter": "stub",
+    "target_working_copy": ".",
+    "code_index_local_root": ".",
+}
+
+
+def _fallbacks(base, effective, record, has_overrides: bool):
+    """Configurations to try, best first, each with why the previous failed.
+
+    Three rungs. What was asked for; the environment alone, in case a stored
+    override is the problem; and a configuration with no external dependency
+    at all, so the console comes up either way.
+    """
+    yield effective, ""
+    if has_overrides:
+        yield projects.applied_to(base, record), (
+            "saved configuration could not be applied and was ignored: "
+        )
+    yield base.model_copy(update=SAFE_MODE), (
+        "the platform started with every integration disabled because its "
+        "configuration could not be applied: "
+    )
 
 
 def _dispatchers(app: FastAPI) -> dict[str, object]:

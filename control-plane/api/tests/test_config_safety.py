@@ -170,3 +170,90 @@ async def test_the_access_check_does_not_start_work():
 
     assert "client.get" in source
     assert "client.post" not in source
+
+
+# --- the platform always starts --------------------------------------------
+
+
+def test_safe_mode_has_no_external_dependency():
+    """The last rung of the fallback. If this needed a credential or a path,
+    a deployment could still fail to start — and then the console that would
+    fix it is unreachable."""
+    from app.core.config import Settings
+    from app.core.settings_store import check
+    from app.main import SAFE_MODE
+
+    misconfigured = Settings(
+        anthropic_api_key=None, github_token=None, github_repo=None, target_repo=None,
+        llm_provider_adapter="claude", source_control_adapter="github",
+        work_dispatch_adapter="github-actions", implementation_agent="github-copilot",
+    )
+    assert check(misconfigured)                       # the situation being escaped
+    assert check(misconfigured.model_copy(update=SAFE_MODE)) == []
+
+
+def test_the_fallbacks_are_ordered_from_asked_for_to_always_works():
+    from app.core.config import Settings
+    from app.main import SAFE_MODE, _fallbacks
+
+    base = Settings(llm_provider_adapter="claude")
+    effective = base.model_copy(update={"target_environment": "prod"})
+
+    rungs = list(_fallbacks(base, effective, None, has_overrides=True))
+
+    assert len(rungs) == 3
+    assert rungs[0][0].target_environment == "prod"      # what was asked for
+    assert rungs[0][1] == ""                             # nothing failed yet
+    assert rungs[1][0].target_environment != "prod"      # the environment alone
+    assert rungs[2][0].llm_provider_adapter == SAFE_MODE["llm_provider_adapter"]
+    assert "every integration disabled" in rungs[2][1]
+
+
+def test_a_deployment_with_no_overrides_still_gets_the_safe_rung():
+    """A misconfigured environment is not something the console can edit, but
+    it must still come up to say so."""
+    from app.core.config import Settings
+    from app.main import _fallbacks
+
+    rungs = list(_fallbacks(Settings(), Settings(), None, has_overrides=False))
+
+    assert len(rungs) == 2
+    assert "every integration disabled" in rungs[-1][1]
+
+
+@pytest.mark.asyncio
+async def test_startup_falls_back_and_says_why(tmp_path, monkeypatch):
+    """End to end: a configuration nothing can build still produces a running
+    console carrying the reason."""
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'safe.db'}")
+    from app.core.config import Settings, get_settings
+    from app.core.db import get_engine
+
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+
+    # An environment that cannot be built: Claude selected with no key
+    # anywhere, which is exactly what an emptied secret store looks like.
+    monkeypatch.setattr(
+        "app.core.config.get_settings",
+        lambda: Settings(
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'safe.db'}",
+            llm_provider_adapter="claude",
+            anthropic_api_key=None,
+        ),
+    )
+    monkeypatch.setattr("app.main.get_settings", lambda: Settings(
+        database_url=f"sqlite+aiosqlite:///{tmp_path / 'safe.db'}",
+        llm_provider_adapter="claude",
+        anthropic_api_key=None,
+    ))
+
+    from app.main import app
+
+    with TestClient(app) as client:
+        assert client.get("/api/health").status_code == 200
+        assert app.state.settings.llm_provider_adapter == "mock"
+        assert "every integration disabled" in (app.state.config_problem or "")
+
+    get_settings.cache_clear()
+    get_engine.cache_clear()
