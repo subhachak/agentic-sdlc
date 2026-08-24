@@ -153,6 +153,16 @@ def run(state: PipelineState) -> PipelineState:
     if mismatches:
         reasons.extend(mismatches)
 
+    # A store that changed during the run means one spec's data was visible
+    # to another. Fails closed: every assertion in the run was made against
+    # data that something else may have been changing underneath it, so a
+    # pass proves nothing in particular.
+    if state.get("data_store_mutated") and not state.get("ran_serially"):
+        reasons.append(
+            "the shared data store changed during a parallel run — one scenario's "
+            "writes were visible to others, so these results are not trustworthy"
+        )
+
     never_ran, required_failed = _required_verdicts(state, leaves)
     if never_ran:
         reasons.append(
@@ -192,6 +202,17 @@ def run(state: PipelineState) -> PipelineState:
     gate_passed = not reasons
     notes = reasons or ["all planned scenarios ran and passed"]
     notes = [*notes, *(f"note: {w}" for w in graph_notes)]
+    if state.get("ran_serially"):
+        notes = [
+            *notes,
+            "note: ran with one worker because "
+            + ", ".join(
+                f"{scenario} issues {'/'.join(verbs)}"
+                for scenario, verbs in (state.get("mutating_specs") or {}).items()
+            )
+            + " — scenarios share one data store, so parallel execution would let "
+            "one scenario's writes change what another reads",
+        ]
     if coverage_gap and not _require_full_coverage():
         # Reported whether or not it blocks. "We did not test this" is the
         # answer a release decision needs; silence is not.

@@ -12,20 +12,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from orchestrator.paths import LIBRARY_DIR, MANIFEST_FILE  # noqa: E402
-from orchestrator.promotion import manifest_entry  # noqa: E402
-from orchestrator.validate import validate_spec  # noqa: E402
+from orchestrator.promotion import manifest_entry, verify  # noqa: E402
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("candidates", type=Path, help="promotions.json from a run")
+    parser.add_argument("candidates", type=Path,
+                        help="promotions.json from a run — written into the evidence "
+                             "directory, which is what CI uploads")
     parser.add_argument("--only", action="append", default=[],
                         help="script id to promote; repeatable. Default: those "
                              "that close a coverage gap")
@@ -50,33 +50,36 @@ def main() -> int:
     known = {e["id"] for e in manifest["scripts"]}
 
     for candidate in chosen:
-        spec = Path(candidate["spec_path"])
-        if not spec.exists():
-            print(f"skip {candidate['script_id']}: {spec} is gone — promote from the "
-                  f"run that produced it", file=sys.stderr)
-            continue
         if candidate["script_id"] in known:
             print(f"skip {candidate['script_id']}: already in the library", file=sys.stderr)
             continue
 
-        code = spec.read_text()
-        # Re-checked rather than trusted. The candidate passed this once, in a
-        # different process, before anything else touched the file.
-        violations = validate_spec(code)
-        if violations:
-            print(f"refuse {candidate['script_id']}: {'; '.join(violations)}", file=sys.stderr)
+        # Verified from the candidate's own source, not from a path. The job
+        # that produced it was a CI runner that no longer exists, and only the
+        # state file and the evidence directory survive it — a path into
+        # `generated-tests` is dead by the time anyone reads this.
+        problem = verify(candidate)
+        if problem:
+            print(f"refuse {candidate['script_id']}: {problem}", file=sys.stderr)
             continue
 
         entry = manifest_entry(candidate)
         target = LIBRARY_DIR / entry["file"]
+        provenance = candidate.get("provenance") or {}
         print(f"promote {candidate['script_id']}")
         print(f"   covers (observed): {', '.join(candidate['covers_modules'])}")
+        print(f"   from run:          {provenance.get('run', '?')}"
+              f" at {(provenance.get('head_sha') or '?')[:7]}")
+        print(f"   sha256:            {candidate['sha256'][:16]}…")
+        if candidate.get("intercepted"):
+            print(f"   NOTE: intercepted {', '.join(candidate['intercepted'])} — those "
+                  f"requests never reached the server and earn no coverage")
         if candidate["new_modules"]:
             print(f"   closes gap on:     {', '.join(candidate['new_modules'])}")
         if args.dry_run:
             continue
 
-        shutil.copyfile(spec, target)
+        target.write_text(candidate["source"])
         manifest["scripts"].append(entry)
         known.add(entry["id"])
 

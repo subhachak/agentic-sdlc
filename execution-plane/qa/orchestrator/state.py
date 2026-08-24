@@ -60,6 +60,10 @@ class PipelineState(TypedDict, total=False):
     # --- phase 5: execution ---
     run_exit_code: int
     run_results_raw: dict[str, Any]
+    # Whether this run had to give up parallelism, and why.
+    ran_serially: bool
+    mutating_specs: dict[str, list[str]]
+    data_store_mutated: bool
 
     # --- phase 6: evidence ---
     evidence_summary: dict[str, Any]

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -34,16 +35,32 @@ from orchestrator.context import _load_code_graph
 _IGNORED_PREFIXES = ("/_next/", "/__next", "/favicon")
 
 
-def request_paths(trace_zip: Path) -> set[tuple[str, str]]:
-    """Every (method, path) a test issued, from its trace.
+@dataclass(frozen=True)
+class TracedRequest:
+    method: str
+    path: str
+    # Whether the test answered this itself with page.route(...).fulfill().
+    # An intercepted request never reaches the server, so the handler it
+    # would have hit did not run.
+    fulfilled: bool
+
+
+def traced_requests(trace_zip: Path) -> set[TracedRequest]:
+    """Every request a test issued, and whether the server actually served it.
 
     The trace's `.network` entries are HAR-shaped, which is a documented
     format rather than an internal one — the reason this is read post-hoc
     instead of instrumenting the specs. A spec may only import
     `@playwright/test`, so there is nowhere to hang a fixture without
     weakening the sandbox rule that keeps generated code contained.
+
+    Playwright marks a fulfilled response with `_wasFulfilled`, which is what
+    makes the distinction exact rather than inferred. It matters because the
+    contract instructs scenarios to intercept rather than reshape the shared
+    data store — so the tests most likely to be miscredited are the ones
+    following the guidance.
     """
-    out: set[tuple[str, str]] = set()
+    out: set[TracedRequest] = set()
     if not trace_zip.exists():
         return out
 
@@ -57,17 +74,41 @@ def request_paths(trace_zip: Path) -> set[tuple[str, str]]:
                         event = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    request = (event.get("snapshot") or {}).get("request") or {}
+                    snapshot = event.get("snapshot") or {}
+                    request = snapshot.get("request") or {}
                     url = request.get("url")
                     if not url:
                         continue
                     path = urlsplit(url).path or "/"
                     if path.startswith(_IGNORED_PREFIXES):
                         continue
-                    out.add((request.get("method", "GET").upper(), path))
+                    out.add(
+                        TracedRequest(
+                            method=request.get("method", "GET").upper(),
+                            path=path,
+                            fulfilled=bool(snapshot.get("_wasFulfilled")),
+                        )
+                    )
     except (zipfile.BadZipFile, KeyError):
         return out
     return out
+
+
+def request_paths(trace_zip: Path) -> set[tuple[str, str]]:
+    """Requests the server actually served.
+
+    Intercepted requests are excluded: a test that answers `/api/claims`
+    itself has demonstrated nothing about the file that would have answered
+    it, and crediting the handler would put a coverage claim in the manifest
+    that the next run's reconciliation cannot detect as false — because the
+    interception happens every time.
+    """
+    return {(r.method, r.path) for r in traced_requests(trace_zip) if not r.fulfilled}
+
+
+def intercepted_paths(trace_zip: Path) -> set[tuple[str, str]]:
+    """Requests the test answered itself. Reported, not counted."""
+    return {(r.method, r.path) for r in traced_requests(trace_zip) if r.fulfilled}
 
 
 def _routes() -> dict[str, list[str]]:
@@ -206,12 +247,15 @@ def coverage_by_spec(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     for spec_file, status, traces in _walk_specs(report):
         name = (spec_file or "").replace("\\", "/").rsplit("/", 1)[-1]
         entry = out.setdefault(
-            name, {"requests": set(), "files": set(), "modules": set(), "statuses": set()}
+            name,
+            {"requests": set(), "intercepted": set(), "files": set(),
+             "modules": set(), "statuses": set()},
         )
         entry["statuses"].add(status)
         for trace in traces:
             paths = request_paths(Path(trace))
             entry["requests"] |= {f"{m} {p}" for m, p in paths}
+            entry["intercepted"] |= {f"{m} {p}" for m, p in intercepted_paths(Path(trace))}
             entry["files"] |= observed_files(paths)
 
     for entry in out.values():
@@ -220,6 +264,10 @@ def coverage_by_spec(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {
         name: {
             "requests": sorted(e["requests"]),
+            # Stated rather than dropped: "this test intercepted the API" is
+            # the reason it does not cover it, and a reader comparing a
+            # coverage gap against the tests that exist needs to see it.
+            "intercepted": sorted(e["intercepted"]),
             "files": sorted(e["files"]),
             "modules": sorted(e["modules"]),
             "passed": e["statuses"] <= {"expected", "passed"},
@@ -252,8 +300,16 @@ def reconcile_declared(observed: dict[str, dict[str, Any]], assignments: list[di
             continue  # a failing test is reported elsewhere; it proves nothing here
         unmet = sorted(set(entry.get("covers_modules") or []) - set(seen["modules"]))
         if unmet:
+            reason = f"requested only {', '.join(seen['requests']) or 'nothing'}"
+            if seen.get("intercepted"):
+                # The likeliest cause, and the one a reader would otherwise
+                # spend a while confused by: the request was made and answered
+                # by the test, so the handler never ran.
+                reason += (
+                    f"; it intercepted {', '.join(seen['intercepted'])}, which does not "
+                    f"reach the server"
+                )
             problems.append(
-                f"{script_id} declares coverage of {', '.join(unmet)} but the run "
-                f"shows it requested only {', '.join(seen['requests']) or 'nothing'}"
+                f"{script_id} declares coverage of {', '.join(unmet)} but the run {reason}"
             )
     return problems

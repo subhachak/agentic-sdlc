@@ -53,3 +53,32 @@ def validate_spec(code: str) -> list[str]:
     # Preserve order but drop repeats, so one spec importing two bad modules
     # does not produce the same sentence twice.
     return list(dict.fromkeys(violations))
+
+
+# Requests that change server state. Detected rather than declared, because
+# what a generated spec actually does is what matters and a declaration is
+# one more thing an agent can get wrong.
+_MUTATING = re.compile(
+    r"""\b(?:request|context|page\s*\.\s*request)\s*\.\s*(post|put|patch|delete|fetch)\s*\(""",
+    re.I,
+)
+# `request.fetch(url, { method: "POST" })` says it in the options instead.
+_MUTATING_METHOD = re.compile(r"""method\s*:\s*['"](post|put|patch|delete)['"]""", re.I)
+
+
+def mutates_shared_state(code: str) -> list[str]:
+    """Which mutating calls a spec makes, if any.
+
+    Every scenario shares one data store and Playwright runs fully parallel,
+    so a spec that writes can change what a concurrently executing spec reads.
+    Restoring the store after the run protects the checkout; it does nothing
+    for correctness during the run. This is what lets the runner decide
+    whether parallel execution is sound for this particular set of specs.
+
+    A `fetch` through the request fixture counts: the method may be in the
+    options object rather than in the call name.
+    """
+    found = [m.group(1).upper() for m in _MUTATING.finditer(code)]
+    found += [m.group(1).upper() for m in _MUTATING_METHOD.finditer(code)]
+    # A bare `request.fetch(...)` with no method is a GET.
+    return sorted({verb for verb in found if verb != "FETCH"})

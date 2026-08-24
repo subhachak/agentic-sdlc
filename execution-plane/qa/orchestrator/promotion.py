@@ -21,9 +21,18 @@ client already runs.
 
 from __future__ import annotations
 
+import hashlib
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from orchestrator.context import _load_manifest
+from orchestrator.context import _load_manifest, graph_project
+from orchestrator.validate import validate_spec
+
+# A spec is a test file, not a payload. Anything larger is either generated
+# noise or something that should be reviewed as a pull request rather than
+# carried inside a JSON state file.
+MAX_SPEC_BYTES = 64 * 1024
 
 
 def _library_modules() -> set[str]:
@@ -33,6 +42,28 @@ def _library_modules() -> set[str]:
 def _slug(text: str) -> str:
     cleaned = "".join(c if c.isalnum() else "-" for c in (text or "").lower())
     return "-".join(part for part in cleaned.split("-") if part) or "scenario"
+
+
+def _bundle(spec_path: str) -> dict[str, Any] | None:
+    """The spec's actual source, with a checksum.
+
+    Carried in the candidate rather than referenced by path. The job that
+    generated it is a CI runner that disappears when the workflow ends, and
+    only the state file and the evidence directory are uploaded — so a path
+    into `generated-tests` is dead by the time anyone reads the candidate.
+    """
+    path = Path(spec_path or "")
+    if not path.exists():
+        return None
+    source = path.read_text(encoding="utf-8", errors="replace")
+    raw = source.encode("utf-8")
+    if len(raw) > MAX_SPEC_BYTES:
+        return None
+    return {
+        "source": source,
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "bytes": len(raw),
+    }
 
 
 def candidates(state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -66,6 +97,10 @@ def candidates(state: dict[str, Any]) -> list[dict[str, Any]]:
         if script_id in existing_ids:
             continue  # already promoted under this name by an earlier run
 
+        bundle = _bundle(assignment.get("file_path", ""))
+        if bundle is None:
+            continue  # unreadable or too large to carry; nothing to promote
+
         out.append(
             {
                 "script_id": script_id,
@@ -77,12 +112,48 @@ def candidates(state: dict[str, Any]) -> list[dict[str, Any]]:
                 # Observed, not declared. The whole point.
                 "covers_modules": seen["modules"],
                 "requests": seen.get("requests", []),
+                "intercepted": seen.get("intercepted", []),
                 "closes_coverage_gap": bool(new_modules),
                 "new_modules": new_modules,
+                # The file itself, so this survives the runner.
+                **bundle,
+                # Where it came from, so a reviewer can tell what they are
+                # being asked to take into a library that runs against every
+                # future change.
+                "provenance": {
+                    "run": f"{state.get('repo', 'local')}#{state.get('pr_number', 0)}",
+                    "head_sha": state.get("head_sha"),
+                    "graph_project": graph_project(),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "spec_path": assignment.get("file_path"),
+                    "ran_serially": bool(state.get("ran_serially")),
+                },
             }
         )
 
     return sorted(out, key=lambda c: (not c["closes_coverage_gap"], c["script_id"]))
+
+
+def verify(candidate: dict[str, Any]) -> str | None:
+    """Why this candidate must not be promoted, or None.
+
+    Re-checked at promotion time rather than trusted from generation: the
+    candidate has travelled through a state file and an artifact upload since
+    anything last looked at it, and a library script runs against every future
+    change that reaches its modules.
+    """
+    source = candidate.get("source")
+    if not source:
+        return "carries no source"
+
+    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    if digest != candidate.get("sha256"):
+        return f"checksum mismatch: recorded {candidate.get('sha256')}, source hashes to {digest}"
+
+    violations = validate_spec(source)
+    if violations:
+        return "; ".join(violations)
+    return None
 
 
 def manifest_entry(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -94,6 +165,7 @@ def manifest_entry(candidate: dict[str, Any]) -> dict[str, Any]:
         "tags": sorted({t for t in _slug(candidate["from_scenario"]).split("-") if len(t) > 2}),
         "covers": candidate.get("covers", ""),
         "covers_modules": candidate["covers_modules"],
-        "promoted_from_run": candidate.get("run", ""),
+        "promoted_from_run": (candidate.get("provenance") or {}).get("run", ""),
+        "promoted_sha256": candidate.get("sha256", ""),
         "coverage_provenance": "runtime-observed",
     }

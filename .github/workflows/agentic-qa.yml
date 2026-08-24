@@ -143,6 +143,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      # evidence/ carries promotions.json, which embeds each candidate spec's
+      # source and checksum. The generated specs themselves are not uploaded
+      # and do not need to be: a path into the runner's filesystem is dead the
+      # moment this job ends.
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4
