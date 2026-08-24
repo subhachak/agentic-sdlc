@@ -6,6 +6,8 @@ from __future__ import annotations
 
 
 from orchestrator.paths import CHECKOUT_ROOT, EVIDENCE_DIR
+from orchestrator.coverage import coverage_by_spec, coverage_gaps, reconcile_declared
+from orchestrator.promotion import candidates
 from orchestrator.state import PipelineState
 
 
@@ -28,4 +30,19 @@ def run(state: PipelineState) -> PipelineState:
         "traces": [rel(p) for p in traces],
     }
 
-    return {**state, "evidence_summary": summary}
+    # What each spec actually exercised, read from the traces this phase is
+    # already collecting. `covers_modules` in the manifest is a claim; this is
+    # the run's own account of which files it reached.
+    observed = coverage_by_spec(state.get("run_results_raw") or {})
+    mismatches = reconcile_declared(observed, state.get("test_assignments", []))
+
+    return {
+        **state,
+        "evidence_summary": summary,
+        "observed_coverage": observed,
+        "coverage_mismatches": mismatches,
+        "coverage_gaps_observed": coverage_gaps(observed),
+        "promotion_candidates": candidates(
+            {**state, "observed_coverage": observed}
+        ),
+    }

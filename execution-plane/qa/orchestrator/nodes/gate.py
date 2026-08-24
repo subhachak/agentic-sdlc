@@ -145,6 +145,14 @@ def run(state: PipelineState) -> PipelineState:
     # than presented as certain.
     graph_notes = list(scope.get("graph_warnings") or [])
 
+    # A script that passed while never requesting the module it claims to
+    # cover is a coverage record a gate will trust and that is not true.
+    # Failing closed here is the difference between measured coverage and a
+    # comment in a JSON file.
+    mismatches = state.get("coverage_mismatches") or []
+    if mismatches:
+        reasons.extend(mismatches)
+
     never_ran, required_failed = _required_verdicts(state, leaves)
     if never_ran:
         reasons.append(

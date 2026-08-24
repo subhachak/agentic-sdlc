@@ -12,7 +12,15 @@
       ],
       "covers": "Claims table renders all claims with id, policyholder, status, last updated",
       "covers_modules": [
+        "demo-app/app",
+        "demo-app/app/api/claims",
         "demo-app/app/claims"
+      ],
+      "coverage_provenance": "runtime-observed",
+      "covers_files": [
+        "demo-app/app/api/claims/route.ts",
+        "demo-app/app/claims/page.tsx",
+        "demo-app/app/layout.tsx"
       ]
     },
     {
@@ -28,7 +36,15 @@
       ],
       "covers": "Status filter defaults to All, narrows rows to the selected status, and shows the empty state when nothing matches",
       "covers_modules": [
+        "demo-app/app",
+        "demo-app/app/api/claims",
         "demo-app/app/claims"
+      ],
+      "coverage_provenance": "runtime-observed",
+      "covers_files": [
+        "demo-app/app/api/claims/route.ts",
+        "demo-app/app/claims/page.tsx",
+        "demo-app/app/layout.tsx"
       ]
     },
     {
@@ -45,8 +61,12 @@
       "covers": "GET /api/claims returns an object with a claims array, filters case-insensitively on status, and returns an empty list with 200 for a status matching nothing",
       "covers_modules": [
         "demo-app/app/api/claims"
+      ],
+      "coverage_provenance": "runtime-observed",
+      "covers_files": [
+        "demo-app/app/api/claims/route.ts"
       ]
     }
   ],
-  "_comment": "The script library. `covers_modules` names modules from the generated code graph and is the coverage mapping the blast radius resolves against \u2014 it lives here, with the scripts, because which modules a script exercises is a property of the script. Every entry has been run against the app and against a deliberate mutation of it: a script that passes on broken code covers nothing, whatever the manifest says."
+  "_comment": "The script library. `covers_modules` is what a run observed each script exercise, not what anyone claimed for it \u2014 derived from the requests in its Playwright trace and reconciled on every run, so a script that stops touching a module it is credited with fails the gate. Regenerate with scripts/promote.py or by re-running the pipeline."
 }

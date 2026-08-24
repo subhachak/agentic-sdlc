@@ -24,6 +24,7 @@ from pathlib import Path
 
 import yaml
 
+from orchestrator import data_store
 from orchestrator.context import build_assertions
 from orchestrator.graph import build_graph
 from orchestrator.nodes.diff_analysis import changed_paths_from_name_status
@@ -77,6 +78,20 @@ def _run_phase(args) -> dict:
         print("No relevant changes in demo-app/ or features.yaml — skipping QA pipeline.")
         return {}
 
+    # The store is restored whatever happens. Seeding is additive and had no
+    # teardown; that only looked safe because both real execution paths throw
+    # the checkout away afterwards. A developer running this against their
+    # working copy was permanently editing a tracked file.
+    original = data_store.snapshot()
+    try:
+        state = _invoke(args, diff_text)
+    finally:
+        if data_store.restore(original):
+            print("Restored the data store to its pre-run contents.")
+    return state
+
+
+def _invoke(args, diff_text: str) -> dict:
     return build_graph().invoke(
         {
             "repo": args.repo,

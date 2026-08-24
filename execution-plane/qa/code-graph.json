@@ -1,5 +1,18 @@
 {
-  "export_version": 1,
+  "export_version": 2,
+  "routes": {
+    "/": [
+      "demo-app/app/layout.tsx",
+      "demo-app/app/page.tsx"
+    ],
+    "/api/claims": [
+      "demo-app/app/api/claims/route.ts"
+    ],
+    "/claims": [
+      "demo-app/app/claims/page.tsx",
+      "demo-app/app/layout.tsx"
+    ]
+  },
   "generated": true,
   "scope": "demo-app",
   "provenance": {

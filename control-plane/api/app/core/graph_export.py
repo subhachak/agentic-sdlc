@@ -23,7 +23,9 @@ from __future__ import annotations
 
 from typing import Any
 
-EXPORT_VERSION = 1
+from app.core.routing import route_map
+
+EXPORT_VERSION = 2
 
 
 def _in_scope(path: str, scope: str) -> bool:
@@ -65,6 +67,11 @@ async def build_export(graph: Any, scope: str = "") -> dict[str, Any]:
 
     return {
         "export_version": EXPORT_VERSION,
+        # URL to the files that serve it. Carried so the execution plane can
+        # attribute what a test actually requested back to source files
+        # without re-implementing the framework's routing conventions — the
+        # kind of duplication that lets the two planes drift.
+        "routes": route_map(sorted(path_to_module)),
         "generated": True,
         "scope": scope,
         "provenance": provenance,

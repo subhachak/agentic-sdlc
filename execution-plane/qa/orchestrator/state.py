@@ -63,6 +63,14 @@ class PipelineState(TypedDict, total=False):
 
     # --- phase 6: evidence ---
     evidence_summary: dict[str, Any]
+    # What each spec was observed to exercise, from its trace. The measured
+    # counterpart to the manifest's declared covers_modules.
+    observed_coverage: dict[str, Any]
+    coverage_mismatches: list[str]
+    coverage_gaps_observed: dict[str, Any]
+    # Generated specs worth keeping. Proposed here, applied elsewhere:
+    # this job holds no write token, by design.
+    promotion_candidates: list[dict[str, Any]]
 
     # --- context graph ---
     assertions: list[dict[str, Any]]

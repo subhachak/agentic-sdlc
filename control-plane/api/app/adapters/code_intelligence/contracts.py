@@ -23,7 +23,7 @@ import posixpath
 import re
 from dataclasses import dataclass
 
-WILDCARD = "*"
+from app.core.routing import WILDCARD, handler_route_for, normalise_route, routes_match
 
 # --- server side -----------------------------------------------------------
 
@@ -85,78 +85,12 @@ class ContractEdge:
     provenance: str = "static-route-match"
 
 
-def normalise_route(raw: str) -> str:
-    """One shape for a route, whichever side declared it.
-
-    `/api/runs/{run_id}`, `/api/runs/[id]` and `/api/runs/${runId}` are the
-    same endpoint written three ways, so each dynamic segment collapses to a
-    single wildcard before anything is compared.
-    """
-    path = raw.strip()
-    # Drop an origin: a protocol, or a template variable standing in for one.
-    path = re.sub(r"^\$\{[^}]*\}", "", path)
-    path = re.sub(r"^[a-zA-Z]+://[^/]*", "", path)
-    path = path.split("?", 1)[0].split("#", 1)[0]
-    if not path.startswith("/"):
-        path = "/" + path
-    path = posixpath.normpath(path)
-
-    segments = []
-    for segment in path.split("/"):
-        if not segment:
-            continue
-        if (
-            segment.startswith("${")
-            or (segment.startswith("[") and segment.endswith("]"))
-            or (segment.startswith("{") and segment.endswith("}"))
-            or "${" in segment
-        ):
-            segments.append(WILDCARD)
-        else:
-            segments.append(segment)
-    return "/" + "/".join(segments)
-
-
-def routes_match(declared: str, called: str) -> bool:
-    """Segment-wise, with wildcards matching anything.
-
-    Deliberately not a prefix match: `/api/runs` and `/api/runs/{id}` are
-    different endpoints handled by different functions, and treating one as
-    the other manufactures edges.
-    """
-    left = [s for s in declared.split("/") if s]
-    right = [s for s in called.split("/") if s]
-    if len(left) != len(right):
-        return False
-    return all(
-        a == b or a == WILDCARD or b == WILDCARD for a, b in zip(left, right)
-    )
-
-
-def _next_route_for(path: str) -> str | None:
-    """The URL a Next.js App Router file serves, from where it sits.
-
-    `demo-app/app/api/claims/route.ts` serves `/api/claims`. The package root
-    is whatever precedes `app/` (or `src/app/`), so this works the same in a
-    monorepo as at a repository root.
-    """
-    name = path.rsplit("/", 1)[-1]
-    if name not in ("route.ts", "route.tsx", "route.js", "route.jsx"):
-        return None
-    segments = path.split("/")[:-1]
-    for marker in ("app",):
-        if marker in segments:
-            index = len(segments) - 1 - segments[::-1].index(marker)
-            return normalise_route("/" + "/".join(segments[index + 1:]))
-    return None
-
-
 def declared_routes(sources: dict[str, str]) -> list[RouteDeclaration]:
     mounts = _mount_prefixes(sources)
     out: list[RouteDeclaration] = []
 
     for path, text in sources.items():
-        next_route = _next_route_for(path)
+        next_route = handler_route_for(path)
         if next_route is not None:
             methods = set(_TS_HANDLER.findall(text)) or {""}
             out.extend(

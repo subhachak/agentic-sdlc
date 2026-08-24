@@ -364,13 +364,22 @@ def build_assertions(state: dict[str, Any]) -> list[dict[str, Any]]:
         assertions.append({"edge": "IMPLEMENTED_BY", "src": scenario_node, "dst": script_node})
         assertions.append({"edge": "EXERCISED_IN", "src": script_node, "dst": run_node})
 
+        # Observed first, declared as the fallback. A COVERS edge derived from
+        # what the run actually requested is evidence; one derived from the
+        # manifest is a restatement of someone's intent, and the two should
+        # not be indistinguishable to whatever reads the graph later.
+        name = (assignment.get("file_path") or "").replace("/", "|").split("|")[-1]
+        seen = (state.get("observed_coverage") or {}).get(name) or {}
         entry = next((e for e in _load_manifest() if e.get("id") == script_id), {})
-        for module in sorted(entry.get("covers_modules") or []):
+        modules = seen.get("modules")
+        provenance = "runtime-observed" if modules else "declared"
+        for module in sorted(modules or entry.get("covers_modules") or []):
             if module in impacted:
                 assertions.append({
                     "edge": "COVERS",
                     "src": scenario_node,
                     "dst": _node("MODULE", CODE_SYSTEM, module, {}),
+                    "attributes": {"provenance": provenance},
                 })
 
     evidence = state.get("evidence_summary", {})

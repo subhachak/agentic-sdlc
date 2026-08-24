@@ -279,20 +279,47 @@ def test_an_enforced_regression_produces_a_covers_edge_from_an_actual_run():
         "pr_number": 7,
         "gate_passed": True,
         "test_plan": [],
-        "regression_scope": {
-            "impacted_components": ["demo-app/app/claims", "demo-app/app/api/claims"]
-        },
+        "regression_scope": {"impacted_components": ["demo-app/app/claims"]},
         "test_assignments": [{
             "scenario_id": "regression:claims-list-renders",
             "mode": "required-regression",
             "file_path": "/g/regression-claims-list-renders.spec.ts",
             "source_script_id": "claims-list-renders",
         }],
+        # What the run saw this script exercise. Preferred over the manifest,
+        # so the edge records evidence rather than restating an intention.
+        "observed_coverage": {
+            "regression-claims-list-renders.spec.ts": {
+                "modules": ["demo-app/app/claims", "demo-app/app"],
+                "passed": True,
+            }
+        },
     })
 
     covers = [a for a in assertions if a["edge"] == "COVERS"]
     assert [a["dst"]["external_id"] for a in covers] == ["demo-app/app/claims"]
+    assert covers[0]["attributes"]["provenance"] == "runtime-observed"
     assert covers[0]["src"]["projection"]["required_by_blast_radius"] is True
+
+
+def test_a_covers_edge_falls_back_to_the_manifest_when_nothing_was_observed():
+    """A run with no usable trace still records what the library claims — and
+    says which it is, so a consumer can tell evidence from intent."""
+    from orchestrator.context import build_assertions
+
+    assertions = build_assertions({
+        "repo": "acme/thing", "pr_number": 7, "gate_passed": True, "test_plan": [],
+        "regression_scope": {"impacted_components": ["demo-app/app/api/claims"]},
+        "test_assignments": [{
+            "scenario_id": "regression:claims-api-contract",
+            "mode": "required-regression",
+            "file_path": "/g/regression-claims-api-contract.spec.ts",
+            "source_script_id": "claims-api-contract",
+        }],
+    })
+
+    covers = [a for a in assertions if a["edge"] == "COVERS"]
+    assert [a["attributes"]["provenance"] for a in covers] == ["declared"]
 
     kinds = {a["edge"] for a in assertions}
     assert {"IMPLEMENTED_BY", "EXERCISED_IN"} <= kinds
@@ -305,13 +332,16 @@ def test_a_regression_covering_an_unimpacted_module_asserts_nothing_about_it():
 
     assertions = build_assertions({
         "repo": "acme/thing", "pr_number": 7, "gate_passed": True, "test_plan": [],
-        "regression_scope": {"impacted_components": ["demo-app/app/api/claims"]},
+        "regression_scope": {"impacted_components": ["demo-app/app/claims"]},
         "test_assignments": [{
-            "scenario_id": "regression:claims-list-renders",
+            "scenario_id": "regression:claims-api-contract",
             "mode": "required-regression",
             "file_path": "/g/r.spec.ts",
-            "source_script_id": "claims-list-renders",
+            "source_script_id": "claims-api-contract",
         }],
+        "observed_coverage": {
+            "r.spec.ts": {"modules": ["demo-app/app/api/claims"], "passed": True}
+        },
     })
 
     assert [a for a in assertions if a["edge"] == "COVERS"] == []

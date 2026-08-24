@@ -13,9 +13,8 @@ from app.adapters.code_intelligence.contracts import (
     contract_edges,
     called_routes,
     declared_routes,
-    normalise_route,
-    routes_match,
 )
+from app.core.routing import normalise_route, page_route_for, route_map, routes_match
 
 
 # --- normalising -----------------------------------------------------------
@@ -185,3 +184,36 @@ def test_a_file_calling_a_route_it_declares_is_not_an_edge_to_itself():
     }
     edges, _unmatched, _uncalled = contract_edges(sources)
     assert edges == []
+
+
+# --- route map (used by observed coverage) ---------------------------------
+
+
+def test_a_page_file_declares_the_url_it_serves():
+    assert page_route_for("demo-app/app/claims/page.tsx") == "/claims"
+    assert page_route_for("demo-app/app/page.tsx") == "/"
+    assert page_route_for("demo-app/app/api/claims/route.ts") is None
+
+
+def test_a_layout_counts_as_serving_every_page_beneath_it():
+    """It genuinely executes on every navigation under it. Leaving it out
+    would report a file as untested that every page test exercises."""
+    mapping = route_map([
+        "demo-app/app/layout.tsx",
+        "demo-app/app/page.tsx",
+        "demo-app/app/claims/page.tsx",
+    ])
+
+    assert mapping["/claims"] == ["demo-app/app/claims/page.tsx", "demo-app/app/layout.tsx"]
+    assert mapping["/"] == ["demo-app/app/layout.tsx", "demo-app/app/page.tsx"]
+
+
+def test_a_layout_does_not_count_as_serving_an_api_route():
+    """A request to /api/claims runs no layout. Crediting one would report a
+    file as exercised by a test that never rendered anything."""
+    mapping = route_map([
+        "demo-app/app/layout.tsx",
+        "demo-app/app/api/claims/route.ts",
+    ])
+
+    assert mapping["/api/claims"] == ["demo-app/app/api/claims/route.ts"]
