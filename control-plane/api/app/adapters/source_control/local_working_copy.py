@@ -19,14 +19,36 @@ class LocalWorkingCopy:
         self._root = Path(root)
 
     def _git(self, *args: str) -> str:
+        return self._git_raw(*args).strip()
+
+    def _git_raw(self, *args: str) -> str:
+        """Unstripped, for commands whose output *is* the answer.
+
+        `git show <ref>:<path>` returns file content, and stripping it removes
+        the trailing newline — so a file read at a revision differed from the
+        same file on disk by one byte, and an agent handed that content wrote
+        it back without its final newline.
+        """
         result = subprocess.run(
             ["git", *args], cwd=self._root, capture_output=True, text=True
         )
         if result.returncode != 0:
             raise RuntimeError(f"git {' '.join(args)}: {result.stderr.strip()}")
-        return result.stdout.strip()
+        return result.stdout
 
     async def read_files(self, repo: str, ref: str, paths: list[str]) -> dict[str, str]:
+        """Read files at a revision, not from whatever is on disk.
+
+        The ref used to be ignored entirely, so an agent asked to write a
+        patch against `main` was shown the working tree — including any
+        uncommitted edit, and including the result of a previous run. Falls
+        back to the working tree when the ref does not resolve, because a
+        demo pointed at a directory that is not a git repository should still
+        work.
+        """
+        if ref and self._resolves(ref):
+            return self._read_at(ref, paths)
+
         out: dict[str, str] = {}
         for path in paths:
             candidate = self._root / path
@@ -34,11 +56,33 @@ class LocalWorkingCopy:
                 out[path] = candidate.read_text(encoding="utf-8", errors="replace")
         return out
 
+    def _resolves(self, ref: str) -> bool:
+        try:
+            self._git("rev-parse", "--verify", f"{ref}^{{commit}}")
+        except RuntimeError:
+            return False
+        return True
+
+    def _read_at(self, ref: str, paths: list[str]) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for path in paths:
+            try:
+                out[path] = self._git_raw("show", f"{ref}:{path}")
+            except RuntimeError:
+                continue  # the file does not exist at that revision
+        return out
+
     async def open_change(
         self, repo, base_ref, branch, title, body, edits: list[FileEdit]
     ) -> ChangeRef:
         original = self._git("rev-parse", "--abbrev-ref", "HEAD")
-        self._git("checkout", "-B", branch)
+        # Branch from what the caller asked for. `checkout -B <branch>` alone
+        # cuts from wherever HEAD happens to be, so a change meant to be based
+        # on main was based on the previous run's branch — and the diff a QA
+        # run computed from it described neither change.
+        base = base_ref if base_ref and self._resolves(base_ref) else original
+        base_commit = self._git("rev-parse", base)
+        self._git("checkout", "-B", branch, base)
         try:
             for edit in edits:
                 target = self._root / edit.path
@@ -56,6 +100,7 @@ class LocalWorkingCopy:
             provider="local-working-copy",
             branch=branch,
             commit=commit,
+            base_commit=base_commit,
             files=[e.path for e in edits],
             url=None,
         )

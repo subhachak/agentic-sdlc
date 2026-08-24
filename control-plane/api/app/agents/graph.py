@@ -36,7 +36,16 @@ def _after_design(state: dict[str, Any]) -> str:
 
 
 def _after_implementation(state: dict[str, Any]) -> str:
+    """Only an accepted change reaches QA.
+
+    Routed on the phase's own verdict rather than on whether the proposal
+    named any files. The rejected branch reports the files it refused — so
+    the truthiness test sent refused changes onward, and the only thing that
+    stopped them was the QA phase having nothing to test.
+    """
     change = state.get("implementation") or {}
+    if state.get("status") != "awaiting_qa_execution":
+        return END
     return "qa_execution" if change.get("files") else END
 
 

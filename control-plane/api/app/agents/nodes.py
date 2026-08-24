@@ -57,7 +57,10 @@ def _assertions_from(payload: dict[str, Any]) -> list[Assertion]:
     return out
 
 
-DESIGN_ATTEMPTS = 3
+# How many times the design agent may revise after a rejection. Overridable
+# per build, and previously not: the parameter existed and the loop read the
+# module constant, so passing a different value changed nothing.
+DEFAULT_DESIGN_ATTEMPTS = 3
 
 # How many code excerpts the design agent is shown. Three was a placeholder
 # from when grounding was two fixture documents; retrieval now returns
@@ -79,7 +82,7 @@ def build_nodes(
     audit_logger: AuditLogger,
     gate_controller: GateController,
     max_retries: int,
-    design_attempts: int = 3,
+    design_attempts: int = DEFAULT_DESIGN_ATTEMPTS,
     dispatch_timeout_seconds: int = 1800,
     dispatch_provider: str = "local",
     target_repo: str = "",
@@ -175,7 +178,7 @@ def build_nodes(
 
         reasons: list[str] = []
         proposal = None
-        for attempt in range(1, DESIGN_ATTEMPTS + 1):
+        for attempt in range(1, design_attempts + 1):
             prompt = base_prompt if not reasons else (
                 base_prompt
                 + "\n\nYour previous design was rejected:\n"
@@ -214,7 +217,7 @@ def build_nodes(
             "design_proposal": {
                 **(proposal.model_dump() if proposal else {}),
                 "rejected": reasons,
-                "attempts": DESIGN_ATTEMPTS,
+                "attempts": design_attempts,
             },
             "status": "design_rejected",
         }
@@ -326,7 +329,15 @@ def build_nodes(
                 "branch": change.branch,
                 "url": change.url,
                 "commit": change.commit,
+                "base_commit": change.base_commit,
             },
+            # The revision pair the QA phase tests between. These used to be
+            # read out of state by the dispatch node and written by nothing,
+            # so a remote run received two empty strings and its workflow fell
+            # back to the default branch — testing the code that was already
+            # there rather than the change just made.
+            "base_sha": change.base_commit or "",
+            "head_sha": change.commit or "",
             "changed_paths": change.files,
             "status": "awaiting_qa_execution",
         }
@@ -341,6 +352,23 @@ def build_nodes(
         flaky response genuinely is transient.
         """
         run_id = state["run_id"]
+        head_sha = state.get("head_sha") or ""
+
+        # A dispatch with no revision has nothing to test. Refusing is the
+        # only honest outcome: the executor would otherwise check out its
+        # default branch and report a verdict on code this run never touched,
+        # which reads exactly like a passing QA result.
+        if not head_sha:
+            return {
+                "qa_result": {
+                    "gate_passed": False,
+                    "reasons": [
+                        "the implementation phase produced no commit to test, so the "
+                        "QA phase was not dispatched"
+                    ],
+                },
+                "status": "qa_failed",
+            }
 
         # None means a row already exists, i.e. this is the resume pass and
         # the job is already running. Triggering here would start a second.
@@ -355,7 +383,7 @@ def build_nodes(
                     claimed.correlation_id,
                     {
                         "base_sha": state.get("base_sha", ""),
-                        "head_sha": state.get("head_sha", ""),
+                        "head_sha": head_sha,
                         # What the implementation phase actually touched. The QA
                         # pipeline widens this to the blast radius itself.
                         "changed_paths": state.get("changed_paths", []),

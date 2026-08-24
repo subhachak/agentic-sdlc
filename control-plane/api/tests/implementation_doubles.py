@@ -13,9 +13,14 @@ from app.ports.source_control import ChangeRef
 
 
 class StubSourceControl:
-    def __init__(self, files: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, files: dict[str, str] | None = None, commit: str | None = "deadbeef"
+    ) -> None:
         self.files = files or {"demo-app/app/claims/page.tsx": "export default function X() {}\n"}
         self.opened: list[dict] = []
+        # Settable so a test can produce the case where a change was opened
+        # but named no commit, which is what the dispatch guard exists for.
+        self.commit = commit
 
     async def read_files(self, repo, ref, paths):
         return {p: self.files[p] for p in paths if p in self.files}
@@ -25,7 +30,7 @@ class StubSourceControl:
                             "files": [e.path for e in edits]})
         return ChangeRef(
             provider="stub", branch=branch, url=f"https://stub/pull/{len(self.opened)}",
-            number=len(self.opened), commit="deadbeef",
+            number=len(self.opened), commit=self.commit, base_commit="cafe0000",
             files=[e.path for e in edits],
         )
 

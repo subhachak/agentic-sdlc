@@ -252,3 +252,48 @@ async def test_the_mock_provider_refuses_to_write_code():
 
     assert result.edits == []
     assert "cannot write code" in result.blocked
+
+
+@pytest.mark.asyncio
+async def test_the_revision_pair_reaches_the_dispatch():
+    """The chain that was broken end to end: the implementation phase opens a
+    change, and the QA dispatch is told which two commits to diff. Both keys
+    were read by the dispatch node and written by nothing."""
+    graph = await _graph()
+    result = await _to_implementation(graph, "impl-rev-1")
+
+    assert result["status"] == "awaiting_qa_execution"
+    assert result["base_sha"] == "cafe0000"
+    assert result["head_sha"] == "deadbeef"
+    assert result["implementation"]["base_commit"] == "cafe0000"
+
+
+@pytest.mark.asyncio
+async def test_a_run_with_no_commit_to_test_is_failed_not_dispatched():
+    """An executor handed no revision checks out its own default branch and
+    reports a verdict on code the run never touched — which reads exactly
+    like a passing QA result."""
+    source = StubSourceControl(commit=None)
+    graph = await _graph(source_control=source)
+
+    result = await _to_implementation(graph, "impl-rev-2")
+
+    assert result["status"] == "qa_failed"
+    assert "no commit to test" in result["qa_result"]["reasons"][0]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_change_never_reaches_the_qa_phase():
+    """Routing used to key on whether the proposal named any files — and the
+    rejected branch reports the files it refused, so refusals were routed
+    onward like accepted changes."""
+    source = StubSourceControl(files={"demo-app/app/claims/page.tsx": "x"})
+    graph = await _graph(
+        llm=WritingLLMProvider(implementation_path="somewhere/else/file.ts"),
+        source_control=source,
+    )
+
+    result = await _to_implementation(graph, "impl-rev-3")
+
+    assert result["status"] == "implementation_rejected"
+    assert "qa_result" not in result

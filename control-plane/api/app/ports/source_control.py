@@ -27,6 +27,10 @@ class ChangeRef(BaseModel):
     url: str | None = None
     number: int | None = None  # pull request number, where there is one
     commit: str | None = None
+    # What the branch was cut from. Without it there is no revision pair to
+    # diff, and a QA run downstream has nothing to scope a blast radius
+    # between — it tests whatever happens to be checked out.
+    base_commit: str | None = None
     files: list[str] = Field(default_factory=list)
 
 

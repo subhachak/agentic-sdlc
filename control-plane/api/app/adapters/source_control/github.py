@@ -106,5 +106,8 @@ class GitHubSourceControl:
             url=pull["html_url"],
             number=pull["number"],
             commit=commit["sha"],
+            # The revision the branch was cut from. A QA run downstream diffs
+            # against this; without it there is no pair to scope between.
+            base_commit=base_sha,
             files=[e.path for e in edits],
         )
