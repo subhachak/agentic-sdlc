@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app.core import seeding
+from app.core.graph_export import build_export
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
@@ -45,3 +46,14 @@ async def list_components(request: Request) -> dict:
     """Modules and their dependencies, as derived from the last index."""
     graph = request.app.state.context_graph
     return {"counts": await graph.counts(), "modules": await graph.modules()}
+
+
+@router.get("/export")
+async def export_graph(request: Request, scope: str = "") -> dict:
+    """The derived graph in the form the execution plane consumes.
+
+    Served rather than shared, because the execution plane runs in client CI
+    with no route to this database. The provenance stamp travels with it so a
+    QA run can refuse a graph that describes a commit it is not testing.
+    """
+    return await build_export(request.app.state.context_graph, scope=scope)

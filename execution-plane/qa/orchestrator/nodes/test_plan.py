@@ -141,6 +141,12 @@ def run(state: PipelineState) -> PipelineState:
         f"these): {scope['required_scripts']}\n"
         f"Impacted modules with NO regression coverage — nothing else in this run "
         f"will exercise them: {scope['uncovered_components']}"
+        + (
+            "\nThe dependency graph behind that scope is qualified: "
+            + "; ".join(scope["graph_warnings"])
+            if scope.get("graph_warnings")
+            else ""
+        )
     )
 
     accepted: list[dict] = []

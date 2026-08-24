@@ -85,6 +85,7 @@ def _run_phase(args) -> dict:
             "head_sha": args.head_sha,
             "diff_text": diff_text,
             "changed_paths": get_changed_paths(args.base_sha, args.head_sha),
+            "head_sha_for_graph": args.head_sha,
             "features_context": get_features(),
         }
     )

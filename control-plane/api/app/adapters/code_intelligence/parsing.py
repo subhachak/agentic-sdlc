@@ -181,6 +181,9 @@ class ResolutionStats:
     type_only: int = 0
     from_tests: int = 0
     runtime_product: int = 0
+    contract_edges: int = 0
+    unmatched_calls: int = 0
+    uncalled_routes: int = 0
     missed_specs: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -213,6 +216,9 @@ class ResolutionStats:
             "type_only": self.type_only,
             "from_tests": self.from_tests,
             "runtime_product": self.runtime_product,
+            "contract_edges": self.contract_edges,
+            "unmatched_calls": self.unmatched_calls,
+            "uncalled_routes": self.uncalled_routes,
             "internal_capture_rate": self.capture_rate,
             "most_missed": sorted(
                 self.missed_specs.items(), key=lambda kv: -kv[1]

@@ -76,6 +76,8 @@ class PipelineState(TypedDict, total=False):
     required_regressions_failed: list[str]
     required_regressions_missing: list[str]
     coverage_gaps: list[str]
+    # Reasons to qualify the scoping — a stale or unpinned code graph.
+    graph_warnings: list[str]
 
     # --- phase 8: report ---
     defects_created: list[str]

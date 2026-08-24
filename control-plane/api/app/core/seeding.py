@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
+from app.core.source_kinds import is_test_path
 from app.ports.code_intelligence import CodeIndex, CodeIntelligence
 
 CODE_SYSTEM = "code"
@@ -95,6 +96,36 @@ def assertions_from_index(index: CodeIndex) -> list[Assertion]:
             )
         )
 
+    # One edge per file pair, carrying every route between them. An edge is
+    # unique on (type, source, target, run), so emitting one per route would
+    # silently keep whichever arrived last — this repository's console calls
+    # six endpoints in one router file, which would have become one route and
+    # five discarded.
+    by_pair: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for contract in index.contracts:
+        by_pair.setdefault((contract.source, contract.target), []).append(
+            {"route": contract.route, "method": contract.method}
+        )
+
+    for (source, target), routes in sorted(by_pair.items()):
+        assertions.append(
+            Assertion(
+                "CALLS_ENDPOINT",
+                artifact(source),
+                artifact(target),
+                {
+                    "provenance": "static-route-match",
+                    "indexer_version": prov.indexer_version,
+                    "routes": sorted(routes, key=lambda r: (r["route"], r["method"])),
+                    "call_count": len(routes),
+                    # An HTTP call is runtime coupling by definition, and a
+                    # test calling an endpoint is still a test.
+                    "kind": "runtime",
+                    "from_test": is_test_path(source),
+                },
+            )
+        )
+
     for dep in index.dependencies:
         assertions.append(
             Assertion(
@@ -147,6 +178,7 @@ async def seed(
         "files": len(index.files),
         "dependencies": len(index.dependencies),
         "file_imports": len(index.imports),
+        "contract_edges": len(index.contracts),
         "edges_written": written,
         "rebuilt": bool(rebuild),
         "removed": removed,
@@ -160,6 +192,9 @@ async def seed(
                 "type_only",
                 "from_tests",
                 "runtime_product",
+                "contract_edges",
+                "unmatched_calls",
+                "uncalled_routes",
                 "internal_capture_rate",
                 "most_missed",
             }

@@ -139,6 +139,12 @@ def run(state: PipelineState) -> PipelineState:
             + ", ".join(dangling)
         )
 
+    # Not failures. A stale or hand-maintained graph still scopes better than
+    # none, and refusing the run would make an out-of-date export worse than
+    # never having generated one. Reported so the scoping is qualified rather
+    # than presented as certain.
+    graph_notes = list(scope.get("graph_warnings") or [])
+
     never_ran, required_failed = _required_verdicts(state, leaves)
     if never_ran:
         reasons.append(
@@ -177,6 +183,7 @@ def run(state: PipelineState) -> PipelineState:
 
     gate_passed = not reasons
     notes = reasons or ["all planned scenarios ran and passed"]
+    notes = [*notes, *(f"note: {w}" for w in graph_notes)]
     if coverage_gap and not _require_full_coverage():
         # Reported whether or not it blocks. "We did not test this" is the
         # answer a release decision needs; silence is not.
@@ -191,4 +198,5 @@ def run(state: PipelineState) -> PipelineState:
         "required_regressions_failed": required_failed,
         "required_regressions_missing": never_ran,
         "coverage_gaps": sorted(uncovered),
+        "graph_warnings": graph_notes,
     }

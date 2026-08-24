@@ -11,7 +11,9 @@ from orchestrator.context import (
     modules_for_paths,
     criterion_ids,
     regression_candidates,
-    scenarios_covering,
+    scripts_covering,
+    graph_provenance,
+    graph_warnings,
     api_contract,
     ui_contract,
 )
@@ -28,20 +30,26 @@ def test_criteria_have_stable_ids():
 
 
 def test_a_changed_file_maps_to_its_component():
-    assert modules_for_paths(["demo-app/app/api/claims/route.ts"]) == {"claims-api"}
+    assert modules_for_paths(["demo-app/app/api/claims/route.ts"]) == {"demo-app/app/api/claims"}
 
 
 def test_blast_radius_includes_dependents_not_just_the_change():
     """The point of the graph: a change to the API can break the table and
     the filter, neither of which the diff touched."""
-    assert blast_radius({"claims-api"}) == {"claims-api", "claims-filter", "claims-table"}
+    assert blast_radius({"demo-app/app/api/claims"}) == {
+        "demo-app/app/api/claims",
+        "demo-app/app/claims",
+    }
 
 
 def test_regression_scope_widens_beyond_the_diff():
     scope = regression_candidates(["demo-app/app/api/claims/route.ts"])
 
-    assert scope["changed_components"] == ["claims-api"]
-    assert set(scope["impacted_components"]) == {"claims-api", "claims-filter", "claims-table"}
+    assert scope["changed_components"] == ["demo-app/app/api/claims"]
+    assert set(scope["impacted_components"]) == {
+        "demo-app/app/api/claims",
+        "demo-app/app/claims",
+    }
     # A script covering a module the diff never touched, required because the
     # API it depends on changed.
     assert scope["required_scripts"] == ["claims-list-renders"]
@@ -52,42 +60,71 @@ def test_coverage_is_resolved_against_the_library_not_taken_on_trust():
     not exist — the library holds `claims-list-renders` and the graph claimed
     `claims-table-renders`, `filter-approved` and three more. The whole
     regression set resolved to nothing, and nothing said so."""
-    assert scenarios_covering({"claims-table"}) <= library_script_ids()
+    assert scripts_covering({"demo-app/app/claims"}) <= library_script_ids()
 
 
 def test_a_module_with_no_script_is_reported_as_a_gap_not_as_covered():
     scope = regression_candidates(["demo-app/app/api/claims/route.ts"])
 
-    assert "claims-filter" in scope["uncovered_components"]
+    # The route file itself: the list script exercises it through the page,
+    # which is not the same claim as covering it.
+    assert "demo-app/app/api/claims" in scope["uncovered_components"]
     assert scope["dangling_coverage"] == []
 
 
-def test_a_coverage_claim_naming_a_missing_script_is_dangling(monkeypatch):
-    """Worse than claiming no coverage: it makes the gap invisible."""
+def test_coverage_recorded_against_a_module_that_no_longer_exists_is_dangling(monkeypatch):
+    """The graph is regenerated; the manifest is not. A script still claiming
+    a module the export no longer contains has coverage nothing has."""
     import orchestrator.context as context
 
     monkeypatch.setattr(
-        context,
-        "_load_code_graph",
-        lambda: {
-            "modules": [{"id": "claims-api", "paths": ["demo-app/app/api/claims/route.ts"],
-                         "covered_by": ["does-not-exist"]}],
-            "depends_on": [],
-        },
+        context, "_load_manifest",
+        lambda: [{"id": "ghost-script", "covers_modules": ["module/that/went/away"]}],
     )
-    scope = context.regression_candidates(["demo-app/app/api/claims/route.ts"])
+    scope = context.regression_candidates(["demo-app/app/claims/page.tsx"])
 
-    assert scope["required_scripts"] == []
-    assert scope["dangling_coverage"] == ["claims-api -> does-not-exist"]
-    assert scope["uncovered_components"] == ["claims-api"]
+    assert scope["dangling_coverage"] == ["ghost-script -> module/that/went/away"]
+
+
+# --- provenance ------------------------------------------------------------
+
+
+def test_the_graph_says_which_commit_it_describes():
+    provenance = graph_provenance()
+
+    assert provenance["generated"] is True
+    assert len(provenance["commit_sha"]) == 40
+    assert provenance["scope"] == "demo-app"
+
+
+def test_a_graph_describing_another_commit_is_flagged():
+    """Not a failure — a stale graph still scopes better than none. Flagged so
+    the answer is qualified rather than presented as certain."""
+    warnings = graph_warnings(head_sha="f" * 40)
+
+    assert len(warnings) == 1
+    assert "not the fffffff under test" in warnings[0]
+
+
+def test_a_hand_maintained_graph_is_flagged_as_such(monkeypatch):
+    import orchestrator.context as context
+
+    monkeypatch.setattr(context, "_load_code_graph", lambda: {"modules": [], "depends_on": []})
+    assert "hand-maintained" in context.graph_warnings()[0]
+
+
+def test_a_graph_matching_the_commit_under_test_warns_about_nothing():
+    assert graph_warnings(head_sha=graph_provenance()["commit_sha"]) == []
+
 
 
 def test_an_unrelated_change_pulls_in_nothing():
-    assert regression_candidates(["README.md"])["scenarios"] == []
+    scope = regression_candidates(["README.md"])
+    assert (scope["impacted_components"], scope["required_scripts"]) == ([], [])
 
 
-def test_scenarios_covering_an_unknown_component_is_empty():
-    assert scenarios_covering({"does-not-exist"}) == set()
+def test_scripts_covering_an_unknown_module_is_empty():
+    assert scripts_covering({"does-not-exist"}) == set()
 
 
 # --- emitting assertions ---------------------------------------------------
@@ -156,7 +193,7 @@ def test_failures_become_defect_edges():
 def test_component_dependencies_travel_with_the_result():
     depends = _edges(build_assertions(STATE), "DEPENDS_ON")
     pairs = {(a["src"]["external_id"], a["dst"]["external_id"]) for a in depends}
-    assert ("claims-filter", "claims-api") in pairs
+    assert ("demo-app/app/claims", "demo-app/app/api/claims") in pairs
 
 
 def test_node_ids_are_derived_not_allocated():
@@ -231,5 +268,9 @@ def test_a_similar_looking_path_does_not_pull_a_module_into_scope():
 
 
 def test_paths_match_regardless_of_leading_slash_or_dot():
-    assert modules_for_paths(["./demo-app/app/api/claims/route.ts"]) == {"claims-api"}
-    assert modules_for_paths(["/demo-app/app/api/claims/route.ts"]) == {"claims-api"}
+    assert modules_for_paths(["./demo-app/app/api/claims/route.ts"]) == {
+        "demo-app/app/api/claims"
+    }
+    assert modules_for_paths(["/demo-app/app/api/claims/route.ts"]) == {
+        "demo-app/app/api/claims"
+    }

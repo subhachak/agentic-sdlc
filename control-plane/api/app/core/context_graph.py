@@ -77,7 +77,11 @@ class ContextGraphStore(Protocol):
     async def module_dependents(self) -> dict[str, set[str]]: ...
 
     async def file_dependents(
-        self, *, runtime_only: bool = True, include_tests: bool = True
+        self,
+        *,
+        runtime_only: bool = True,
+        include_tests: bool = True,
+        include_contracts: bool = True,
     ) -> dict[str, set[str]]: ...
 
     async def criteria(self) -> list[dict[str, Any]]: ...
@@ -540,9 +544,13 @@ class SqlContextGraph:
         return out
 
     async def file_dependents(
-        self, *, runtime_only: bool = True, include_tests: bool = True
+        self,
+        *,
+        runtime_only: bool = True,
+        include_tests: bool = True,
+        include_contracts: bool = True,
     ) -> dict[str, set[str]]:
-        """File to the files that import it.
+        """File to the files that reach it.
 
         The unit of truth for impact. Rolling this up to modules before
         traversing gives every file in a directory the same blast radius,
@@ -554,7 +562,16 @@ class SqlContextGraph:
         test importers ranks a module by how well tested it is. Regression
         scoping wants the test edges specifically — they are how you find
         which tests to run.
+
+        Contract edges are included by default and are the reason a route
+        handler's impact set contains its callers at all: they import nothing
+        from one another, so on imports alone a change to an API reports no
+        frontend impact whatsoever.
         """
+        wanted = [EdgeType.IMPORTS]
+        if include_contracts:
+            wanted.append(EdgeType.CALLS_ENDPOINT)
+
         async with get_sessionmaker()() as session:
             nodes = {
                 n.id: n.external_id
@@ -567,7 +584,7 @@ class SqlContextGraph:
             edges = (
                 await session.execute(
                     select(GraphEdge).where(
-                        GraphEdge.type == EdgeType.IMPORTS,
+                        GraphEdge.type.in_(wanted),
                         GraphEdge.superseded_at.is_(None),
                     )
                 )

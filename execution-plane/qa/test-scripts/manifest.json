@@ -4,8 +4,16 @@
       "id": "claims-list-renders",
       "file": "claims-list.spec.ts",
       "route": "/claims",
-      "tags": ["claims", "list", "regression"],
-      "covers": "Claims table renders all claims with id, policyholder, status, last updated"
+      "tags": [
+        "claims",
+        "list",
+        "regression"
+      ],
+      "covers": "Claims table renders all claims with id, policyholder, status, last updated",
+      "covers_modules": [
+        "demo-app/app/claims"
+      ]
     }
-  ]
+  ],
+  "_comment": "The script library. `covers_modules` names modules from the generated code graph and is the coverage mapping the blast radius resolves against \u2014 it lives here, with the scripts, because which modules a script exercises is a property of the script. It used to live in the code graph, which is how modules came to claim coverage from scripts nobody had written."
 }

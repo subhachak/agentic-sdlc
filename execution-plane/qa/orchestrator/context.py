@@ -68,11 +68,12 @@ def modules_for_paths(changed_paths: list[str]) -> set[str]:
 
 
 def blast_radius(module_ids: set[str]) -> set[str]:
-    """Components that depend on the ones given, plus the ones given.
+    """Modules that depend on the ones given, plus the ones given.
 
-    One hop. Unbounded traversal over a real dependency graph is the query
-    that would justify a graph database; this is what the seeded index can
-    support honestly.
+    One hop, over edges the control plane derived — including the HTTP ones.
+    The claims page depends on the claims API because it calls the route, not
+    because it imports it, and that edge exists now rather than being asserted
+    by hand.
     """
     graph = _load_code_graph()
     dependents = {
@@ -83,27 +84,80 @@ def blast_radius(module_ids: set[str]) -> set[str]:
     return module_ids | dependents
 
 
-def scenarios_covering(module_ids: set[str]) -> set[str]:
-    graph = _load_code_graph()
-    return {
-        scenario
-        for module in graph.get("modules", [])
-        if module["id"] in module_ids
-        for scenario in module.get("covered_by", [])
-    }
+def _load_manifest() -> list[dict[str, Any]]:
+    if not MANIFEST_FILE.exists():
+        return []
+    return json.loads(MANIFEST_FILE.read_text()).get("scripts", [])
 
 
 def library_script_ids() -> set[str]:
-    """Every test script the library actually holds.
+    """Every test script the library actually holds."""
+    return {entry["id"] for entry in _load_manifest() if entry.get("id")}
 
-    `covered_by` claims a module is covered by a script. That claim is only
-    worth anything if the script exists, so it is resolved against the
-    manifest rather than trusted.
+
+def scripts_covering(module_ids: set[str]) -> set[str]:
+    """Which library scripts claim to exercise any of these modules.
+
+    Read from the manifest rather than from the code graph. Which modules a
+    script covers is a property of the script, and asserting it in the graph
+    is how modules came to claim coverage from scripts nobody had written —
+    every entry in the hand-authored graph named a script that did not exist.
     """
-    if not MANIFEST_FILE.exists():
-        return set()
-    manifest = json.loads(MANIFEST_FILE.read_text())
-    return {entry["id"] for entry in manifest.get("scripts", []) if entry.get("id")}
+    return {
+        entry["id"]
+        for entry in _load_manifest()
+        if entry.get("id") and set(entry.get("covers_modules") or []) & module_ids
+    }
+
+
+def graph_provenance() -> dict[str, Any]:
+    """Which snapshot the code graph describes, and whether it was derived.
+
+    A hand-maintained graph has no answer to either question. Both are
+    reported so a run can say what its scoping was based on instead of
+    presenting a blast radius as though its source were beyond question.
+    """
+    graph = _load_code_graph()
+    provenance = dict(graph.get("provenance") or {})
+    provenance["generated"] = bool(graph.get("generated"))
+    provenance["scope"] = graph.get("scope", "")
+    return provenance
+
+
+def graph_warnings(head_sha: str = "") -> list[str]:
+    """Reasons to distrust the scoping this graph produced.
+
+    Not failures. A stale graph still scopes better than no graph, and
+    refusing the run would make an out-of-date export worse than never having
+    generated one. They are surfaced so the answer is qualified rather than
+    presented as certain.
+    """
+    provenance = graph_provenance()
+    warnings: list[str] = []
+
+    if not provenance.get("generated"):
+        warnings.append(
+            "the code graph was not generated from an index — regression scope "
+            "is based on a hand-maintained file"
+        )
+        return warnings
+
+    commit = provenance.get("commit_sha")
+    if not commit:
+        warnings.append("the code graph names no commit, so it cannot be checked for staleness")
+    elif head_sha and commit != head_sha:
+        warnings.append(
+            f"the code graph describes {commit[:7]}, not the {head_sha[:7]} under test — "
+            f"re-export it after seeding"
+        )
+
+    capture = provenance.get("internal_capture_rate")
+    if capture is not None and capture < 0.8:
+        warnings.append(
+            f"the index behind this graph resolved only {capture:.1%} of internal "
+            f"imports, so the blast radius is likely to be missing edges"
+        )
+    return warnings
 
 
 def regression_candidates(changed_paths: list[str]) -> dict[str, Any]:
@@ -120,43 +174,38 @@ def regression_candidates(changed_paths: list[str]) -> dict[str, Any]:
                         regression suite. Always reported, because "we did not
                         test this" is the answer a release decision needs and
                         silence is not.
-      dangling        — a `covered_by` entry naming a script that does not
-                        exist. A hard error: a module claiming coverage it
-                        does not have is worse than one claiming none, since
-                        it makes the gap invisible.
+      dangling        — a script claiming to cover a module the graph does not
+                        contain. A hard error: coverage recorded against a
+                        module that no longer exists is coverage nothing has.
 
     The `why` matters too: a scenario required because a module two hops away
     changed is a claim the test plan should be able to justify.
     """
     direct = modules_for_paths(changed_paths)
     widened = blast_radius(direct)
-    graph = _load_code_graph()
-    known_scripts = library_script_ids()
+    known_modules = {m["id"] for m in _load_code_graph().get("modules", [])}
 
-    required: set[str] = set()
-    uncovered: list[str] = []
-    dangling: list[str] = []
-
-    for module in graph.get("modules", []):
-        if module["id"] not in widened:
-            continue
-        claimed = module.get("covered_by") or []
-        resolved = [s for s in claimed if s in known_scripts]
-        dangling.extend(f"{module['id']} -> {s}" for s in claimed if s not in known_scripts)
-        if resolved:
-            required.update(resolved)
-        else:
-            uncovered.append(module["id"])
+    required = scripts_covering(widened)
+    covered_modules = {
+        module
+        for entry in _load_manifest()
+        if entry.get("id") in required
+        for module in entry.get("covers_modules") or []
+    }
+    dangling = sorted(
+        f"{entry['id']} -> {module}"
+        for entry in _load_manifest()
+        for module in entry.get("covers_modules") or []
+        if module not in known_modules
+    )
 
     return {
         "changed_components": sorted(direct),
         "impacted_components": sorted(widened),
         "required_scripts": sorted(required),
-        "uncovered_components": sorted(uncovered),
-        "dangling_coverage": sorted(dangling),
-        # Retained for the test-plan prompt, which asks the agent to consider
-        # them. What the gate enforces is `required_scripts`.
-        "scenarios": sorted(scenarios_covering(widened)),
+        "uncovered_components": sorted(widened - covered_modules),
+        "dangling_coverage": dangling,
+        "graph_warnings": graph_warnings(),
     }
 
 
@@ -297,7 +346,6 @@ def build_assertions(state: dict[str, Any]) -> list[dict[str, Any]]:
     # commit.
     scope = state.get("regression_scope") or {}
     impacted = set(scope.get("impacted_components") or [])
-    graph_modules = _load_code_graph().get("modules", [])
 
     for assignment in state.get("test_assignments", []):
         if assignment.get("mode") != "required-regression":
@@ -316,12 +364,13 @@ def build_assertions(state: dict[str, Any]) -> list[dict[str, Any]]:
         assertions.append({"edge": "IMPLEMENTED_BY", "src": scenario_node, "dst": script_node})
         assertions.append({"edge": "EXERCISED_IN", "src": script_node, "dst": run_node})
 
-        for module in graph_modules:
-            if module["id"] in impacted and script_id in (module.get("covered_by") or []):
+        entry = next((e for e in _load_manifest() if e.get("id") == script_id), {})
+        for module in sorted(entry.get("covers_modules") or []):
+            if module in impacted:
                 assertions.append({
                     "edge": "COVERS",
                     "src": scenario_node,
-                    "dst": _node("MODULE", CODE_SYSTEM, module["id"], {}),
+                    "dst": _node("MODULE", CODE_SYSTEM, module, {}),
                 })
 
     evidence = state.get("evidence_summary", {})

@@ -27,11 +27,13 @@ from app.adapters.code_intelligence.parsing import (
     is_source,
     load_alias_sets,
 )
+from app.adapters.code_intelligence.contracts import contract_edges
 from app.ports.code_intelligence import (
     CodeDependency,
     CodeFile,
     CodeIndex,
     CodeModule,
+    ContractCall,
     FileImport,
     IndexProvenance,
 )
@@ -200,6 +202,11 @@ def _index_from_sources(
         sources, alias_sets=load_alias_sets(tsconfigs), max_depth=max_depth
     )
 
+    contracts, unmatched, uncalled = contract_edges(sources)
+    stats.contract_edges = len(contracts)
+    stats.unmatched_calls = len(unmatched)
+    stats.uncalled_routes = len(uncalled)
+
     by_component: dict[str, list[str]] = {}
     for path, module in modules.items():
         by_component.setdefault(module, []).append(path)
@@ -226,6 +233,10 @@ def _index_from_sources(
         imports=[
             FileImport(source=i.source, target=i.target, kind=i.kind, from_test=i.from_test)
             for i in sorted(set(imports), key=lambda i: (i.source, i.target, i.kind))
+        ],
+        contracts=[
+            ContractCall(source=c.source, target=c.target, route=c.route, method=c.method)
+            for c in contracts
         ],
         provenance=IndexProvenance(
             commit_sha=commit_sha,

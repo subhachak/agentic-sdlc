@@ -166,11 +166,18 @@ class InMemoryContextGraph:
         ]
 
     async def file_dependents(
-        self, *, runtime_only: bool = True, include_tests: bool = True
+        self,
+        *,
+        runtime_only: bool = True,
+        include_tests: bool = True,
+        include_contracts: bool = True,
     ) -> dict[str, set[str]]:
         out: dict[str, set[str]] = {}
         for e in self.edges:
-            if e["type"] != EdgeType.IMPORTS:
+            wanted = {EdgeType.IMPORTS}
+            if include_contracts:
+                wanted.add(EdgeType.CALLS_ENDPOINT)
+            if e["type"] not in wanted:
                 continue
             attributes = e.get("attributes") or {}
             if runtime_only and attributes.get("kind", "runtime") != "runtime":

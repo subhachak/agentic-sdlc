@@ -279,7 +279,9 @@ def test_an_enforced_regression_produces_a_covers_edge_from_an_actual_run():
         "pr_number": 7,
         "gate_passed": True,
         "test_plan": [],
-        "regression_scope": {"impacted_components": ["claims-table", "claims-api"]},
+        "regression_scope": {
+            "impacted_components": ["demo-app/app/claims", "demo-app/app/api/claims"]
+        },
         "test_assignments": [{
             "scenario_id": "regression:claims-list-renders",
             "mode": "required-regression",
@@ -289,7 +291,7 @@ def test_an_enforced_regression_produces_a_covers_edge_from_an_actual_run():
     })
 
     covers = [a for a in assertions if a["edge"] == "COVERS"]
-    assert [a["dst"]["external_id"] for a in covers] == ["claims-table"]
+    assert [a["dst"]["external_id"] for a in covers] == ["demo-app/app/claims"]
     assert covers[0]["src"]["projection"]["required_by_blast_radius"] is True
 
     kinds = {a["edge"] for a in assertions}
@@ -303,7 +305,7 @@ def test_a_regression_covering_an_unimpacted_module_asserts_nothing_about_it():
 
     assertions = build_assertions({
         "repo": "acme/thing", "pr_number": 7, "gate_passed": True, "test_plan": [],
-        "regression_scope": {"impacted_components": ["claims-api"]},
+        "regression_scope": {"impacted_components": ["demo-app/app/api/claims"]},
         "test_assignments": [{
             "scenario_id": "regression:claims-list-renders",
             "mode": "required-regression",
@@ -313,3 +315,25 @@ def test_a_regression_covering_an_unimpacted_module_asserts_nothing_about_it():
     })
 
     assert [a for a in assertions if a["edge"] == "COVERS"] == []
+
+
+# --- graph provenance ------------------------------------------------------
+
+
+def test_a_qualified_graph_is_reported_without_failing_the_run():
+    """A stale export still scopes better than none. Refusing would make an
+    out-of-date graph worse than never having generated one."""
+    state = _state(regression_scope={
+        "required_scripts": ["claims-list-renders"],
+        "uncovered_components": [],
+        "dangling_coverage": [],
+        "graph_warnings": ["the code graph describes abc1234, not the def5678 under test"],
+    })
+
+    result = gate(state)
+
+    assert result["gate_passed"] is True
+    assert result["graph_warnings"] == [
+        "the code graph describes abc1234, not the def5678 under test"
+    ]
+    assert any("abc1234" in r for r in result["gate_reasons"])

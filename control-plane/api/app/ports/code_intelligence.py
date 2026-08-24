@@ -73,9 +73,25 @@ class IndexProvenance(BaseModel):
     type_only: int = 0
     from_tests: int = 0
     runtime_product: int = 0
+    # HTTP coupling. `unmatched_calls` is the honest counterpart to
+    # `contract_edges`: a URL assembled at runtime cannot be matched, and the
+    # count says how much coupling this still cannot see.
+    contract_edges: int = 0
+    unmatched_calls: int = 0
+    uncalled_routes: int = 0
     # resolved / (resolved + unresolved). The headline completeness number.
     internal_capture_rate: float = 1.0
     most_missed: list[tuple[str, int]] = Field(default_factory=list)
+
+
+class ContractCall(BaseModel):
+    """A file that calls a route, and the file that handles it."""
+
+    source: str
+    target: str
+    route: str
+    method: str = ""
+    provenance: str = "static-route-match"
 
 
 class CodeIndex(BaseModel):
@@ -85,6 +101,7 @@ class CodeIndex(BaseModel):
     files: list[CodeFile] = Field(default_factory=list)
     dependencies: list[CodeDependency] = Field(default_factory=list)
     imports: list[FileImport] = Field(default_factory=list)
+    contracts: list[ContractCall] = Field(default_factory=list)
     provenance: IndexProvenance = Field(default_factory=IndexProvenance)
 
 

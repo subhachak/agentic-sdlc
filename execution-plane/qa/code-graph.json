@@ -1,40 +1,68 @@
 {
-  "_comment": "Seeded code-intelligence graph. In production this is derived from the repository and generated as a pinned export of the context graph \u2014 it is hand-authored here only until that export exists. Paths are repository-relative, matching what `git diff --name-status` emits. `covered_by` names ids from test-scripts/manifest.json and is resolved against it: a script that does not exist is a hard error, because a module claiming coverage it does not have hides the gap. Every entry here previously named a script that did not exist, so the whole regression set resolved to nothing.",
-  "depends_on": [
-    {
-      "from": "claims-table",
-      "to": "claims-api"
-    },
-    {
-      "from": "claims-filter",
-      "to": "claims-api"
-    }
-  ],
+  "export_version": 1,
+  "generated": true,
+  "scope": "demo-app",
+  "provenance": {
+    "repo": "subhachak/agentic-sdlc",
+    "commit_sha": "c104dc5915d1d27da7c95cc9684a351eeb4e265b",
+    "indexer_version": "2.0.0",
+    "indexed_at": "2026-08-24T16:31:43.112486+00:00",
+    "pinned": true,
+    "internal_capture_rate": 0.9903,
+    "most_missed": [
+      [
+        "./.next/types/root-params.d.ts",
+        1
+      ],
+      [
+        "./.next/types/routes.d.ts",
+        1
+      ],
+      [
+        "./globals.css",
+        1
+      ]
+    ]
+  },
   "modules": [
     {
-      "id": "claims-table",
+      "id": "demo-app",
       "paths": [
-        "demo-app/app/claims/page.tsx"
-      ],
-      "covered_by": [
-        "claims-list-renders"
+        "demo-app/next-env.d.ts",
+        "demo-app/next.config.js",
+        "demo-app/playwright.config.ts"
       ]
     },
     {
-      "id": "claims-filter",
+      "id": "demo-app/app",
       "paths": [
-        "demo-app/app/claims/page.tsx"
-      ],
-      "covered_by": [],
-      "coverage_note": "no library script covers the status filter yet \u2014 reported as a coverage gap on every change that reaches this module"
+        "demo-app/app/layout.tsx",
+        "demo-app/app/page.tsx"
+      ]
     },
     {
-      "id": "claims-api",
+      "id": "demo-app/app/api/claims",
       "paths": [
         "demo-app/app/api/claims/route.ts"
-      ],
-      "covered_by": [],
-      "coverage_note": "no library script covers the API directly yet \u2014 the list script exercises it indirectly, which is not the same claim"
+      ]
+    },
+    {
+      "id": "demo-app/app/claims",
+      "paths": [
+        "demo-app/app/claims/page.tsx"
+      ]
     }
-  ]
+  ],
+  "depends_on": [
+    {
+      "from": "demo-app/app/claims",
+      "to": "demo-app/app/api/claims",
+      "weight": 1
+    }
+  ],
+  "file_dependents": {
+    "demo-app/app/api/claims/route.ts": [
+      "demo-app/app/claims/page.tsx"
+    ]
+  }
 }
