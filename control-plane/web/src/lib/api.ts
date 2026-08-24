@@ -84,10 +84,31 @@ export async function listModules(): Promise<{ modules: ModuleEntry[] }> {
   return json(res);
 }
 
-export async function seedGraph(
-  repo: string,
-  ref: string
-): Promise<Record<string, number | string>> {
+export interface SeedSummary {
+  repo: string;
+  ref: string;
+  commit_sha: string | null;
+  pinned: boolean;
+  indexer_version: string;
+  modules: number;
+  files: number;
+  dependencies: number;
+  file_imports: number;
+  edges_written: number;
+  removed: { edges: number; nodes: number };
+  resolution: {
+    total_imports: number;
+    resolved: number;
+    external_package: number;
+    unresolved_relative: number;
+    unresolved_internal: number;
+    internal_capture_rate: number;
+    most_missed: [string, number][];
+  };
+  skipped_files: number;
+}
+
+export async function seedGraph(repo: string, ref: string): Promise<SeedSummary> {
   const res = await fetch(`${API_URL}/api/graph/seed`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

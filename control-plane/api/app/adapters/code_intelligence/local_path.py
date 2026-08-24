@@ -6,6 +6,7 @@ a client whose code is not on GitHub can still index a checkout.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from app.adapters.code_intelligence.github import _index_from_sources
@@ -47,5 +48,46 @@ class LocalPathCodeIntelligence:
             sources[rel] = path.read_text(encoding="utf-8", errors="replace")
 
         return _index_from_sources(
-            str(base), ref, sources, skipped, tsconfig, self._max_depth
+            _repo_identity(base), ref, sources, skipped, tsconfig,
+            self._max_depth, _head_sha(base),
         )
+
+
+def _head_sha(base: Path) -> str | None:
+    """The commit the working copy is on.
+
+    Exact here, unlike the archive case, because the repository is right
+    there. A dirty tree still reports its HEAD — the index describes what was
+    read, and uncommitted edits make it unpinnable rather than wrong, which is
+    a distinction the seeder surfaces rather than resolves.
+    """
+    sha = _git(base, "rev-parse", "HEAD")
+    return sha if sha and len(sha) == 40 else None
+
+
+def _repo_identity(base: Path) -> str:
+    """What to call this repository in the graph.
+
+    The same repository indexed from a checkout and from a GitHub archive
+    must land on one identity, or the two indexes are two graphs. The remote
+    slug is what the GitHub adapter uses, so prefer it and fall back to the
+    directory name rather than to a relative path nobody can resolve later.
+    """
+    url = _git(base, "config", "--get", "remote.origin.url")
+    if url:
+        slug = url.removesuffix(".git").replace(":", "/")
+        parts = [p for p in slug.split("/") if p]
+        if len(parts) >= 2:
+            return "/".join(parts[-2:])
+    return base.resolve().name
+
+
+def _git(base: Path, *args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(base), *args],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None if result.returncode == 0 else None

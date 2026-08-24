@@ -16,6 +16,9 @@ router = APIRouter(prefix="/graph", tags=["graph"])
 class SeedRequest(BaseModel):
     repo: str | None = None
     ref: str | None = None
+    # Derived structure is rebuilt rather than accumulated. Pass false only to
+    # layer an index on top of an existing one, which is rarely what you want.
+    rebuild: bool = True
 
 
 @router.post("/seed")
@@ -33,6 +36,7 @@ async def seed_graph(request: Request, body: SeedRequest) -> dict:
         request.app.state.adapters.code_intelligence,
         repo=repo,
         ref=ref,
+        rebuild=body.rebuild,
     )
 
 

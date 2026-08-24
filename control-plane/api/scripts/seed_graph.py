@@ -51,9 +51,17 @@ async def main() -> int:
 
     if args.dry_run:
         index = await indexer.index(repo, ref)
+        prov = index.provenance
+        print(f"{index.repo}@{prov.commit_sha or 'UNPINNED'} "
+              f"(indexer {prov.indexer_version})")
         print(f"{len(index.modules)} modules, {len(index.files)} files, "
-              f"{len(index.dependencies)} dependencies "
-              f"({index.unresolved_imports} unresolved imports)")
+              f"{len(index.dependencies)} dependencies, "
+              f"{len(index.imports)} file imports")
+        print(f"resolution: {prov.internal_capture_rate:.1%} of internal imports captured "
+              f"({prov.unresolved_internal} internal + {prov.unresolved_relative} relative "
+              f"unresolved, {prov.external_package} external)")
+        for spec, count in prov.most_missed[:10]:
+            print(f"  missed x{count}  {spec}")
         for dep in sorted(index.dependencies, key=lambda d: -d.weight)[:15]:
             print(f"  {dep.source} -> {dep.target}  (x{dep.weight})")
         return 0
@@ -62,10 +70,17 @@ async def main() -> int:
     graph = SqlContextGraph(build_entity_resolver(settings))
     summary = await seed(graph, indexer, repo=repo, ref=ref)
 
-    print(f"seeded {summary['repo']}@{summary['ref']}")
-    for key in ("modules", "files", "dependencies", "edges_written",
-                "unresolved_imports", "skipped_files"):
+    print(f"seeded {summary['repo']}@{summary['commit_sha'] or 'UNPINNED'} "
+          f"(ref {summary['ref']}, indexer {summary['indexer_version']})")
+    for key in ("modules", "files", "dependencies", "file_imports",
+                "edges_written", "skipped_files"):
         print(f"  {key:20s} {summary[key]}")
+    print(f"  {'removed':20s} {summary['removed']}")
+    resolution = summary["resolution"]
+    print(f"  {'capture rate':20s} {resolution['internal_capture_rate']:.1%} "
+          f"({resolution['unresolved_internal']} internal imports dropped)")
+    if not summary["pinned"]:
+        print("  WARNING: this index names no commit and cannot be compared with another")
     return 0
 
 

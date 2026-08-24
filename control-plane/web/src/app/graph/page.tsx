@@ -30,9 +30,17 @@ export default function GraphPage() {
     setMessage(null);
     try {
       const summary = await seedGraph(repo.trim(), ref.trim() || "main");
+      const pin = summary.commit_sha
+        ? summary.commit_sha.slice(0, 7)
+        : "no commit — this index cannot be compared with another";
+      const capture = (summary.resolution.internal_capture_rate * 100).toFixed(1);
       setMessage(
-        `Indexed ${summary.modules} modules and ${summary.files} files, ` +
-          `${summary.dependencies} dependencies, ${summary.edges_written} edges written.`
+        `Indexed ${summary.repo} at ${pin}: ${summary.modules} modules, ` +
+          `${summary.files} files, ${summary.file_imports} file imports, ` +
+          `${summary.dependencies} module dependencies. ` +
+          `Captured ${capture}% of imports that look internal — ` +
+          `${summary.resolution.unresolved_internal} dropped. ` +
+          `Replaced the previous index (${summary.removed.edges} edges removed).`
       );
       await load();
     } catch (err) {

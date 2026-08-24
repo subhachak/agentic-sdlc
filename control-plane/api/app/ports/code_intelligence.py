@@ -16,6 +16,14 @@ from pydantic import BaseModel, Field
 class CodeFile(BaseModel):
     path: str
     module: str
+    language: str = "unknown"
+    # Content identity, so a later index can tell which files actually
+    # changed without re-reading the previous snapshot.
+    sha256: str = ""
+    loc: int = 0
+    # The names this file offers its importers. Present so a change can later
+    # be classified as touching a public surface or only an internal one.
+    exports: list[str] = Field(default_factory=list)
 
 
 class CodeModule(BaseModel):
@@ -37,6 +45,30 @@ class FileImport(BaseModel):
     target: str
 
 
+class IndexProvenance(BaseModel):
+    """What produced this index, and how completely.
+
+    Every number a gate quotes is only as good as the snapshot behind it, so
+    the snapshot has to be able to say what it was. An index that cannot name
+    its commit cannot be compared with the next one, and an index that hides
+    its unresolved imports flatters itself.
+    """
+
+    commit_sha: str | None = None
+    indexer_version: str = ""
+    indexed_at: str = ""
+    files_indexed: int = 0
+    skipped_files: int = 0
+    total_imports: int = 0
+    resolved: int = 0
+    external_package: int = 0
+    unresolved_relative: int = 0
+    unresolved_internal: int = 0
+    # resolved / (resolved + unresolved). The headline completeness number.
+    internal_capture_rate: float = 1.0
+    most_missed: list[tuple[str, int]] = Field(default_factory=list)
+
+
 class CodeIndex(BaseModel):
     repo: str
     ref: str
@@ -44,8 +76,7 @@ class CodeIndex(BaseModel):
     files: list[CodeFile] = Field(default_factory=list)
     dependencies: list[CodeDependency] = Field(default_factory=list)
     imports: list[FileImport] = Field(default_factory=list)
-    unresolved_imports: int = 0
-    skipped_files: int = 0
+    provenance: IndexProvenance = Field(default_factory=IndexProvenance)
 
 
 class CodeIntelligence(Protocol):

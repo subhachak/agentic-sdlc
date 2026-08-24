@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import io
+import re
 import tarfile
+from datetime import datetime, timezone
 
 import httpx
 
 from app.adapters.code_intelligence.parsing import (
+    INDEXER_VERSION,
     build_index,
+    file_metadata,
     is_ignored,
     is_source,
     load_aliases,
@@ -29,6 +33,7 @@ from app.ports.code_intelligence import (
     CodeIndex,
     CodeModule,
     FileImport,
+    IndexProvenance,
 )
 
 _API = "https://api.github.com"
@@ -58,8 +63,29 @@ class GitHubCodeIntelligence:
 
     async def index(self, repo: str, ref: str = "main") -> CodeIndex:
         archive = await self._fetch_archive(repo, ref)
-        sources, skipped, tsconfig = _read_archive(archive)
-        return _index_from_sources(repo, ref, sources, skipped, tsconfig, self._max_depth)
+        sources, skipped, tsconfig, commit_sha = _read_archive(archive)
+        if commit_sha is None:
+            commit_sha = await self._resolve_sha(repo, ref)
+        return _index_from_sources(
+            repo, ref, sources, skipped, tsconfig, self._max_depth, commit_sha
+        )
+
+    async def _resolve_sha(self, repo: str, ref: str) -> str | None:
+        """Ask which commit a ref points at.
+
+        Only reached when the archive's wrapper directory did not carry it —
+        codeload names its wrapper after the ref, not the sha. Failure is not
+        fatal: the index records an unpinned provenance and the seeder reports
+        it rather than pretending to a commit it does not know.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                resp = await client.get(
+                    f"{_API}/repos/{repo}/commits/{ref}", headers=self._headers
+                )
+            return resp.json().get("sha") if resp.status_code == 200 else None
+        except (httpx.HTTPError, ValueError):
+            return None
 
     def _archive_urls(self, repo: str, ref: str) -> list[str]:
         """Where to look for the archive, in order of reliability.
@@ -110,17 +136,29 @@ class GitHubCodeIntelligence:
         )
 
 
-def _read_archive(blob: bytes) -> tuple[dict[str, str], int, str | None]:
-    """Pull source text out of a tarball, stripping GitHub's wrapper directory."""
+_WRAPPER_SHA = re.compile(r"-([0-9a-f]{40})$")
+
+
+def _read_archive(blob: bytes) -> tuple[dict[str, str], int, str | None, str | None]:
+    """Pull source text out of a tarball, stripping GitHub's wrapper directory.
+
+    Also returns the commit the archive was cut from, when the wrapper name
+    carries it. An index that cannot name its commit cannot be compared with
+    the next one, so this is worth reading rather than a second API call.
+    """
     sources: dict[str, str] = {}
     skipped = 0
     tsconfig: str | None = None
+    commit_sha: str | None = None
 
     with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as archive:
         for member in archive:
             if not member.isfile():
                 continue
             # GitHub wraps everything in `owner-repo-sha/`.
+            if commit_sha is None and "/" in member.name:
+                found = _WRAPPER_SHA.search(member.name.split("/", 1)[0])
+                commit_sha = found.group(1) if found else None
             path = member.name.split("/", 1)[1] if "/" in member.name else member.name
             if not path or is_ignored(path):
                 continue
@@ -142,7 +180,7 @@ def _read_archive(blob: bytes) -> tuple[dict[str, str], int, str | None]:
                 continue
             sources[path] = handle.read().decode("utf-8", "replace")
 
-    return sources, skipped, tsconfig
+    return sources, skipped, tsconfig, commit_sha
 
 
 def _index_from_sources(
@@ -152,9 +190,10 @@ def _index_from_sources(
     skipped: int,
     tsconfig: str | None,
     max_depth: int,
+    commit_sha: str | None = None,
 ) -> CodeIndex:
     aliases = load_aliases(tsconfig)
-    modules, pairs, imports, unresolved = build_index(
+    modules, pairs, imports, stats = build_index(
         sources, aliases=aliases, alias_root="", max_depth=max_depth
     )
 
@@ -173,12 +212,21 @@ def _index_from_sources(
             CodeModule(id=cid, paths=sorted(paths))
             for cid, paths in sorted(by_component.items())
         ],
-        files=[CodeFile(path=p, module=c) for p, c in sorted(modules.items())],
+        files=[
+            CodeFile(path=p, module=c, **file_metadata(p, sources[p]))
+            for p, c in sorted(modules.items())
+        ],
         dependencies=[
             CodeDependency(source=s, target=t, weight=w)
             for (s, t), w in sorted(weights.items())
         ],
         imports=[FileImport(source=a, target=b) for a, b in sorted(set(imports))],
-        unresolved_imports=unresolved,
-        skipped_files=skipped,
+        provenance=IndexProvenance(
+            commit_sha=commit_sha,
+            indexer_version=INDEXER_VERSION,
+            indexed_at=datetime.now(timezone.utc).isoformat(),
+            files_indexed=len(sources),
+            skipped_files=skipped,
+            **stats.as_dict(),
+        ),
     )

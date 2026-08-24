@@ -11,7 +11,9 @@ import pytest
 
 from app.adapters.code_intelligence.local_path import LocalPathCodeIntelligence
 from app.adapters.code_intelligence.parsing import (
+    INDEXER_VERSION,
     build_index,
+    file_metadata,
     module_of,
     is_ignored,
     is_source,
@@ -20,9 +22,15 @@ from app.adapters.code_intelligence.parsing import (
     resolve_js,
     resolve_py,
 )
-from app.core.context_graph import Assertion
+from app.core.context_graph import Assertion, NodeSpec
 from app.core.seeding import assertions_from_index, seed
-from app.ports.code_intelligence import CodeModule, CodeDependency, CodeIndex
+from app.ports.code_intelligence import (
+    CodeDependency,
+    CodeFile,
+    CodeIndex,
+    CodeModule,
+    IndexProvenance,
+)
 from tests.graph_doubles import InMemoryContextGraph
 
 
@@ -118,14 +126,57 @@ def test_only_cross_component_imports_become_dependencies():
 
 def test_unresolvable_local_imports_are_counted_not_silently_dropped():
     sources = {"app/a.py": "from .missing import thing"}
-    _, _, _imports, unresolved = build_index(sources, max_depth=2)
-    assert unresolved == 1
+    _, _, _imports, stats = build_index(sources, max_depth=2)
+    assert stats.unresolved_relative == 1
+    assert stats.capture_rate == 0.0
 
 
 def test_external_packages_do_not_count_as_unresolved():
     sources = {"app/a.py": "import os\nimport httpx"}
-    _, pairs, _imports, unresolved = build_index(sources, max_depth=2)
-    assert (pairs, unresolved) == ([], 0)
+    _, pairs, _imports, stats = build_index(sources, max_depth=2)
+    assert (pairs, stats.unresolved_relative, stats.unresolved_internal) == ([], 0, 0)
+    assert stats.external == 2
+
+
+def test_an_unresolved_alias_is_reported_not_filed_as_an_npm_package():
+    """The failure this exists to catch: a monorepo whose tsconfig was not
+    found makes every `@/...` import look like an external dependency. The
+    old counter only incremented for relative imports, so the seed reported
+    perfect resolution while dropping every aliased edge."""
+    sources = {"web/page.tsx": "import { api } from '@/lib/api'\nimport React from 'react'"}
+    _, _, imports, stats = build_index(sources, max_depth=2)
+
+    assert imports == []
+    assert stats.unresolved_internal == 1   # the alias
+    assert stats.external == 1              # react, genuinely external
+    assert stats.capture_rate == 0.0
+    assert stats.missed_specs == {"@/lib/api": 1}
+
+
+def test_absolute_python_imports_that_should_have_resolved_are_reported():
+    sources = {
+        "svc/app/api.py": "from app.core.gone import thing\nimport json",
+        "svc/app/core/__init__.py": "",
+    }
+    _, _, _imports, stats = build_index(sources, max_depth=2)
+
+    assert stats.unresolved_internal == 1   # app.core.gone is ours and missing
+    assert stats.external == 1              # json is not
+
+
+def test_a_file_carries_its_language_hash_and_exported_surface():
+    text = "export function alpha() {}\nexport const beta = 1\n"
+    meta = file_metadata("web/thing.ts", text)
+
+    assert meta["language"] == "typescript"
+    assert meta["exports"] == ["alpha", "beta"]
+    assert len(meta["sha256"]) == 64
+    assert meta["loc"] == 2
+
+
+def test_python_exports_omit_private_names():
+    meta = file_metadata("app/x.py", "def public():\n    pass\ndef _private():\n    pass\n")
+    assert meta["exports"] == ["public"]
 
 
 # --- the local adapter -----------------------------------------------------
@@ -154,7 +205,25 @@ INDEX = CodeIndex(
     repo="acme/thing", ref="main",
     modules=[CodeModule(id="core", paths=["core/a.py", "core/b.py"]),
                 CodeModule(id="api", paths=["api/c.py"])],
+    files=[
+        CodeFile(path="core/a.py", module="core", language="python",
+                 sha256="0" * 64, loc=4, exports=["alpha"]),
+        CodeFile(path="core/b.py", module="core", language="python",
+                 sha256="1" * 64, loc=2, exports=[]),
+        CodeFile(path="api/c.py", module="api", language="python",
+                 sha256="2" * 64, loc=9, exports=["handler"]),
+    ],
     dependencies=[CodeDependency(source="api", target="core", weight=3)],
+    provenance=IndexProvenance(
+        commit_sha="a" * 40,
+        indexer_version=INDEXER_VERSION,
+        indexed_at="2026-08-24T00:00:00+00:00",
+        files_indexed=3,
+        total_imports=5,
+        resolved=3,
+        external_package=2,
+        internal_capture_rate=1.0,
+    ),
 )
 
 
@@ -196,13 +265,89 @@ async def test_naming_a_component_again_does_not_erase_what_is_known():
 
 
 @pytest.mark.asyncio
-async def test_re_seeding_is_idempotent():
+async def test_re_seeding_rebuilds_rather_than_accumulating():
+    """Re-seeding writes the same structure again, having first removed what
+    the previous index wrote. What must not change is the result: the same
+    repository indexed twice is the same graph, not a doubled one."""
     graph = InMemoryContextGraph()
     first = await seed(graph, _Indexer(INDEX), repo="acme/thing")
+    before = await graph.counts()
+
     second = await seed(graph, _Indexer(INDEX), repo="acme/thing")
 
-    assert first["edges_written"] == 4
-    assert second["edges_written"] == 0
+    assert first["edges_written"] == second["edges_written"] == 4
+    assert second["removed"] == {"edges": 4, "nodes": 5}
+    assert await graph.counts() == before
+
+
+@pytest.mark.asyncio
+async def test_a_rebuild_drops_nodes_whose_type_was_renamed():
+    """Node identity includes the node's type, so renaming a type strands the
+    old nodes beside the new ones. Purging by phase is what stops a rename
+    from leaving a parallel graph behind."""
+    graph = InMemoryContextGraph()
+    await graph.ingest(
+        "seed",
+        "code-index",
+        [Assertion(
+            "BELONGS_TO",
+            NodeSpec("SOURCE_ARTIFACT", "code", "api/c.py", {}),
+            NodeSpec("MODULE", "code", "api", {}),
+        )],
+    )
+    stale = await graph.counts()
+    assert stale["nodes"]["MODULE"] == 1
+
+    await seed(graph, _Indexer(INDEX), repo="acme/thing")
+
+    modules = {n["external_id"] for n in graph.nodes.values() if n["type"] == "MODULE"}
+    assert modules == {"api", "core"}          # not a third, stranded one
+    assert (await graph.counts())["nodes"]["SOURCE_ARTIFACT"] == 3
+
+
+@pytest.mark.asyncio
+async def test_a_rebuild_keeps_what_another_phase_asserted():
+    """Purge is scoped to the phase that wrote it. A release that recorded
+    which files it contained is an audit record, and re-indexing the
+    repository must not erase it."""
+    graph = InMemoryContextGraph()
+    await seed(graph, _Indexer(INDEX), repo="acme/thing")
+    await graph.ingest(
+        "run-1",
+        "release",
+        [Assertion(
+            "CONTAINS",
+            NodeSpec("RELEASE", "cd", "r-1", {}),
+            NodeSpec("SOURCE_ARTIFACT", "code", "api/c.py", {}),
+        )],
+    )
+
+    await seed(graph, _Indexer(INDEX), repo="acme/thing")
+
+    kept = [e for e in graph.edges if e["type"] == "CONTAINS"]
+    assert len(kept) == 1
+    assert any(
+        n["type"] == "SOURCE_ARTIFACT" and n["external_id"] == "api/c.py"
+        for n in graph.nodes.values()
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_seed_reports_the_commit_it_indexed():
+    graph = InMemoryContextGraph()
+    summary = await seed(graph, _Indexer(INDEX), repo="acme/thing")
+
+    assert summary["commit_sha"] == "a" * 40
+    assert summary["pinned"] is True
+    assert summary["indexer_version"] == INDEXER_VERSION
+    assert summary["resolution"]["internal_capture_rate"] == 1.0
+
+    artifact = next(
+        n for n in graph.nodes.values()
+        if n["type"] == "SOURCE_ARTIFACT" and n["external_id"] == "api/c.py"
+    )
+    assert artifact["projection"]["language"] == "python"
+    assert artifact["projection"]["exports"] == ["handler"]
 
 
 class _Indexer:

@@ -33,6 +33,16 @@ class InMemoryContextGraph:
         }
         return nid
 
+    async def purge_phase(self, phase: str) -> dict[str, int]:
+        doomed = [e for e in self.edges if e.get("phase") == phase]
+        touched = {e["src_id"] for e in doomed} | {e["dst_id"] for e in doomed}
+        self.edges = [e for e in self.edges if e.get("phase") != phase]
+        still = {e["src_id"] for e in self.edges} | {e["dst_id"] for e in self.edges}
+        orphans = touched - still
+        for nid in orphans:
+            self.nodes.pop(nid, None)
+        return {"edges": len(doomed), "nodes": len(orphans)}
+
     async def ingest(self, run_id: str, phase: str, assertions: list[Assertion]) -> int:
         written = 0
         for a in assertions:

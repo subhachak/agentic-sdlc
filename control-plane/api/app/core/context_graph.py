@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.core.db import get_sessionmaker
@@ -53,6 +53,8 @@ class ContextGraphStore(Protocol):
     async def ingest(
         self, run_id: str, phase: str, assertions: list[Assertion]
     ) -> int: ...
+
+    async def purge_phase(self, phase: str) -> dict[str, int]: ...
 
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]: ...
 
@@ -159,6 +161,48 @@ class SqlContextGraph:
 
             await session.commit()
         return written
+
+    async def purge_phase(self, phase: str) -> dict[str, int]:
+        """Remove everything one phase asserted, and any node left orphaned.
+
+        Derived structure is rebuilt, not migrated. What makes this safe is
+        that it is scoped by phase: an edge another phase wrote about the same
+        file is an audit record and stays, and so does the node it hangs from.
+        A node is only dropped once nothing at all refers to it.
+        """
+        async with get_sessionmaker()() as session:
+            edges = (
+                await session.execute(select(GraphEdge).where(GraphEdge.phase == phase))
+            ).scalars().all()
+            touched = {e.src_id for e in edges} | {e.dst_id for e in edges}
+            for edge in edges:
+                await session.delete(edge)
+            await session.flush()
+
+            still_referenced: set[str] = set()
+            if touched:
+                rows = (
+                    await session.execute(
+                        select(GraphEdge.src_id, GraphEdge.dst_id).where(
+                            or_(
+                                GraphEdge.src_id.in_(touched),
+                                GraphEdge.dst_id.in_(touched),
+                            )
+                        )
+                    )
+                ).all()
+                for src, dst in rows:
+                    still_referenced.update((src, dst))
+
+            orphans = touched - still_referenced
+            for node_id_ in orphans:
+                node = await session.get(GraphNode, node_id_)
+                if node is not None:
+                    await session.delete(node)
+
+            await session.commit()
+
+        return {"edges": len(edges), "nodes": len(orphans)}
 
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]:
         async with get_sessionmaker()() as session:
