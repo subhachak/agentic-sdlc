@@ -287,10 +287,12 @@ def set_running_furniture(section, content_width=6.5):
     header.is_linked_to_previous = False
     p = header.paragraphs[0]
     p.text = ""
+    p.style = "Normal"
     p_pr = p._p.get_or_add_pPr()
     old_tabs = p_pr.find(qn("w:tabs"))
     if old_tabs is not None:
         p_pr.remove(old_tabs)
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p.paragraph_format.space_after = Pt(3)
     p.paragraph_format.tab_stops.add_tab_stop(Inches(content_width), WD_TAB_ALIGNMENT.RIGHT)
     left = p.add_run("AGENTIC PDLC CONTEXT FRAMEWORK")
@@ -304,10 +306,12 @@ def set_running_furniture(section, content_width=6.5):
     footer.is_linked_to_previous = False
     fp = footer.paragraphs[0]
     fp.text = ""
+    fp.style = "Normal"
     fp_pr = fp._p.get_or_add_pPr()
     old_footer_tabs = fp_pr.find(qn("w:tabs"))
     if old_footer_tabs is not None:
         fp_pr.remove(old_footer_tabs)
+    fp.alignment = WD_ALIGN_PARAGRAPH.LEFT
     fp.paragraph_format.space_before = Pt(3)
     fp.paragraph_format.tab_stops.add_tab_stop(Inches(content_width), WD_TAB_ALIGNMENT.RIGHT)
     lr = fp.add_run("Leadership Review | Future-State Vision")
@@ -553,132 +557,94 @@ def build_diagrams():
     }}''')
 
     diagrams[2] = render_dot("02_context_fabric", DOT_HEADER + f'''
-      rankdir=LR;
-      subgraph cluster_sources {{ label="AUTHORITATIVE SOURCES"; color="#{BORDER}"; style="rounded,dashed";
-        a [fillcolor="#F8FAFC", label="Business context\nRequirements | Portfolio | Controls"];
-        b [fillcolor="#F8FAFC", label="Engineering context\nGit | API catalogs | Build graph | CMDB"];
-        c [fillcolor="#F8FAFC", label="Assurance & operations\nTests | CI | Scanners | Telemetry | Incidents"];
-      }}
-      subgraph cluster_acquire {{ label="ACQUIRE & NORMALIZE"; color="#{VIOLET}"; style="rounded,dashed";
-        d [fillcolor="#F5F3FF", color="#{VIOLET}", label="BYO connectors\nWebhooks | Polling | Reconciliation"];
-        e [fillcolor="#F5F3FF", color="#{VIOLET}", label="Analyzers & adapters\nAST/LSP | Contracts | Runtime | Documents"];
-        f [fillcolor="#F5F3FF", color="#{VIOLET}", label="Classification & redaction\nData minimization | Policy filters"];
-      }}
-      subgraph cluster_validate {{ label="IDENTITY, ONTOLOGY & TRUST"; color="#{NAVY}"; style="rounded";
-        g [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="Scope & identity resolver\nTenant | Project | System | Revision"];
-        h [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="Ontology & schema registry\nTypes | Semantics | Versions"];
-        i [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="Assertion gateway\nValidate | Provenance | Confidence | Dedupe"];
-      }}
-      subgraph cluster_store {{ label="POLYGLOT CONTEXT FABRIC"; color="#{TEAL}"; style="rounded";
-        j [shape=cylinder, fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Immutable assertion ledger"];
-        k [shape=cylinder, fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Temporal topology & domain graph"];
-        l [shape=cylinder, fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Evidence object store"];
-        m [shape=cylinder, fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Hybrid retrieval & evaluation stores"];
-      }}
-      subgraph cluster_services {{ label="CONTEXT SERVICES"; color="#{BLUE}"; style="rounded";
-        n [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="Hybrid grounding & traceability"];
-        o [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="Impact intelligence & test obligations"];
-        p [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="Readiness, policy context & evidence explorer"];
-      }}
-      a -> d [label="events / revisions"];
-      b -> e [label="source / contracts"];
-      c -> d [label="evidence / telemetry"];
-      d -> f [label="candidate assertions"];
-      e -> f;
-      f -> g [label="normalized assertion"];
-      g -> h [label="resolved identity"];
-      h -> i [label="typed semantics"];
-      i -> j [label="append only", color="#{TEAL}"];
-      j -> k [label="materialize", color="#{TEAL}"];
-      j -> l [label="evidence ref", color="#{TEAL}"];
-      j -> m [label="index / measure", color="#{TEAL}"];
-      k -> n [label="as-of view"];
-      l -> p [label="signed evidence"];
-      m -> n [label="ranked context"];
-      k -> o [label="typed paths"];
-      n -> o [label="grounded context"];
-      o -> p [label="assessment + gaps"];
+      rankdir=TB;
+      sources [fillcolor="#F8FAFC", color="#{SLATE}", label="AUTHORITATIVE ENTERPRISE SOURCES\nBusiness: requirements | portfolio | controls\nEngineering: Git | APIs | build graph | CMDB\nAssurance: tests | CI | telemetry | incidents"];
+      acquire [fillcolor="#F5F3FF", color="#{VIOLET}", label="ACQUIRE & NORMALIZE\nBYO connectors: webhook | poll | reconcile\nAnalyzers: AST/LSP | contracts | runtime | documents\nClassification | redaction | policy filters"];
+      trust [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="IDENTITY, ONTOLOGY & TRUST\nResolve tenant | project | system | revision\nValidate typed semantics and schema versions\nStamp provenance | confidence | freshness | dedupe"];
+      fabric [shape=cylinder, fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="POLYGLOT CONTEXT & EVIDENCE FABRIC\nImmutable assertion ledger\nTemporal topology and domain graph\nEvidence / artifact object store\nHybrid retrieval and evaluation stores"];
+      services [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="CONTEXT & DECISION SERVICES\nAs-of query | traceability | hybrid grounding\nCanonical impact and test obligations\nReadiness | policy context | evidence explorer"];
+      consumers [fillcolor="#F8FAFC", color="#{SLATE}", label="GOVERNED CONSUMERS\nLifecycle agents | Developers | Approvers | Auditors\nAPIs and event subscribers\nEvaluation and analytics"];
+      {{rank=same; sources; acquire; trust}}
+      {{rank=same; fabric; services; consumers}}
+      sources -> acquire [label="events | revisions | observations"];
+      acquire -> trust [label="candidate assertions"];
+      trust -> fabric [label="append validated assertion", color="#{TEAL}"];
+      fabric -> services [label="revision-consistent projections"];
+      services -> consumers [label="answer + provenance + gaps"];
+      consumers -> fabric [label="evidence + outcomes", style=dashed, color="#{TEAL}", constraint=false];
+      trust -> services [label="identity + semantics", style=dashed, color="#{NAVY}"];
     }}''')
 
     diagrams[3] = render_dot("03_temporal_model", DOT_HEADER + f'''
-      rankdir=LR;
-      event [shape=note, fillcolor="#F8FAFC", label="Observed domain event\nRequirement changed | Code indexed\nTest executed | Release deployed"];
-      envelope [shape=record, fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="{{ASSERTION ENVELOPE|tenant + project + system|entity + predicate + object|source + external identity|repo + revision / run + attempt|valid time + observed time|producer + schema version|confidence + evidence reference}}"];
-      identity [shape=record, fillcolor="#F5F3FF", color="#{VIOLET}", label="{{IDENTITY RESOLUTION|Stable entity identity|Immutable entity revision|Immutable execution attempt}}"];
-      ledger [shape=cylinder, fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Bitemporal assertion ledger\nAppend | Supersede | Retract\nNever rewrite historical evidence"];
-      snapshot [shape=record, fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="{{TOPOLOGY SNAPSHOT|project + systems|resolved revisions|provider versions|quality vector|content checksum|activation state}}"];
-      views [shape=record, fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="{{MATERIALIZED VIEWS|Current validated graph|As-of-commit graph|As-of-run trace|Readiness projection|Evaluation history}}"];
-      consumers [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="Reproducible consumers\nAgent grounding | Impact | Audit\nEvidence explorer | Analytics"];
+      rankdir=TB;
+      event [shape=note, fillcolor="#F8FAFC", label="OBSERVED DOMAIN EVENT\nRequirement changed | Code indexed\nTest executed | Release deployed"];
+      envelope [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="ASSERTION ENVELOPE\nTenant | project | system | stable entity\nPredicate | object | source identity\nRevision / run / attempt | schema version\nValid time | observed time | confidence | evidence ref"];
+      identity [fillcolor="#F5F3FF", color="#{VIOLET}", label="IDENTITY RESOLUTION\nStable logical entity\nImmutable entity revision\nImmutable execution attempt"];
+      ledger [shape=cylinder, fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="BITEMPORAL ASSERTION LEDGER\nAppend | supersede | retract\nNever rewrite historical evidence"];
+      snapshot [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="VALIDATED TOPOLOGY SNAPSHOT\nProject + revision set | provider versions\nQuality vector | checksum | activation state"];
+      views [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="MATERIALIZED, PURPOSE-SPECIFIC VIEWS\nCurrent validated graph | as-of-commit graph\nAs-of-run trace | readiness | evaluation history"];
+      consumers [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="REPRODUCIBLE CONSUMERS\nAgent grounding | Impact | QA | Audit\nEvidence explorer | Analytics"];
       valid [fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="VALID TIME\nWhen true in source"];
       system [fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="SYSTEM TIME\nWhen observed and stored"];
       selector [fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="QUERY SELECTOR\nProject + revision + as-of time"];
-      event -> envelope [label="normalize & stamp"];
+      {{rank=same; event; envelope; identity}}
+      {{rank=same; ledger; snapshot; views; consumers}}
+      {{rank=same; valid; system; selector}}
+      event -> envelope [label="normalize + stamp"];
       envelope -> identity [label="resolve"];
       identity -> ledger [label="append assertion"];
-      ledger -> snapshot [label="validated facts"];
+      ledger -> snapshot [label="validated fact set"];
       snapshot -> views [label="atomic activation"];
       ledger -> views [label="evidence history", style=dashed];
-      views -> consumers [label="result + complete lineage"];
-      {{rank=same; valid; system; selector}}
+      views -> consumers [label="answer + complete lineage"];
       valid -> system -> selector [color="#{AMBER}"];
       selector -> views [label="temporal scope", color="#{AMBER}"];
     }}''')
 
     diagrams[4] = render_dot("04_impact_engine", DOT_HEADER + f'''
-      rankdir=LR;
-      change [shape=record, fillcolor="#F8FAFC", label="{{CHANGESET|base + head revisions|add / modify / rename / delete|symbol, API, schema, config, infra diffs}}"];
-      semantic [fillcolor="#F5F3FF", color="#{VIOLET}", label="Semantic change analysis\nLanguage-aware parsing\nCompatibility + ownership\nUnmapped-change detection"];
-      subgraph cluster_signals {{ label="MULTI-SIGNAL PROPAGATION"; color="#{TEAL}"; style="rounded";
-        s1 [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Static calls & imports"];
-        s2 [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="API, event & data contracts"];
-        s3 [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Runtime trace topology"];
-        s4 [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Build & deployment topology"];
-        s5 [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Requirements, ownership & history"];
-        s6 [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Test coverage & defect evidence"];
-      }}
-      fusion [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="Signal fusion & path scoring\nChange severity | Business criticality\nProvenance | Freshness | Confidence\nTraversal budget + client policy"];
-      tiers [shape=record, fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="{{EXPLAINED IMPACT TIERS|T0  Directly changed|T1  Must inspect / must test|T2  Probable downstream impact|T3  Notify / monitor|UNKNOWN  Unmapped or insufficient evidence}}"];
-      consumers [shape=record, fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="{{DECISION CONSUMERS|Design authorization|Actual-change containment|Regression selection|Test-data scope|Release-risk decision}}"];
-      eval [fillcolor="#F5F3FF", color="#{VIOLET}", label="Outcome calibration\nFailures | Escapes | Incidents\nOverrides | Runtime behavior"];
+      rankdir=TB;
+      change [fillcolor="#F8FAFC", color="#{SLATE}", label="1  SEMANTIC CHANGESET\nImmutable base + head revisions\nAdd | modify | rename | delete\nSymbol | API | schema | config | infrastructure"];
+      semantic [fillcolor="#F5F3FF", color="#{VIOLET}", label="2  SEED RESOLUTION\nLanguage-aware parsing and compatibility\nMap changed artifacts to entities and owners\nSurface every unmapped change"];
+      signals [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="3  MULTI-SIGNAL PROPAGATION\nStatic calls/imports | API/event/data contracts\nRuntime traces | build/deployment topology\nRequirements/ownership/history | test/defect evidence\nProvider-defined direction, trigger and budget semantics"];
+      fusion [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="4  SIGNAL FUSION & PATH SCORING\nChange severity | business criticality | path strength\nEvidence class | provenance | freshness | confidence\nTraversal budget | client risk policy | historical outcomes"];
+      tiers [fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="5  EXPLAINED IMPACT TIERS\nT0 Directly changed | T1 Must inspect / must test\nT2 Probable downstream | T3 Notify / monitor\nUNKNOWN Unmapped, stale or insufficient evidence"];
+      consumers [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="6  ONE CANONICAL IMPACT ASSESSMENT\nDesign authorization | implementation containment\nRegression and test-data scope | release-risk decision\nReason paths | obligations | blind spots | residual risk"];
+      eval [fillcolor="#F5F3FF", color="#{VIOLET}", label="7  OUTCOME CALIBRATION\nFailures | escapes | incidents | overrides\nRuntime behavior | false blocks | missed tests\nMeasured, versioned and governed adjustment"];
+      {{rank=same; change; semantic; signals; fusion}}
+      {{rank=same; tiers; consumers; eval}}
       change -> semantic [label="actual revision pair"];
-      semantic -> s1 [label="typed seeds"];
-      semantic -> s2; semantic -> s3; semantic -> s4; semantic -> s5; semantic -> s6;
-      s1 -> fusion [label="edge + provenance"];
-      s2 -> fusion; s3 -> fusion; s4 -> fusion; s5 -> fusion; s6 -> fusion;
-      fusion -> tiers [label="paths + risk + unknowns"];
-      tiers -> consumers [label="one canonical assessment"];
+      semantic -> signals [label="typed seeds"];
+      signals -> fusion [label="paths + evidence"];
+      fusion -> tiers [label="risk + unknowns"];
+      tiers -> consumers [label="immutable assessment"];
       consumers -> eval [label="observed outcomes", style=dashed, color="#{VIOLET}"];
-      eval -> fusion [label="versioned calibration", style=dashed, color="#{VIOLET}", constraint=false];
+      eval -> fusion [label="approved calibration", style=dashed, color="#{VIOLET}", constraint=false];
     }}''')
 
     diagrams[5] = render_dot("05_quality_data", DOT_HEADER + f'''
-      rankdir=LR;
-      impact [shape=record, fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="{{IMPACT ASSESSMENT|affected entities + paths|risk tiers + unknowns|mandatory test obligations}}"];
-      planner [fillcolor="#F5F3FF", color="#{VIOLET}", label="Assurance planner\nReuse / generate / explore\nRisk & policy prioritization"];
-      catalog [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="Versioned test catalog\nScenario | Script | Coverage edge\nOwner | Framework | History"];
-      data_plan [fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="Scenario-scoped data plan\nEntities | Privacy class | Volume\nIsolation | TTL | Cleanup proof"];
-      subgraph cluster_broker {{ label="TEST DATA BROKER"; color="#{TEAL}"; style="rounded,dashed";
-        synth [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Synthetic factory"];
-        subset [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Masked subset / tokenized clone"];
-        virtual [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Service virtualization"];
-        lease [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Data lease + idempotent setup\nTTL + teardown attestation"];
-      }}
-      runner [fillcolor="#F5F3FF", color="#{VIOLET}", label="Isolated execution plane\nEphemeral environment\nParallel runners + fault injection"];
-      evidence [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Evidence collector\nTest leaves | Coverage | Traces\nData lease | Artifacts | Defects"];
-      gate [shape=diamond, fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="Deterministic\nQA decision"];
-      ledger [shape=cylinder, fillcolor="#{TEAL}", color="#{TEAL}", fontcolor="white", label="Evidence ledger"];
+      rankdir=TB;
+      impact [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="1  IMPACT ASSESSMENT\nAffected entities + explanation paths\nRisk tiers + unknowns\nMandatory assurance obligations"];
+      planner [fillcolor="#F5F3FF", color="#{VIOLET}", label="2  ASSURANCE PLANNER\nResolve existing assets before generating\nReuse | author gaps | exploratory charters\nPrioritize by tier, criticality and policy"];
+      data_plan [fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="3  SCENARIO-SCOPED DATA PLAN\nEntities | privacy class | volume\nIsolation | lifetime | fidelity\nSetup and teardown obligations"];
+      broker [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="4  GOVERNED TEST DATA BROKER\nSynthetic factory | masked/minimized subset\nTokenized clone | service virtualization\nIdempotent DataLease | TTL | cleanup attestation"];
+      catalog [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="VERSIONED TEST & COVERAGE CATALOG\nScenario | script | framework | owner\nDeclared + static + runtime coverage\nReliability | defects | execution history"];
+      runner [fillcolor="#F5F3FF", color="#{VIOLET}", label="5  ISOLATED EXECUTION PLANE\nEphemeral environment and worktree\nParallel runners | fault injection\nRevision-bound attempt + lease identity"];
+      evidence [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="6  EVIDENCE COLLECTOR\nTest leaves | coverage | traces | artifacts\nData lease + teardown proof | defects\nSigned, attributable evidence bundle"];
+      gate [shape=diamond, fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="7  DETERMINISTIC\nQA DECISION"];
+      ledger [shape=cylinder, fillcolor="#{TEAL}", color="#{TEAL}", fontcolor="white", label="EVIDENCE LEDGER\nAttempt + observation\nDecision + attestation"];
+      {{rank=same; impact; planner; data_plan; broker}}
+      {{rank=same; catalog; runner; evidence; gate; ledger}}
       impact -> planner [label="obligations"];
-      catalog -> planner [label="eligible assets"];
+      catalog -> planner [label="eligible assets + coverage", style=dashed];
       planner -> data_plan [label="data requirements"];
-      data_plan -> synth; data_plan -> subset; data_plan -> virtual;
-      synth -> lease; subset -> lease; virtual -> lease;
+      data_plan -> broker [label="authorized strategy"];
       planner -> runner [label="execution plan"];
-      lease -> runner [label="scoped data lease"];
+      broker -> runner [label="scoped DataLease"];
       runner -> evidence [label="observed results"];
-      evidence -> gate [label="signed evidence bundle"];
-      evidence -> ledger [label="append"];
+      evidence -> gate [label="signed bundle"];
+      evidence -> ledger [label="append", style=dashed];
       gate -> ledger [label="policy decision"];
-      ledger -> catalog [label="coverage & reliability history", style=dashed, constraint=false];
+      ledger -> catalog [label="coverage + reliability history", style=dashed, constraint=false];
     }}''')
 
     diagrams[6] = render_dot("06_plugin_architecture", DOT_HEADER + f'''
@@ -704,39 +670,30 @@ def build_diagrams():
     }}''')
 
     diagrams[7] = render_dot("07_security_deployment", DOT_HEADER + f'''
-      rankdir=LR;
-      users [shape=record, fillcolor="#F8FAFC", label="{{ENTERPRISE USERS & IDENTITY|Administrators|Developers|Approvers|Auditors|IdP + MFA + RBAC/ABAC}}"];
-      subgraph cluster_control {{ label="AGENTIC PDLC CONTROL PLANE"; color="#{RED}"; penwidth=2; style="rounded,dashed";
-        api [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="API gateway + tenant router"];
-        orch [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="Orchestrator + checkpoint service"];
-        policy [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="Policy, plugin registry & audit"];
-        context [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="Context query + metadata services"];
-      }}
-      subgraph cluster_exec {{ label="CLIENT EXECUTION PLANE"; color="#{RED}"; penwidth=2; style="rounded,dashed";
-        verify [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Workload identity + signed-job verifier"];
-        sandbox [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Ephemeral runner + isolated worktree\nAgent sandbox + test runner"];
-        broker [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Test-data broker + evidence collector"];
-        local [shape=cylinder, fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="Client-local cache / context / artifacts"];
-      }}
-      systems [shape=record, fillcolor="#F8FAFC", label="{{CLIENT SYSTEMS & RUNTIME|Git + requirements + vault|Databases + CI/CD|Cloud / Kubernetes|Observability + SIEM}}"];
-      external [shape=record, style="rounded,filled,dashed", fillcolor="#F5F3FF", color="#{VIOLET}", label="{{OPTIONAL EXTERNAL PROVIDERS|Commercial model endpoint|Coding agent|Specialist analysis service}}"];
-      modes [fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="SUPPORTED DEPLOYMENT MODES\nSaaS control + client executor | Fully client-hosted | Regulated isolated enclave"];
-      users -> api [label="OIDC session + role claims"];
-      api -> orch [label="scoped command"];
-      orch -> verify [label="signed least-privilege work order", color="#{RED}"];
-      verify -> sandbox [label="attested job"];
-      sandbox -> systems [label="short-lived token / private link"];
-      systems -> broker [label="scenario-scoped data lease", dir=both];
-      broker -> local [label="evidence + teardown proof"];
-      local -> context [label="signed metadata / evidence refs", style=dashed, color="#{TEAL}"];
-      sandbox -> external [label="policy-filtered context", style=dashed, color="#{VIOLET}"];
-      policy -> orch [label="authorization"];
-      policy -> systems [label="audit events to SIEM", style=dashed, constraint=false];
-      modes -> verify [label="placement policy", color="#{AMBER}"];
+      rankdir=TB;
+      users [fillcolor="#F8FAFC", color="#{SLATE}", label="ENTERPRISE USERS & IDENTITY\nAdministrators | Developers | Approvers | Auditors\nEnterprise IdP | MFA | RBAC + attribute policy"];
+      control [style="rounded,filled,dashed", penwidth=2, fillcolor="#{NAVY}", color="#{RED}", fontcolor="white", label="CONTROL-PLANE TRUST BOUNDARY\nManaged or client-hosted\nAPI gateway + tenant router\nWorkflow orchestrator + checkpoints\nPolicy engine + human authority\nContext query + provider registry\nAudit, budgets and observability"];
+      execution [style="rounded,filled,dashed", penwidth=2, fillcolor="#{PALE_TEAL}", color="#{RED}", label="CLIENT EXECUTION TRUST BOUNDARY\nWorkload identity + signed-job verifier\nEphemeral runner + isolated worktree\nAgent sandbox + test runner\nTest-data broker + evidence collector\nClient-local cache / artifacts"];
+      systems [fillcolor="#F8FAFC", color="#{SLATE}", label="CLIENT SYSTEMS & RUNTIME\nGit | requirements | vault | databases\nCI/CD | cloud | Kubernetes\nObservability | CMDB | SIEM"];
+      external [style="rounded,filled,dashed", fillcolor="#F5F3FF", color="#{VIOLET}", label="OPTIONAL EXTERNAL PROVIDERS\nCommercial or local model endpoint\nCoding / test / specialist agent\nOnly policy-filtered context crosses boundary"];
+      modes [fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="PLACEMENT POLICY\nManaged | Hybrid (enterprise default)\nPrivate | Regulated isolated enclave"];
+      security [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="ZERO-TRUST CONTROLS\nShort-lived credentials | private links | egress allowlist\nSigned work orders and artifacts | secret references\nClassification | minimization | residency | DLP"];
+      {{rank=same; users; control; execution; systems}}
+      {{rank=same; modes; security; external}}
+      users -> control [label="OIDC session + scoped authority"];
+      control -> execution [label="signed least-privilege work order", color="#{RED}"];
+      execution -> systems [label="short-lived identity + private connectivity"];
+      systems -> execution [label="scenario data + runtime evidence", style=dashed, color="#{TEAL}"];
+      execution -> control [label="signed metadata + evidence references", style=dashed, color="#{TEAL}"];
+      execution -> external [label="approved egress only", style=dashed, color="#{VIOLET}"];
+      modes -> execution [label="placement decision", color="#{AMBER}"];
+      security -> control [label="enforced policy"];
+      security -> execution [label="enforced policy"];
+      control -> systems [label="audit events to SIEM", style=dashed, constraint=false];
     }}''')
 
     diagrams[8] = render_dot("08_learning_loop", DOT_HEADER + f'''
-      rankdir=LR;
+      rankdir=TB;
       observe [fillcolor="#{PALE_TEAL}", color="#{TEAL}", label="1  OPERATE & OBSERVE\nQA outcomes | Telemetry | Escapes\nIncidents | Rollbacks | Overrides\nCost and latency"];
       attribute [fillcolor="#{PALE_BLUE}", color="#{BLUE}", label="2  DIAGNOSE & ATTRIBUTE\nLink outcome to requirement, change,\nimpact path, tests, data, provider,\npolicy and release"];
       eval [fillcolor="#F5F3FF", color="#{VIOLET}", label="3  EVALUATION FACTORY\nHistorical replay | Mutation tests\nImpact and test-selection recall\nSafety, evidence and cost benchmarks"];
@@ -744,8 +701,11 @@ def build_diagrams():
       govern [shape=diamond, fillcolor="#{PALE_AMBER}", color="#{AMBER}", label="5  GOVERN\nHuman review\nChampion / challenger\nSecurity + rollback plan"];
       promote [fillcolor="#{PALE_TEAL}", color="#{GREEN}", label="6  CONTROLLED PROMOTION\nSigned version | Feature flag\nCanary cohort | Staged rollout\nAutomatic rollback"];
       runtime [fillcolor="#{NAVY}", color="#{NAVY}", fontcolor="white", label="7  VERSIONED RUNTIME\nTest library | Graph rules | Policies\nPrompts | Plugins | Orchestration"];
-      score [shape=record, fillcolor="#F8FAFC", label="{{SCORECARD|Impact recall at bounded radius|Regression-selection miss rate|Escaped defects / false blocks|Evidence completeness|Manual intervention|Cost, latency and drift}}"];
+      score [fillcolor="#F8FAFC", color="#{SLATE}", label="MEASURED SCORECARD\nImpact recall at bounded radius\nRegression-selection miss rate\nEscapes / false blocks | evidence completeness\nManual intervention | cost | latency | drift"];
       ledger [shape=cylinder, fillcolor="#{TEAL}", color="#{TEAL}", fontcolor="white", label="Context & evidence fabric\nDataset + decision + version + result"];
+      {{rank=same; observe; attribute; eval; candidate}}
+      {{rank=same; govern; promote; runtime}}
+      {{rank=same; score; ledger}}
       observe -> attribute [label="evidence-linked signals"];
       attribute -> eval [label="labeled cases"];
       eval -> candidate [label="measured failure modes"];
