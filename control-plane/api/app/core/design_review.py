@@ -8,15 +8,54 @@ before an agent is asked to implement it.
 
 The impact set is derived rather than proposed: whatever the design names,
 plus everything that depends on it, according to the graph. An architect can
-be wrong about consequences; the dependency edges cannot.
+be wrong about consequences, and a derived answer is at least reproducible.
+
+The edges can still be wrong. They are extracted statically, so they miss
+coupling that only exists at runtime — an HTTP call between two services
+produces no import edge at all — and they can resolve to the wrong file where
+a package name is ambiguous. The index reports its own capture rate for
+exactly this reason, and this module refuses to review against a graph too
+poor to review against.
 """
 
 from __future__ import annotations
+
+from app.core.impact import (
+    Assessment,
+    ChangeSet,
+    Edge,
+    Policy,
+    assess,
+    roll_up,
+)
 
 from dataclasses import dataclass, field
 
 MAX_MODULES = 6
 MAX_FILES = 15
+
+# Below this share of internal imports resolved, the graph does not know
+# enough about the codebase for containment to mean anything: the modules a
+# design names may be right and the impact set will still be missing edges
+# nobody can see. Refusing is the only honest answer, and it is actionable —
+# the seed says which specifiers it could not resolve.
+MIN_CAPTURE_RATE = 0.80
+
+# How far a change is traced. Chosen by measurement rather than by argument —
+# scripts/measure_impact.py, holding out one file per commit and asking which
+# of its co-changed siblings the graph reaches:
+#
+#   depth  recall  precision  mean radius
+#     1     11.8%     33.6%       3.0
+#     2     15.1%     27.9%       5.0
+#     3     16.3%     26.4%       6.2
+#   same-directory baseline: 15.4% recall, 18.9% precision, 12.1 files
+#
+# One hop was under-tuned: it sits below the answer you get with no
+# dependency analysis at all. Two hops matches that baseline's recall at 1.5x
+# its precision and 40% of its radius, which is the point at which the
+# traversal is earning its complexity. Re-run the harness before changing it.
+DEFAULT_DEPTH = 2
 
 
 @dataclass
@@ -30,31 +69,55 @@ def impact_set(
     files: list[str],
     file_dependents: dict[str, set[str]],
     path_to_module: dict[str, str] | None = None,
-    depth: int = 1,
+    depth: int = DEFAULT_DEPTH,
 ) -> dict[str, list[str]]:
     """What a change to these files can reach.
+
+    A thin adapter over the canonical engine, kept because the design gate's
+    callers want files and modules rather than an assessment. The traversal
+    itself is no longer written here: three call sites each writing their own
+    is how the design gate and the QA plane came to disagree about what a
+    change reaches.
 
     Traversed at file level and rolled up to modules only for display.
     Rolling up first and traversing after is what gave every file in a
     directory the same blast radius — measured on one real repository, that
     was 13% of the codebase per change against 0.8% at file level.
-
-    One hop by default. Deeper traversal over an import graph reaches most of
-    a codebase, which is technically true and not a useful answer.
     """
-    reached = set(files)
-    frontier = set(files)
-    for _ in range(max(0, depth)):
-        nxt: set[str] = set()
-        for path in frontier:
-            nxt |= file_dependents.get(path, set())
-        frontier = nxt - reached
-        reached |= nxt
+    assessment = assess_change(files, file_dependents, depth=depth)
+    return {
+        "files": assessment.affected,
+        "modules": roll_up(assessment.affected, path_to_module or {}) if path_to_module else [],
+    }
 
-    modules = sorted(
-        {path_to_module[p] for p in reached if p in (path_to_module or {})}
-    ) if path_to_module else []
-    return {"files": sorted(reached - set(files)), "modules": modules}
+
+def assess_change(
+    files: list[str],
+    file_dependents: dict[str, set[str]],
+    *,
+    depth: int = DEFAULT_DEPTH,
+    known: set[str] | None = None,
+    snapshot: dict | None = None,
+) -> Assessment:
+    """The full assessment, for callers that want the explanation too.
+
+    `file_dependents` maps a file to the files that import it — already the
+    "impact flows this way" direction — so it is handed to the engine as
+    edges pointing the way the parser found them and the engine applies the
+    direction itself.
+    """
+    edges = [
+        Edge(type="IMPORTS", source=dependent, target=target)
+        for target, dependents in file_dependents.items()
+        for dependent in dependents
+    ]
+    return assess(
+        ChangeSet(tuple(files)),
+        edges,
+        policy=Policy(max_depth=depth),
+        known=known,
+        snapshot=snapshot,
+    )
 
 
 def review(
@@ -63,6 +126,7 @@ def review(
     known_modules: dict[str, set[str]],
     file_dependents: dict[str, set[str]] | None = None,
     known_criteria: set[str] | None = None,
+    graph_quality: dict | None = None,
 ) -> DesignReview:
     reasons: list[str] = []
     modules = [c for c in proposal.get("modules", []) if c]
@@ -71,13 +135,35 @@ def review(
     path_to_module = {p: m for m, paths in known_modules.items() for p in paths}
 
     if not known_modules:
-        # Nothing to check against. Say so rather than passing silently: a
-        # design validated against an empty graph has not been validated.
+        # Nothing to check against, so nothing was checked. This used to
+        # return allowed=True with a note, which meant the one condition
+        # guaranteeing containment could not work was also the one condition
+        # that let every design through.
         return DesignReview(
-            True,
-            ["the context graph is empty — the design was not validated against it"],
-            impact_set(files, file_dependents or {}, path_to_module),
+            False,
+            [
+                "the context graph holds no modules, so this design cannot be "
+                "validated against the codebase — seed the graph from a repository "
+                "before running a design phase"
+            ],
+            {"files": [], "modules": []},
         )
+
+    if graph_quality is not None:
+        capture = graph_quality.get("internal_capture_rate")
+        if capture is not None and capture < MIN_CAPTURE_RATE:
+            missed = graph_quality.get("most_missed") or []
+            examples = ", ".join(spec for spec, _ in missed[:3])
+            return DesignReview(
+                False,
+                [
+                    f"the code index resolved only {capture:.1%} of imports that look "
+                    f"internal, below the {MIN_CAPTURE_RATE:.0%} needed to derive an "
+                    f"impact set that can be trusted"
+                    + (f" — unresolved: {examples}" if examples else "")
+                ],
+                {"files": [], "modules": []},
+            )
 
     if not modules:
         reasons.append("the design names no modules")

@@ -1,0 +1,111 @@
+{
+  "generated_at": "2026-08-24T22:16:13.864303+00:00",
+  "graph": {
+    "repo": "subhachak/agentic-sdlc",
+    "commit_sha": "1cc025e1b9add3384b7bf5812ea57f39347e9c09",
+    "indexer_version": "2.0.0",
+    "indexed_at": "2026-08-24T22:16:13.062661+00:00",
+    "pinned": true,
+    "internal_capture_rate": 0.9931,
+    "most_missed": [
+      [
+        "./.next/types/root-params.d.ts",
+        1
+      ],
+      [
+        "./.next/types/routes.d.ts",
+        1
+      ],
+      [
+        "./globals.css",
+        1
+      ]
+    ]
+  },
+  "corpus": {
+    "commits_scanned": 41,
+    "commits_used": 24,
+    "cases": 240,
+    "depths": [
+      1,
+      2,
+      3
+    ],
+    "max_files_per_commit": 20,
+    "ground_truth": "co-change: files committed together"
+  },
+  "reports": [
+    {
+      "predictor": "graph (imports + contracts) @depth 1",
+      "cases": 240,
+      "recall": 0.1073,
+      "precision": 0.2907,
+      "mean_radius_files": 3.55,
+      "complete_hits": 3,
+      "complete_misses": 109
+    },
+    {
+      "predictor": "graph (imports only) @depth 1",
+      "cases": 240,
+      "recall": 0.1044,
+      "precision": 0.2532,
+      "mean_radius_files": 3.5,
+      "complete_hits": 3,
+      "complete_misses": 118
+    },
+    {
+      "predictor": "graph (imports + contracts) @depth 2",
+      "cases": 240,
+      "recall": 0.1445,
+      "precision": 0.2114,
+      "mean_radius_files": 6.72,
+      "complete_hits": 3,
+      "complete_misses": 101
+    },
+    {
+      "predictor": "graph (imports only) @depth 2",
+      "cases": 240,
+      "recall": 0.1315,
+      "precision": 0.1952,
+      "mean_radius_files": 6.19,
+      "complete_hits": 3,
+      "complete_misses": 112
+    },
+    {
+      "predictor": "graph (imports + contracts) @depth 3",
+      "cases": 240,
+      "recall": 0.1583,
+      "precision": 0.1909,
+      "mean_radius_files": 8.86,
+      "complete_hits": 3,
+      "complete_misses": 101
+    },
+    {
+      "predictor": "graph (imports only) @depth 3",
+      "cases": 240,
+      "recall": 0.139,
+      "precision": 0.1812,
+      "mean_radius_files": 7.56,
+      "complete_hits": 3,
+      "complete_misses": 112
+    },
+    {
+      "predictor": "baseline: same directory",
+      "cases": 240,
+      "recall": 0.1462,
+      "precision": 0.1535,
+      "mean_radius_files": 14.98,
+      "complete_hits": 0,
+      "complete_misses": 65
+    },
+    {
+      "predictor": "baseline: whole repository",
+      "cases": 240,
+      "recall": 1.0,
+      "precision": 0.0537,
+      "mean_radius_files": 211,
+      "complete_hits": 240,
+      "complete_misses": 0
+    }
+  ]
+}

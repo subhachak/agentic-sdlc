@@ -53,13 +53,29 @@ class GitHubActionsWorkDispatch:
     async def trigger(
         self, run_id: str, phase: str, correlation_id: str, inputs: dict[str, Any]
     ) -> DispatchHandle:
+        head_sha = str(inputs.get("head_sha", "")).strip()
+        if not head_sha:
+            # `workflow_dispatch` cannot decline a run for missing inputs — it
+            # would start, check out the workflow's own ref, and report a
+            # verdict on the default branch. That reads exactly like a passing
+            # QA result for a change it never saw, so the refusal has to
+            # happen here, before anything is triggered.
+            raise ValueError(
+                "refusing to dispatch a QA run with no head revision: the executor "
+                "would test its default branch instead of the change"
+            )
+
         body = {
+            # Which workflow definition to run. The revision *under test*
+            # travels in the inputs — the workflow checks that out itself,
+            # because the two are not the same thing and conflating them is
+            # how a run ends up testing the branch the workflow lives on.
             "ref": self._ref,
             "inputs": {
                 "control_run_id": run_id,
                 "correlation_id": correlation_id,
                 "base_sha": str(inputs.get("base_sha", "")),
-                "head_sha": str(inputs.get("head_sha", "")),
+                "head_sha": head_sha,
             },
         }
         url = f"{_API}/repos/{self._repo}/actions/workflows/{self._workflow}/dispatches"

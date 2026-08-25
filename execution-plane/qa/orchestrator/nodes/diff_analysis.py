@@ -18,11 +18,50 @@ routes and elements, don't generalize. affected_areas entries look like
 "/claims (status filter added)"."""
 
 
-def changed_paths(diff: str) -> list[str]:
-    """File paths touched by the diff, read straight from its headers.
+# `git diff --name-status -z` emits NUL-separated records: a status, then a
+# path — except renames and copies, which emit the status, the old path, and
+# the new path. Parsing that is what makes rename handling correct; the diff
+# headers cannot express it, because `diff --git a/old b/new` puts the path
+# that no longer exists first.
+_RENAME_OR_COPY = ("R", "C")
 
-    Deterministic on purpose: which files changed is a fact, and asking a
-    model for it would make blast-radius scope depend on a summary.
+
+def changed_paths_from_name_status(raw: str) -> list[str]:
+    """Paths a change touches, from git's machine-readable status output.
+
+    Reads the *new* path for a rename — the old one no longer exists, so
+    scoping regression to it tests nothing — and both for a copy, since the
+    source is unchanged but the copy is new code. NUL separation means a path
+    containing a space or a quote survives intact, which the whitespace-split
+    header parse did not.
+    """
+    fields = [f for f in raw.split("\0") if f]
+    paths: set[str] = set()
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        if status.startswith(_RENAME_OR_COPY) and index + 2 < len(fields):
+            old_path, new_path = fields[index + 1], fields[index + 2]
+            paths.add(new_path)
+            if status.startswith("C"):
+                paths.add(old_path)
+            index += 3
+            continue
+        if index + 1 < len(fields):
+            # D (deleted) included deliberately: removing a file is a change
+            # its dependents have to survive.
+            paths.add(fields[index + 1])
+        index += 2
+    return sorted(paths)
+
+
+def changed_paths(diff: str) -> list[str]:
+    r"""Fallback: file paths read out of diff headers.
+
+    Weaker than the name-status parse and kept only for the case where a diff
+    is all that is available. `diff --git a/old b/new` names the pre-rename
+    path first, so a renamed file is scoped to a path that no longer exists,
+    and `\S+` truncates any path containing a space.
     """
     return sorted({m.group(1) for m in re.finditer(r"^diff --git a/(\S+)", diff, re.M)})
 
@@ -42,5 +81,8 @@ def run(state: PipelineState) -> PipelineState:
         **state,
         "change_summary": result.change_summary,
         "affected_areas": result.affected_areas,
-        "changed_paths": changed_paths(diff),
+        # Preferred source is git's own status output, computed before the
+        # graph ran. The header parse is a fallback for a diff with no
+        # accompanying status.
+        "changed_paths": state.get("changed_paths") or changed_paths(diff),
     }

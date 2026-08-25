@@ -78,6 +78,10 @@ class StubWorkDispatch:
 
     def __init__(self, result: DispatchResult | None = None) -> None:
         self.triggers: list[tuple[str, str]] = []
+        # Recorded so a test can assert which provider a row was polled by —
+        # phases no longer share one, and a row started by one adapter must
+        # not be checked against another.
+        self.checked: list[str] = []
         self.result = result or DispatchResult(state="pending")
 
     async def trigger(
@@ -89,6 +93,7 @@ class StubWorkDispatch:
         )
 
     async def check(self, handle: DispatchHandle) -> DispatchResult:
+        self.checked.append(handle.correlation_id)
         return self.result
 
 

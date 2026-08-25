@@ -396,6 +396,12 @@ do_seed() {
   echo "Deriving the context graph from $repo@$ref..."
   echo "(reads source and parses imports; never executes what it fetches)"
   (cd "$API_DIR" && .venv/bin/python scripts/seed_graph.py --repo "$repo" --ref "$ref")
+  # The execution plane runs in CI with no route to the control plane's
+  # database, so it reads a generated export instead of querying the graph.
+  # Exporting here is what keeps the two planes describing one commit.
+  echo
+  echo "Exporting the demo-app slice for the QA pipeline..."
+  (cd "$API_DIR" && .venv/bin/python scripts/export_code_graph.py --scope demo-app)
 }
 
 do_qa() {

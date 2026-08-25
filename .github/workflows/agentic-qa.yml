@@ -51,11 +51,30 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout
+      # The revision under test, not the revision the workflow lives on. On a
+      # dispatch there is no pull request, so `github.sha` resolved to the
+      # default branch — the run tested the code that was already there and
+      # reported a verdict on a change it never saw.
+      - name: Checkout the revision under test
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          ref: >-
+            ${{ inputs.head_sha
+                || github.event.pull_request.merge_commit_sha
+                || github.sha }}
           fetch-depth: 0
+
+      # `workflow_dispatch` cannot decline a run for a missing input, so the
+      # check happens here. Failing loudly beats testing the wrong commit.
+      - name: Refuse a dispatch with no revision
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ -z "${{ inputs.head_sha }}" ]; then
+            echo "::error::dispatched with no head_sha — refusing to test an" \
+                 "arbitrary revision. The control plane populates this from" \
+                 "the commit the implementation phase opened."
+            exit 1
+          fi
 
       # The two triggers expose different event payloads. Resolve them once
       # here so no later step needs a conditional.
@@ -124,6 +143,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      # evidence/ carries promotions.json, which embeds each candidate spec's
+      # source and checksum. The generated specs themselves are not uploaded
+      # and do not need to be: a path into the runner's filesystem is dead the
+      # moment this job ends.
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4

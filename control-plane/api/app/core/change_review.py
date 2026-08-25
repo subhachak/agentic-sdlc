@@ -9,6 +9,12 @@ The containment check is what the context graph was built for. A design
 decision names the modules it affects; a change that edits a module
 outside that set is doing something nobody agreed to, and that is knowable
 before a line of it runs.
+
+It fails closed in both directions: a path in a module the design did not
+name is refused, and so is a path the graph cannot attribute to any module at
+all. The second case is the one that matters — an agent writing somewhere
+entirely unexpected produces exactly that, and treating "I do not know where
+this belongs" as "nothing to check" is how containment gets bypassed.
 """
 
 from __future__ import annotations
@@ -64,6 +70,7 @@ def review(
     """
     reasons: list[str] = []
     touched: set[str] = set()
+    unmapped: list[str] = []
 
     if not edits:
         return ChangeReview(False, ["the agent proposed no file changes"])
@@ -104,12 +111,23 @@ def review(
             module = _module_of(path, known_modules)
             if module:
                 touched.add(module)
+            else:
+                unmapped.append(path)
 
-    if allowed_modules and touched:
+    if allowed_modules:
         outside = sorted(touched - set(allowed_modules))
         if outside:
             reasons.append(
                 "changes modules the design did not name: " + ", ".join(outside)
+            )
+        # A path the graph cannot attribute used to be dropped from `touched`,
+        # and the containment check ran only `if touched` — so a change made
+        # entirely of unattributable paths skipped the check altogether and
+        # was allowed. Containment must fail closed on what it cannot place.
+        if unmapped:
+            reasons.append(
+                "changes files no module in the graph owns, so containment "
+                "cannot be checked for them: " + ", ".join(sorted(unmapped))
             )
 
     return ChangeReview(not reasons, reasons, sorted(touched))

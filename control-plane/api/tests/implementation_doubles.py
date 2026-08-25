@@ -13,19 +13,35 @@ from app.ports.source_control import ChangeRef
 
 
 class StubSourceControl:
-    def __init__(self, files: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, files: dict[str, str] | None = None, commit: str | None = "deadbeef"
+    ) -> None:
         self.files = files or {"demo-app/app/claims/page.tsx": "export default function X() {}\n"}
         self.opened: list[dict] = []
+        # Settable so a test can produce the case where a change was opened
+        # but named no commit, which is what the dispatch guard exists for.
+        self.commit = commit
+        # What an external agent left on its branch. Separate from `files`,
+        # which is what the repository holds before the change.
+        self.branch_files: dict[str, str] = {}
 
     async def read_files(self, repo, ref, paths):
         return {p: self.files[p] for p in paths if p in self.files}
+
+    async def change_files(self, repo, base_ref, head_ref):
+        """What a branch changed. The double reports whatever it was told the
+        agent wrote, which is what lets a test make an external agent stray
+        outside the design."""
+        from app.ports.source_control import FileEdit
+
+        return [FileEdit(path=p, content=c) for p, c in (self.branch_files or {}).items()]
 
     async def open_change(self, repo, base_ref, branch, title, body, edits):
         self.opened.append({"branch": branch, "title": title,
                             "files": [e.path for e in edits]})
         return ChangeRef(
             provider="stub", branch=branch, url=f"https://stub/pull/{len(self.opened)}",
-            number=len(self.opened), commit="deadbeef",
+            number=len(self.opened), commit=self.commit, base_commit="cafe0000",
             files=[e.path for e in edits],
         )
 
@@ -40,11 +56,17 @@ class WritingLLMProvider:
         path: str | None = None,
         modules: list[str] | None = None,
         criteria: list[str] | None = None,
+        implementation_path: str | None = None,
     ) -> None:
         self._blocked = blocked
         self._path = path
         self._components = modules or ["demo-app/app/claims"]
         self._criteria = criteria or []
+        # Lets a test make the two phases disagree. Containment only means
+        # anything when the implementation writes somewhere the design did not
+        # name, and a double that always agrees with itself cannot produce
+        # that case.
+        self._implementation_path = implementation_path
 
     async def complete(self, system_prompt, user_prompt, *, max_tokens=1024):
         return LLMResponse(text="[stub]", model="stub", input_tokens=1, output_tokens=1)
@@ -62,7 +84,7 @@ class WritingLLMProvider:
             )
         if self._blocked:
             return schema(summary="cannot proceed", blocked=self._blocked, edits=[])
-        path = self._path or "demo-app/app/claims/page.tsx"
+        path = self._implementation_path or self._path or "demo-app/app/claims/page.tsx"
         return schema(
             summary="add a status filter to the claims table",
             edits=[{"path": path, "content": "export default function X() { return null; }\n",

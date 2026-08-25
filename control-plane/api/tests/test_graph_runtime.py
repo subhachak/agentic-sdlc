@@ -18,7 +18,7 @@ from app.ports.build_deploy import BuildResult
 from app.ports.code_design_context import ContextSnippet
 from app.ports.requirements_source import RequirementsDoc
 from app.ports.test_management import TestCaseRecord
-from tests.graph_doubles import InMemoryContextGraph
+from tests.graph_doubles import seeded_graph
 from tests.implementation_doubles import StubSourceControl, WritingLLMProvider
 from tests.dispatch_doubles import SUCCESS, InMemoryDispatchStore, StubWorkDispatch
 
@@ -66,7 +66,7 @@ class StubLLMProvider:
         raise AssertionError("stub node logic must not call the LLM in this phase")
 
 
-def _build_test_graph(work_dispatch=None, dispatch_store=None, llm=None, source_control=None):
+async def _build_test_graph(work_dispatch=None, dispatch_store=None, llm=None, source_control=None):
     sink = InMemoryAuditSink()
     logger = AuditLogger(sink)
     gate_controller = GateController(logger)
@@ -79,7 +79,7 @@ def _build_test_graph(work_dispatch=None, dispatch_store=None, llm=None, source_
         build_deploy=StubBuildDeploy(),
         work_dispatch=work_dispatch,
         dispatch_store=dispatch_store,
-        context_graph=InMemoryContextGraph(),
+        context_graph=await seeded_graph(),
         llm_provider=llm or WritingLLMProvider(),
         source_control=source_control or StubSourceControl(),
         audit_logger=logger,
@@ -100,7 +100,7 @@ def _initial_state(run_id: str, *, auto_approve: bool = False) -> dict:
 
 @pytest.mark.asyncio
 async def test_pipeline_pauses_at_three_gates_and_completes_on_approval():
-    graph, sink = _build_test_graph()
+    graph, sink = await _build_test_graph()
     run_id = "test-run-1"
     thread = {"configurable": {"thread_id": run_id}}
 
@@ -142,7 +142,7 @@ async def test_pipeline_pauses_at_three_gates_and_completes_on_approval():
 
 @pytest.mark.asyncio
 async def test_rejection_at_gate_halts_pipeline_instead_of_continuing():
-    graph, _sink = _build_test_graph()
+    graph, _sink = await _build_test_graph()
     run_id = "test-run-2"
     thread = {"configurable": {"thread_id": run_id}}
 
@@ -160,7 +160,7 @@ async def test_auto_approve_skips_human_gates_but_never_the_machine_one():
     """auto_approve_gates exists so a headless run does not stop for a
     person. It cannot manufacture the result of a job that has not run, so
     qa_execution still parks — and that is the only pause left."""
-    graph, sink = _build_test_graph()
+    graph, sink = await _build_test_graph()
     run_id = "test-run-3"
     thread = {"configurable": {"thread_id": run_id}}
 

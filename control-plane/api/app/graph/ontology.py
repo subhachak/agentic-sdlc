@@ -42,6 +42,7 @@ class EdgeType(StrEnum):
     BELONGS_TO = "BELONGS_TO"
     DEPENDS_ON = "DEPENDS_ON"
     IMPORTS = "IMPORTS"
+    CALLS_ENDPOINT = "CALLS_ENDPOINT"
     GOVERNED_BY = "GOVERNED_BY"
     VERIFIED_BY = "VERIFIED_BY"
     IMPLEMENTED_BY = "IMPLEMENTED_BY"
@@ -66,6 +67,12 @@ SIGNATURES: dict[EdgeType, tuple[NodeType, NodeType]] = {
     # File-level, and the unit of truth for impact. DEPENDS_ON is the
     # rolled-up view of these, kept for legibility rather than analysis.
     EdgeType.IMPORTS: (NodeType.SOURCE_ARTIFACT, NodeType.SOURCE_ARTIFACT),
+    # HTTP coupling, which no import edge expresses. A caller and a route
+    # handler in different services never import one another, so without this
+    # a change to a handler reports an impact set containing none of its
+    # callers. File to file, like IMPORTS, so impact traversal is unchanged —
+    # what differs is how the edge was derived, which the attributes record.
+    EdgeType.CALLS_ENDPOINT: (NodeType.SOURCE_ARTIFACT, NodeType.SOURCE_ARTIFACT),
     EdgeType.GOVERNED_BY: (NodeType.MODULE, NodeType.CONTROL),
     EdgeType.VERIFIED_BY: (NodeType.ACCEPTANCE_CRITERION, NodeType.TEST_SCENARIO),
     EdgeType.IMPLEMENTED_BY: (NodeType.TEST_SCENARIO, NodeType.TEST_SCRIPT),

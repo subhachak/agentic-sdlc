@@ -11,31 +11,13 @@ not a useful pipeline.
 from __future__ import annotations
 
 from orchestrator import data_store
+from orchestrator.adapters.inline_test_author import InlineTestAuthor
 from orchestrator.context import criterion_ids, regression_candidates
-from orchestrator.llm import ask
-from orchestrator.schemas import TestPlan
+from orchestrator.ports import TestAuthor
 from orchestrator.state import PipelineState
 
 MAX_ATTEMPTS = 3
 
-SYSTEM = """You are a QA test-planning agent. Given a summary of what changed
-in a PR and the affected areas, propose a set of test scenarios covering
-the change: at least one happy path, one edge case, and one negative case
-where applicable. Every scenario MUST have a concrete, observable
-expected_outcome (something a test can assert on — a count, a visible
-element, specific text) — never a vague statement like "should work
-correctly". Also reuse relevant regression scenarios for areas adjacent to
-the change if it's plausible they could break.
-
-Every scenario's ac_ref MUST be one of the acceptance criterion ids listed in
-the request. A scenario referencing an id that does not exist is rejected —
-that reference is what ties the test back to the requirement it verifies.
-
-If a scenario depends on data existing, declare it in required_data using only
-the entities and fields listed in the request. Anything you declare will be
-created before the test runs; anything you assume without declaring will not
-be. A scenario about a value the store does not currently hold is fine — say
-so in required_data and it will exist."""
 
 _VAGUE_PHRASES = [
     "should work",
@@ -106,35 +88,35 @@ def _evaluate(
     return accepted, reasons
 
 
-def _revision_prompt(reasons: list[str]) -> str:
-    return (
-        "\n\nYour previous proposal was rejected by the testability gate:\n"
-        + "\n".join(f"- {r}" for r in reasons)
-        + "\n\nRewrite the full set of scenarios. Every expected_outcome must name "
-        "something a Playwright assertion can observe: an exact row count, a "
-        "data-status attribute value, a specific visible string, an HTTP status. "
-        "Do not restate the same wording."
-    )
+def run(state: PipelineState, author: TestAuthor | None = None) -> PipelineState:
+    # Defaults to this platform's own agent. A client substitutes one here
+    # rather than forking the phase, and the gate below does not move.
+    author = author or InlineTestAuthor()
 
-
-def run(state: PipelineState) -> PipelineState:
     known = criterion_ids()
     shape = data_store.shape()
     # Regression scope comes from the dependency graph, not from the change
     # summary: a module the diff never touched can still be the one that
     # breaks, and only the graph knows that.
-    scope = regression_candidates(state.get("changed_paths", []))
-
-    base_user = (
-        f"Change summary: {state['change_summary']}\n"
-        f"Affected areas: {state['affected_areas']}\n"
-        f"Acceptance criteria (use these exact ids for ac_ref):\n"
-        + "\n".join(f"  {cid}: {meta['text']}" for cid, meta in known.items())
-        + f"\n\nComponents impacted by this change, directly or through a dependency: "
-        f"{scope['impacted_components']}\n"
-        f"Existing scenarios covering those modules, worth reusing as regression: "
-        f"{scope['scenarios']}"
+    #
+    # What the scope names as `required_scripts` is not a suggestion to the
+    # agent. Those scripts are installed into the run by test_gen and enforced
+    # by the gate, so the request tells the agent to skip them and spend its
+    # scenarios on the areas nothing covers.
+    scope = regression_candidates(
+        state.get("changed_paths", []), head_sha=state.get("head_sha") or ""
     )
+
+    request = {
+        "change_summary": state["change_summary"],
+        "affected_areas": state["affected_areas"],
+        "criteria": known,
+        "data_shape": {entity: sorted(fields) for entity, fields in (shape or {}).items()},
+        "impacted_modules": scope["impacted_components"],
+        "required_scripts": scope["required_scripts"],
+        "uncovered_modules": scope["uncovered_components"],
+        "graph_warnings": scope.get("graph_warnings") or [],
+    }
 
     accepted: list[dict] = []
     reasons: list[str] = []
@@ -142,9 +124,9 @@ def run(state: PipelineState) -> PipelineState:
 
     while attempt < MAX_ATTEMPTS:
         attempt += 1
-        user = base_user + (_revision_prompt(reasons) if reasons else "")
-        plan = ask(SYSTEM, user, TestPlan)
-        proposed = [s.model_dump() for s in plan.scenarios]
+        # Whoever authors it, the gate is the same. An agent supplied by a
+        # client proposes; deterministic code decides.
+        proposed = author.propose_plan({**request, "rejected_reasons": reasons})
 
         accepted, reasons = _evaluate(proposed, set(known), shape)
         if accepted and not reasons:

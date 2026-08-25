@@ -1,7 +1,12 @@
 """Port: grounds the Design Agent against an existing system.
 
-Demo adapter: a placeholder similarity index over a stub doc (indexing the
-real `demo-app/` is a later phase). Future: Git repo index, Confluence docs.
+Default adapter: lexical retrieval over the repository the context graph
+currently holds, chunked per top-level definition. Future: an embedding index
+where a client wants prose recall over design documents as well as code.
+
+Scores are relative to one query over one corpus. Nothing downstream may read
+them as a confidence, and nothing is gated on them — retrieval changes what
+an agent proposes, and the deterministic reviews decide what survives.
 """
 
 from typing import Protocol
@@ -17,4 +22,4 @@ class ContextSnippet(BaseModel):
 
 
 class CodeDesignContext(Protocol):
-    async def retrieve_context(self, query: str, top_k: int = 3) -> list[ContextSnippet]: ...
+    async def retrieve_context(self, query: str, top_k: int = 8) -> list[ContextSnippet]: ...

@@ -19,3 +19,10 @@ tsconfig.tsbuildinfo
 *.sqlite-shm
 *.sqlite-wal
 control-plane/api/evals.db
+
+# macOS finder metadata, and scratch directories from the doc generators.
+# Excluded rather than committed: neither is anyone's intent, and .DS_Store
+# reappears on every folder anyone opens.
+.DS_Store
+.tmp-doc-update/
+.tmp-pdlc-deck/

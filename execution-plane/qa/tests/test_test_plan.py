@@ -62,31 +62,31 @@ def test_rejects_a_missing_outcome_key():
     assert ok is False and reason == "no expected_outcome"
 
 
-def test_plan_passes_when_every_scenario_is_concrete(monkeypatch):
-    monkeypatch.setattr("orchestrator.nodes.test_plan.ask", _Agent([_sc("s1", CONCRETE)]))
+def test_plan_passes_when_every_scenario_is_concrete():
+    agent = _Agent([_sc("s1", CONCRETE)])
 
-    result = run(STATE)
+    result = run(STATE, author=agent)
 
     assert result["test_plan_gate_passed"] is True
     assert [s["id"] for s in result["test_plan"]] == ["s1"]
 
 
-def test_one_vague_scenario_holds_back_the_whole_plan(monkeypatch):
+def test_one_vague_scenario_holds_back_the_whole_plan():
     """The concrete sibling is not enough — an agent that will not fix s2
     never gets past the gate, however good the rest of the plan is."""
     stubborn = [_sc("s1", CONCRETE), _sc("s2", "the filter should work")]
-    monkeypatch.setattr("orchestrator.nodes.test_plan.ask", _Agent(stubborn))
+    agent = _Agent(stubborn)
 
-    result = run(STATE)
+    result = run(STATE, author=agent)
 
     assert result["test_plan_gate_passed"] is False
     assert any("s2: rejected" in r for r in result["test_plan_gate_reasons"])
 
 
-def test_empty_plan_does_not_pass_the_gate(monkeypatch):
-    monkeypatch.setattr("orchestrator.nodes.test_plan.ask", _Agent([]))
+def test_empty_plan_does_not_pass_the_gate():
+    agent = _Agent([])
 
-    result = run(STATE)
+    result = run(STATE, author=agent)
 
     assert result["test_plan_gate_passed"] is False
     assert any("no scenarios at all" in r for r in result["test_plan_gate_reasons"])
@@ -95,16 +95,24 @@ def test_empty_plan_does_not_pass_the_gate(monkeypatch):
 # --- revision loop -------------------------------------------------------
 
 class _Agent:
-    """Returns a canned plan per attempt, and records what it was told."""
+    """A test author that returns a canned plan per attempt.
+
+    Injected through the port rather than monkeypatched over the node's model
+    call. That is the point of the port: substituting the agent is what a
+    client does, so it is what the tests do, and the gate below is unchanged
+    either way.
+    """
 
     def __init__(self, *plans):
         self.plans = list(plans)
-        self.prompts = []
+        self.requests: list[dict] = []
 
-    def __call__(self, system, user, schema, **kwargs):
-        self.prompts.append(user)
-        scenarios = self.plans[min(len(self.prompts) - 1, len(self.plans) - 1)]
-        return schema(scenarios=scenarios)
+    def propose_plan(self, request):
+        self.requests.append(request)
+        return self.plans[min(len(self.requests) - 1, len(self.plans) - 1)]
+
+    def write_spec(self, request):  # pragma: no cover - planning tests only
+        raise NotImplementedError
 
 
 # A real criterion id from features.yaml. The gate now resolves ac_ref, so a
@@ -122,51 +130,48 @@ def _sc(sid, outcome, ac_ref=REAL_AC):
 STATE = {"change_summary": "added filter", "affected_areas": ["/claims"]}
 
 
-def test_a_vague_plan_is_revised_and_then_accepted(monkeypatch):
+def test_a_vague_plan_is_revised_and_then_accepted():
     agent = _Agent([_sc("s1", "should work")], [_sc("s1", CONCRETE)])
-    monkeypatch.setattr("orchestrator.nodes.test_plan.ask", agent)
 
-    result = run(STATE)
+    result = run(STATE, author=agent)
 
     assert result["test_plan_gate_passed"] is True
     assert result["test_plan_attempts"] == 2
-    assert len(agent.prompts) == 2
+    assert len(agent.requests) == 2
 
 
-def test_the_revision_prompt_carries_the_rejection_reasons_back(monkeypatch):
+def test_the_revision_prompt_carries_the_rejection_reasons_back():
     agent = _Agent([_sc("s1", "should work")], [_sc("s1", CONCRETE)])
-    monkeypatch.setattr("orchestrator.nodes.test_plan.ask", agent)
 
-    run(STATE)
+    run(STATE, author=agent)
 
-    second = agent.prompts[1]
-    assert "rejected by the testability gate" in second
-    assert "s1: rejected" in second
+    # The reasons travel as data now, not inside a prompt string — a client's
+    # agent may not use a prompt at all.
+    second = agent.requests[1]["rejected_reasons"]
+    assert any("s1: rejected" in reason for reason in second)
 
 
-def test_it_gives_up_after_the_attempt_limit(monkeypatch):
+def test_it_gives_up_after_the_attempt_limit():
     from orchestrator.nodes.test_plan import MAX_ATTEMPTS
 
     agent = _Agent([_sc("s1", "should work")])
-    monkeypatch.setattr("orchestrator.nodes.test_plan.ask", agent)
 
-    result = run(STATE)
+    result = run(STATE, author=agent)
 
     assert result["test_plan_gate_passed"] is False
     assert result["test_plan_attempts"] == MAX_ATTEMPTS
-    assert len(agent.prompts) == MAX_ATTEMPTS
+    assert len(agent.requests) == MAX_ATTEMPTS
     assert "still not testable after" in result["test_plan_gate_reasons"][0]
 
 
-def test_a_first_attempt_that_passes_does_not_retry(monkeypatch):
+def test_a_first_attempt_that_passes_does_not_retry():
     agent = _Agent([_sc("s1", CONCRETE)])
-    monkeypatch.setattr("orchestrator.nodes.test_plan.ask", agent)
 
-    result = run(STATE)
+    result = run(STATE, author=agent)
 
     assert result["test_plan_attempts"] == 1
-    assert len(agent.prompts) == 1
-    assert "rejected" not in agent.prompts[0]
+    assert len(agent.requests) == 1
+    assert not agent.requests[0]["rejected_reasons"]
 
 
 # --- data requirements the gate can check ----------------------------------
@@ -211,3 +216,49 @@ def test_data_requirements_are_not_checked_when_the_shape_is_unknown():
     scenario = {"expected_outcome": CONCRETE, "ac_ref": REAL_AC,
                 "required_data": [{"entity": "anything", "field": "x", "value": "y"}]}
     assert _is_testable(scenario, {REAL_AC}, None)[0] is True
+
+
+# --- substituting a client's agent -----------------------------------------
+
+
+def test_a_client_agent_is_given_the_scope_as_data_not_as_a_prompt():
+    """A client's agent may not use a prompt at all. What it needs — the
+    criteria, the impacted modules, the scripts already being run, the ones
+    covering nothing — travels as fields it can read."""
+    agent = _Agent([_sc("s1", CONCRETE)])
+
+    run({**STATE, "changed_paths": ["demo-app/app/api/claims/route.ts"]}, author=agent)
+
+    request = agent.requests[0]
+    assert request["impacted_modules"]
+    assert "required_scripts" in request
+    assert "uncovered_modules" in request
+    assert isinstance(request["criteria"], dict)
+
+
+def test_a_client_agent_cannot_wave_its_own_vague_scenario_through():
+    """The whole point of substituting the agent and not the gate."""
+    agent = _Agent([_sc("s1", "it should work correctly")])
+
+    result = run(STATE, author=agent)
+
+    assert result["test_plan_gate_passed"] is False
+
+
+def test_a_client_agent_cannot_invent_an_acceptance_criterion():
+    agent = _Agent([_sc("s1", CONCRETE, ac_ref="invented/ac-9")])
+
+    result = run(STATE, author=agent)
+
+    assert result["test_plan_gate_passed"] is False
+    assert any("does not resolve" in r for r in result["test_plan_gate_reasons"])
+
+
+def test_the_required_regressions_are_not_the_agents_to_decline():
+    """They are installed by code and enforced by the gate. An agent that
+    proposes nothing does not thereby skip them."""
+    agent = _Agent([_sc("s1", CONCRETE)])
+
+    result = run({**STATE, "changed_paths": ["demo-app/app/api/claims/route.ts"]}, author=agent)
+
+    assert result["regression_scope"]["required_scripts"]

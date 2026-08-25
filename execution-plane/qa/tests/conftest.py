@@ -7,12 +7,22 @@ ones that must not be able to drift silently.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# Read the fixture, not the live export. execution-plane/qa/code-graph.json is
+# written by the control plane on every sync, so it cannot also be the thing
+# these tests assert against — pointing the platform at a different repository
+# rewrote it and nine tests failed for reasons nothing in them mentioned.
+# Set before orchestrator.paths is imported, since it resolves at module load.
+os.environ.setdefault(
+    "QA_CODE_GRAPH", str(Path(__file__).resolve().parent / "fixtures" / "code-graph.json")
+)
 
 
 def _test(status: str) -> dict:

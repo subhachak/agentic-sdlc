@@ -45,6 +45,7 @@ export interface StreamedAuditEvent {
 }
 
 export interface DashboardData {
+  project?: string;
   runs: {
     total: number;
     by_status: Record<string, number>;
@@ -73,6 +74,30 @@ export interface DashboardData {
     dependencies: number;
   };
   dispatches: Record<string, number>;
+  engagement: {
+    indexed_repo: string | null;
+    indexed_ref: string | null;
+    target_repo: string | null;
+    target_ref: string | null;
+    environment: string | null;
+    ci_repo: string | null;
+    export_scope: string | null;
+    commit: string | null;
+    indexed_at: string | null;
+  };
+  platform: {
+    model_provider: string;
+    model: string;
+    execution_target: string;
+    index_source: string;
+    change_target: string;
+    gates: string;
+  };
+  credentials: Record<string, boolean>;
+  hydration: {
+    hydrated: boolean;
+    steps: { id: string; title: string; ready: boolean; detail: string }[];
+  };
   active: {
     model_provider: string;
     execution_target: string;
@@ -86,6 +111,7 @@ export interface SettingEntry {
   key: string;
   label: string;
   group: string;
+  section: "engagement" | "platform" | "credential";
   kind: "mutable" | "secret" | "static";
   type: "enum" | "text" | "int" | "float" | "bool";
   options: string[];
@@ -94,6 +120,17 @@ export interface SettingEntry {
   overridden: boolean;
   value: string | number | boolean | null;
   configured?: boolean;
+  /** The setting this falls back to when nobody sets it. */
+  derived_from?: string;
+  /** Currently taking its value from `derived_from` rather than being set. */
+  derived?: boolean;
+  /** Set on another page. Shown read-only here, with a pointer to it. */
+  owned_by?: string;
+  /** Has a working default; tuning rather than setup. */
+  advanced?: boolean;
+  /** False when another setting makes this one inapplicable. */
+  relevant?: boolean;
+  relevant_when?: string[];
 }
 
 export interface SettingChange {
@@ -106,9 +143,20 @@ export interface SettingChange {
 }
 
 export interface ConfigData {
+  problem?: string | null;
   settings: SettingEntry[];
   history: SettingChange[];
   active: Record<string, string>;
+  /** Combinations that build and cannot work. */
+  incoherent?: IncoherentFinding[];
+}
+
+export interface IncoherentFinding {
+  id: string;
+  problem: string;
+  consequence: string;
+  remedies: string[];
+  keys: string[];
 }
 
 export interface ModuleEntry {

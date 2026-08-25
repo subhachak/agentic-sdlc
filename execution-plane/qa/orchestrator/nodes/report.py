@@ -42,6 +42,76 @@ def _evidence_block(state: PipelineState) -> str:
     return line
 
 
+def _observed_block(state) -> str:
+    """What the run demonstrably exercised, and what it produced worth keeping.
+
+    Distinct from the blast-radius block above it: that says what should have
+    been tested, this says what actually was. A reviewer comparing the two is
+    the point.
+    """
+    observed = state.get("observed_coverage") or {}
+    lines: list[str] = []
+
+    modules = sorted({m for entry in observed.values() for m in entry.get("modules", [])})
+    lines.append(f"Modules exercised by this run: {', '.join(modules) or 'none'}")
+
+    gaps = state.get("coverage_gaps_observed") or {}
+    if gaps:
+        lines.append(
+            f"Files reached: {len(gaps.get('files_reached', []))}"
+            f"/{gaps.get('reachable_total', 0)} servable files "
+            f"({gaps.get('file_coverage', 0):.0%})"
+        )
+        if gaps.get("files_never_reached"):
+            lines.append(
+                "Never reached by any test in this run: "
+                + ", ".join(gaps["files_never_reached"])
+            )
+        if gaps.get("routes_never_requested"):
+            lines.append("Routes never requested: " + ", ".join(gaps["routes_never_requested"]))
+
+    candidates = state.get("promotion_candidates") or []
+    gap_closers = [c for c in candidates if c["closes_coverage_gap"]]
+    if gap_closers:
+        lines.append(
+            "Generated specs worth promoting (they cover modules the library does not): "
+            + ", ".join(f"{c['script_id']} -> {', '.join(c['new_modules'])}" for c in gap_closers)
+        )
+    elif candidates:
+        lines.append(f"{len(candidates)} generated spec(s) passed and could be promoted")
+
+    return _bullets(lines)
+
+
+def _blast_radius_block(state) -> str:
+    """What the dependency graph obliged this run to re-test, and what it
+    could not. Stated on the PR because a reviewer deciding whether to merge
+    needs to know which impacted areas nothing exercised — that is the part
+    a green tick otherwise hides.
+    """
+    scope = state.get("regression_scope") or {}
+    impacted = scope.get("impacted_components") or []
+    if not impacted:
+        return "_no mapped modules were impacted by this change_"
+
+    required = state.get("required_regressions") or []
+    gaps = state.get("coverage_gaps") or []
+    failed = state.get("required_regressions_failed") or []
+    missing = state.get("required_regressions_missing") or []
+
+    lines = [f"Impacted modules: {', '.join(impacted)}"]
+    if required:
+        verdict = "failed" if failed or missing else "passed"
+        lines.append(f"Required regression scripts ({verdict}): {', '.join(required)}")
+    if failed:
+        lines.append(f"Failed: {', '.join(failed)}")
+    if missing:
+        lines.append(f"Did not run: {', '.join(missing)}")
+    if gaps:
+        lines.append(f"No regression coverage: {', '.join(gaps)}")
+    return _bullets(lines)
+
+
 def _plan_table(state: PipelineState) -> str:
     rows = ["| Scenario | Type | Priority | Mode |", "|---|---|---|---|"]
     assignments = {a["scenario_id"]: a for a in state.get("test_assignments", [])}
@@ -75,9 +145,11 @@ def _report_pass(state: PipelineState) -> PipelineState:
         f"## Agentic QA — PASSED\n\n"
         f"**Change:** {state['change_summary']}\n\n"
         f"**Test plan** ({len(state.get('test_plan', []))} scenarios):\n{_plan_table(state)}\n\n"
+        f"**Blast radius:**\n{_blast_radius_block(state)}\n\n"
+        f"**Coverage observed:**\n{_observed_block(state)}\n\n"
         f"**Data:** {state.get('seed_summary', '')}\n\n"
         f"**Evidence:** {_evidence_block(state)}\n\n"
-        f"All planned scenarios ran and passed."
+        f"All planned scenarios and required regressions ran and passed."
     )
     url = github_api.post_pr_comment(state["repo"], state["pr_number"], body)
     return {**state, "pr_comment_url": url, "defects_created": []}
@@ -110,6 +182,7 @@ def _report_fail(state: PipelineState) -> PipelineState:
         f"## Agentic QA — FAILED\n\n"
         f"**Change:** {state.get('change_summary', 'unknown')}\n\n"
         f"**Test plan:**\n{_plan_table(state)}\n\n"
+        f"**Blast radius:**\n{_blast_radius_block(state)}\n\n"
         f"**Gate reasons:**\n{_bullets(state.get('gate_reasons', []))}\n\n"
         f"**Evidence:** {evidence_block}\n\n"
         f"**Defects filed:**\n{_bullets(defect_urls)}"

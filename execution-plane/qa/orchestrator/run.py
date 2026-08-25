@@ -24,8 +24,10 @@ from pathlib import Path
 
 import yaml
 
+from orchestrator import data_store
 from orchestrator.context import build_assertions
 from orchestrator.graph import build_graph
+from orchestrator.nodes.diff_analysis import changed_paths_from_name_status
 from orchestrator.nodes import report as report_node
 from orchestrator.paths import DIFF_PATHS, FEATURES_FILE, REPO_ROOT
 
@@ -45,6 +47,27 @@ def get_diff(base_sha: str, head_sha: str) -> str:
     return result.stdout
 
 
+def get_changed_paths(base_sha: str, head_sha: str) -> list[str]:
+    """Which files changed, from git rather than from the diff text.
+
+    `--name-status -z` is the deterministic source: it distinguishes a rename
+    from a delete-plus-add and survives paths containing spaces, neither of
+    which the `diff --git` headers can express. Scope derived from the header
+    parse pointed a rename at the pre-rename path, which no longer exists.
+    """
+    result = subprocess.run(
+        ["git", "diff", "--name-status", "-z", f"{base_sha}..{head_sha}", "--", *DIFF_PATHS],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"git diff --name-status {base_sha}..{head_sha} failed\n{result.stderr.strip()}"
+        )
+    return changed_paths_from_name_status(result.stdout)
+
+
 def get_features() -> dict:
     return yaml.safe_load(FEATURES_FILE.read_text()) if FEATURES_FILE.exists() else {}
 
@@ -55,6 +78,20 @@ def _run_phase(args) -> dict:
         print("No relevant changes in demo-app/ or features.yaml — skipping QA pipeline.")
         return {}
 
+    # The store is restored whatever happens. Seeding is additive and had no
+    # teardown; that only looked safe because both real execution paths throw
+    # the checkout away afterwards. A developer running this against their
+    # working copy was permanently editing a tracked file.
+    original = data_store.snapshot()
+    try:
+        state = _invoke(args, diff_text)
+    finally:
+        if data_store.restore(original):
+            print("Restored the data store to its pre-run contents.")
+    return state
+
+
+def _invoke(args, diff_text: str) -> dict:
     return build_graph().invoke(
         {
             "repo": args.repo,
@@ -62,6 +99,8 @@ def _run_phase(args) -> dict:
             "base_sha": args.base_sha,
             "head_sha": args.head_sha,
             "diff_text": diff_text,
+            "changed_paths": get_changed_paths(args.base_sha, args.head_sha),
+            "head_sha_for_graph": args.head_sha,
             "features_context": get_features(),
         }
     )

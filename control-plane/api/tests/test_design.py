@@ -151,12 +151,46 @@ def test_too_many_files_is_refused():
     assert any(f"more than the {MAX_FILES}" in r for r in verdict.reasons)
 
 
-def test_an_empty_graph_is_reported_not_silently_passed():
-    """A design validated against nothing has not been validated, and the run
-    should say so rather than imply a check happened."""
+def test_an_empty_graph_refuses_rather_than_passing():
+    """A design validated against nothing has not been validated. This used to
+    return allowed=True with a note attached, which meant the one condition
+    guaranteeing containment could not work was also the one condition under
+    which every design was admitted."""
     verdict = review(_design(), known_modules={}, file_dependents={}, known_criteria=set())
+
+    assert verdict.allowed is False
+    assert "holds no modules" in verdict.reasons[0]
+    assert verdict.impact == {"files": [], "modules": []}
+
+
+def test_a_graph_that_resolved_too_little_refuses_and_says_what_it_missed():
+    """Containment is only as good as the edges behind it. A graph that
+    dropped a fifth of its internal imports can approve a design whose real
+    impact set is unknowable, so it declines and names the specifiers it could
+    not resolve."""
+    verdict = review(
+        _design(),
+        known_modules={"demo-app/app/claims": {"demo-app/app/claims/page.tsx"}},
+        file_dependents={},
+        graph_quality={
+            "internal_capture_rate": 0.62,
+            "most_missed": [("@/lib/api", 6), ("@/lib/types", 6)],
+        },
+    )
+
+    assert verdict.allowed is False
+    assert "62.0%" in verdict.reasons[0]
+    assert "@/lib/api" in verdict.reasons[0]
+
+
+def test_a_healthy_graph_is_reviewed_normally():
+    verdict = review(
+        _design(),
+        known_modules={"demo-app/app/claims": {"demo-app/app/claims/page.tsx"}},
+        file_dependents={},
+        graph_quality={"internal_capture_rate": 0.93, "most_missed": []},
+    )
     assert verdict.allowed is True
-    assert "not validated" in verdict.reasons[0]
 
 
 # --- in the graph ----------------------------------------------------------

@@ -15,7 +15,15 @@ def test_finds_tests_nested_under_specs(playwright_report, spec):
 
     leaves = _walk_results(report)
 
-    assert leaves == [{"title": "claims table renders all claims", "status": "expected"}]
+    assert leaves == [
+        {
+            "title": "claims table renders all claims",
+            "status": "expected",
+            # Carried so a result can be traced to the assignment that
+            # produced it — a title cannot identify which spec ran.
+            "file": "claims-list.spec.ts",
+        }
+    ]
 
 
 def test_takes_title_from_the_spec_not_the_test(playwright_report, spec):
@@ -35,7 +43,9 @@ def test_falls_back_to_last_result_when_status_absent(playwright_report):
     report = playwright_report(
         {"title": "legacy shape", "tests": [{"results": [{"status": "passed"}]}]}
     )
-    assert _walk_results(report) == [{"title": "legacy shape", "status": "passed"}]
+    assert [{k: v for k, v in leaf.items() if k != "file"} for leaf in _walk_results(report)] == [
+        {"title": "legacy shape", "status": "passed"}
+    ]
 
 
 def test_unknown_when_a_test_produced_no_results(playwright_report):
