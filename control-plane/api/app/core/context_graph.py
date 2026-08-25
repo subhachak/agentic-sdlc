@@ -61,7 +61,9 @@ class ContextGraphStore(Protocol):
         self, phase: str, project: str = DEFAULT_PROJECT
     ) -> set[tuple[str, str, str]]: ...
 
-    async def retract(self, phase: str, edges: set[tuple[str, str, str]]) -> dict[str, int]: ...
+    async def retract(
+        self, phase: str, edges: set[tuple[str, str, str]], project: str = DEFAULT_PROJECT
+    ) -> dict[str, int]: ...
 
     async def index_provenance(self, project: str = DEFAULT_PROJECT) -> dict[str, Any]: ...
 
@@ -248,7 +250,9 @@ class SqlContextGraph:
 
         return {"edges": len(edges), "nodes": len(orphans)}
 
-    async def phase_edges(self, phase: str) -> set[tuple[str, str, str]]:
+    async def phase_edges(
+        self, phase: str, project: str = DEFAULT_PROJECT
+    ) -> set[tuple[str, str, str]]:
         """What one phase currently asserts, in the terms a caller thinks in.
 
         Keyed by external ids rather than node ids so a caller can compare

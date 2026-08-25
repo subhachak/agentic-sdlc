@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.context_graph import Assertion, NodeSpec
-from app.graph.identity import node_id
+from app.graph.identity import node_id as make_node_id
 from app.graph.ontology import EdgeType, NodeType, validate_edge
 from app.graph.projects import DEFAULT_PROJECT, project_of
 
@@ -21,7 +21,7 @@ class InMemoryContextGraph:
         self.edges: list[dict[str, Any]] = []
 
     def _put(self, spec) -> str:
-        nid = node_id(spec.type, spec.system, spec.external_id)
+        nid = make_node_id(spec.type, spec.system, spec.external_id)
         existing = self.nodes.get(nid, {}).get("projection", {})
         self.nodes[nid] = {
             "id": nid,
@@ -131,8 +131,8 @@ class InMemoryContextGraph:
     def _forward(self, edge_type: str, ids: set[str]) -> set[str]:
         return {e["dst_id"] for e in self.edges if e["type"] == edge_type and e["src_id"] in ids}
 
-    async def neighbours(self, node_id_: str) -> list[dict[str, Any]]:
-        return [e for e in self.edges if node_id_ in (e["src_id"], e["dst_id"])]
+    async def neighbours(self, node_id: str) -> list[dict[str, Any]]:
+        return [e for e in self.edges if node_id in (e["src_id"], e["dst_id"])]
 
     async def untested_criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         passing = {
@@ -183,6 +183,31 @@ class InMemoryContextGraph:
             if e["src_id"] in visible or e["dst_id"] in visible:
                 edges[e["type"]] = edges.get(e["type"], 0) + 1
         return {"nodes": nodes, "edges": edges}
+
+    async def modules(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
+        """Modules with their outgoing dependencies, heaviest first."""
+        mine = self._mine(project)
+        mods = {
+            n["id"]: n for n in self.nodes.values()
+            if n["type"] == NodeType.MODULE and n["id"] in mine
+        }
+        out = []
+        for nid, node in mods.items():
+            deps = [
+                {"target": mods[e["dst_id"]]["external_id"],
+                 "weight": (e.get("attributes") or {}).get("weight", 1)}
+                for e in self.edges
+                if e["type"] == EdgeType.DEPENDS_ON
+                and e["src_id"] == nid
+                and e["dst_id"] in mods
+            ]
+            out.append({
+                "id": node["external_id"],
+                "name": node["projection"].get("name", node["external_id"]),
+                "depends_on": sorted(deps, key=lambda d: -d["weight"]),
+            })
+        out.sort(key=lambda m: -len(m["depends_on"]))
+        return out
 
     async def module_paths(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]:
         visible = self._visible(project)
