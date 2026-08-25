@@ -20,6 +20,15 @@ poor to review against.
 
 from __future__ import annotations
 
+from app.core.impact import (
+    Assessment,
+    ChangeSet,
+    Edge,
+    Policy,
+    assess,
+    roll_up,
+)
+
 from dataclasses import dataclass, field
 
 MAX_MODULES = 6
@@ -64,29 +73,51 @@ def impact_set(
 ) -> dict[str, list[str]]:
     """What a change to these files can reach.
 
+    A thin adapter over the canonical engine, kept because the design gate's
+    callers want files and modules rather than an assessment. The traversal
+    itself is no longer written here: three call sites each writing their own
+    is how the design gate and the QA plane came to disagree about what a
+    change reaches.
+
     Traversed at file level and rolled up to modules only for display.
     Rolling up first and traversing after is what gave every file in a
     directory the same blast radius — measured on one real repository, that
     was 13% of the codebase per change against 0.8% at file level.
-
-    Two hops by default, and that number came from measurement rather than
-    from taste — see DEFAULT_DEPTH. Deeper traversal over an import graph
-    eventually reaches most of a codebase, which is technically true and not
-    a useful answer; the harness is what says where that starts.
     """
-    reached = set(files)
-    frontier = set(files)
-    for _ in range(max(0, depth)):
-        nxt: set[str] = set()
-        for path in frontier:
-            nxt |= file_dependents.get(path, set())
-        frontier = nxt - reached
-        reached |= nxt
+    assessment = assess_change(files, file_dependents, depth=depth)
+    return {
+        "files": assessment.affected,
+        "modules": roll_up(assessment.affected, path_to_module or {}) if path_to_module else [],
+    }
 
-    modules = sorted(
-        {path_to_module[p] for p in reached if p in (path_to_module or {})}
-    ) if path_to_module else []
-    return {"files": sorted(reached - set(files)), "modules": modules}
+
+def assess_change(
+    files: list[str],
+    file_dependents: dict[str, set[str]],
+    *,
+    depth: int = DEFAULT_DEPTH,
+    known: set[str] | None = None,
+    snapshot: dict | None = None,
+) -> Assessment:
+    """The full assessment, for callers that want the explanation too.
+
+    `file_dependents` maps a file to the files that import it — already the
+    "impact flows this way" direction — so it is handed to the engine as
+    edges pointing the way the parser found them and the engine applies the
+    direction itself.
+    """
+    edges = [
+        Edge(type="IMPORTS", source=dependent, target=target)
+        for target, dependents in file_dependents.items()
+        for dependent in dependents
+    ]
+    return assess(
+        ChangeSet(tuple(files)),
+        edges,
+        policy=Policy(max_depth=depth),
+        known=known,
+        snapshot=snapshot,
+    )
 
 
 def review(

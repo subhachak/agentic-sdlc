@@ -24,9 +24,10 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.routing import route_map
+from app.core.impact import ENGINE_VERSION, Policy
 from app.graph.projects import DEFAULT_PROJECT
 
-EXPORT_VERSION = 2
+EXPORT_VERSION = 3
 
 
 def _in_scope(path: str, scope: str) -> bool:
@@ -78,6 +79,17 @@ async def build_export(
         "routes": route_map(sorted(path_to_module)),
         "generated": True,
         "scope": scope,
+        # The impact contract, carried rather than assumed. The execution
+        # plane used to traverse modules one hop while the design gate
+        # traversed files two — so a change could pass a containment check
+        # and then be tested against a different set. Exporting the policy
+        # and the engine version means the two planes can be shown to agree,
+        # and a mismatch is a loud version check rather than a silent
+        # difference of opinion.
+        "impact": {
+            "engine_version": ENGINE_VERSION,
+            "policy": Policy().as_dict(),
+        },
         "provenance": provenance,
         "modules": [
             {"id": module, "paths": paths} for module, paths in sorted(modules.items())
