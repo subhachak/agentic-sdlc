@@ -58,8 +58,16 @@ def test_the_change_target_follows_the_index_source():
     what you got by doing nothing. Grounding reads files from source control
     for paths that came from the graph, so the two disagreeing means the
     design agent reads nothing — and nothing said so."""
-    assert mk(code_intelligence_adapter="github").source_control_adapter == "github"
+    # A repository has to have been named. Deriving from the bare default —
+    # code_intelligence_adapter is "github" whether or not anyone pointed it
+    # anywhere — made a fresh clone demand a token it does not have.
+    assert (
+        mk(code_intelligence_adapter="github", code_index_repo="acme/widgets")
+        .source_control_adapter
+        == "github"
+    )
     assert mk(code_intelligence_adapter="local").source_control_adapter == "local"
+    assert mk(code_intelligence_adapter="github").source_control_adapter == "local"
 
 
 def test_a_deliberate_split_is_still_allowed():

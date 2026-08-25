@@ -194,3 +194,36 @@ def test_the_execution_plane_validates_the_contract_it_is_handed():
         "the execution plane never checks export_version, so a schema change "
         "reaches it as wrong answers rather than as an error"
     )
+
+
+# ── it has to work on a machine that has nothing ──────────────────────────
+
+
+def test_a_fresh_clone_builds_without_any_credentials():
+    """No .env, no token, no configuration — the platform must still start.
+
+    This is not hypothetical. Deriving the change target from
+    `code_intelligence_adapter`, which defaults to "github" whether or not
+    anyone has pointed it anywhere, turned a fresh clone into a setup
+    demanding a token it does not have. Sixteen tests passed on the machine
+    that wrote the change and failed on a clean checkout — the same failure
+    as arriving at a client and finding it does not run.
+    """
+    from app.adapters.registry import build_adapters
+    from app.core.config import Settings
+
+    bare = Settings(_env_file=None)
+    assert bare.source_control_adapter == "local", (
+        "a deployment that has been told nothing must not default into one that "
+        "needs credentials"
+    )
+    build_adapters(bare, graph=None)
+
+
+def test_deriving_still_happens_once_a_repository_is_named():
+    """The fix must not disable the derivation it is protecting."""
+    from app.core.config import Settings
+
+    pointed = Settings(_env_file=None, code_index_repo="acme/widgets")
+    assert pointed.source_control_adapter == "github"
+    assert "source_control_adapter" in pointed.derived_keys

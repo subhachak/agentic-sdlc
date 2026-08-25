@@ -187,8 +187,21 @@ def derive(settings: "Settings") -> "Settings":
     # Where changes are proposed follows where code is read from. Grounding
     # asks source control for the files the graph names, so the two
     # answering different repositories means the design agent reads nothing.
+    #
+    # Only when a repository has actually been named. `code_intelligence_adapter`
+    # defaults to "github" whether or not anyone has pointed it anywhere, so
+    # deriving from the bare default turned a fresh clone from a setup that
+    # runs with no credentials into one that demands a token it does not
+    # have — 16 tests that pass on a developer's machine and fail on a clean
+    # checkout, which is the same thing as failing at a client site.
+    #
+    # Derivation follows evidence, not defaults. With no repository there is
+    # nothing remote to talk to, and local is still the right answer.
     if not settings.source_control_adapter:
-        object.__setattr__(settings, "source_control_adapter", settings.code_intelligence_adapter)
+        follows = (
+            settings.code_intelligence_adapter if settings.code_index_repo else "local"
+        )
+        object.__setattr__(settings, "source_control_adapter", follows)
         derived.add("source_control_adapter")
 
     fill("target_repo", settings.code_index_repo)
