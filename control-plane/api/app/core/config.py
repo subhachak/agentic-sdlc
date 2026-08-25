@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,7 +65,19 @@ class Settings(BaseSettings):
     github_repo: str | None = None
     github_token: str | None = None
     github_workflow_file: str = "agentic-qa.yml"
-    github_ref: str = "main"
+    # Read from CI_WORKFLOW_REF, never GITHUB_REF.
+    #
+    # GitHub Actions sets GITHUB_REF on every runner, and pydantic-settings
+    # binds environment variables by field name — so a control plane running
+    # inside Actions silently adopted the runner's ref as its own workflow
+    # ref. CI caught it as `refs/pull/1/merge`; in production it would have
+    # dispatched against whatever branch happened to be building.
+    #
+    # The platform's own namespace must not overlap the ambient namespace of
+    # the CI system it drives. test_framework_invariants pins the rest.
+    github_ref: str = Field(
+        default="main", validation_alias=AliasChoices("CI_WORKFLOW_REF")
+    )
     dispatch_timeout_seconds: int = 1800
 
     # --- code intelligence (graph seeding) ---

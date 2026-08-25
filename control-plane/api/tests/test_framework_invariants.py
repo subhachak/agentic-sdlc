@@ -227,3 +227,55 @@ def test_deriving_still_happens_once_a_repository_is_named():
     pointed = Settings(_env_file=None, code_index_repo="acme/widgets")
     assert pointed.source_control_adapter == "github"
     assert "source_control_adapter" in pointed.derived_keys
+
+
+# ── the platform's namespace must not overlap the runner's ────────────────
+
+# Set on every GitHub Actions runner. pydantic-settings binds by field name,
+# so a field called `github_ref` reads GITHUB_REF whether anyone meant it to
+# or not — and a control plane running inside Actions then configures itself
+# from the ambient job rather than from its own settings.
+RESERVED_BY_ACTIONS = {
+    "GITHUB_ACTION", "GITHUB_ACTIONS", "GITHUB_ACTOR", "GITHUB_API_URL",
+    "GITHUB_BASE_REF", "GITHUB_ENV", "GITHUB_EVENT_NAME", "GITHUB_EVENT_PATH",
+    "GITHUB_GRAPHQL_URL", "GITHUB_HEAD_REF", "GITHUB_JOB", "GITHUB_OUTPUT",
+    "GITHUB_PATH", "GITHUB_REF", "GITHUB_REF_NAME", "GITHUB_REF_PROTECTED",
+    "GITHUB_REF_TYPE", "GITHUB_REPOSITORY", "GITHUB_REPOSITORY_OWNER",
+    "GITHUB_RETENTION_DAYS", "GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID",
+    "GITHUB_RUN_NUMBER", "GITHUB_SERVER_URL", "GITHUB_SHA",
+    "GITHUB_STEP_SUMMARY", "GITHUB_WORKFLOW", "GITHUB_WORKFLOW_REF",
+    "GITHUB_WORKFLOW_SHA", "GITHUB_WORKSPACE",
+}
+
+# GITHUB_TOKEN is not on a runner unless a workflow maps it there, and this
+# platform's workflows map it deliberately. Reading it is the intent.
+DELIBERATE_OVERLAP = {"GITHUB_TOKEN"}
+
+
+def test_no_setting_reads_a_name_the_ci_runner_owns():
+    """A field named `github_ref` reads GITHUB_REF whether anyone meant it or
+    not. CI surfaced it as `refs/pull/1/merge`; in production a control plane
+    hosted inside Actions would have dispatched against whatever branch
+    happened to be building."""
+    from pydantic import AliasChoices
+
+    from app.core.config import Settings
+
+    offenders = []
+    for name, field in Settings.model_fields.items():
+        alias = field.validation_alias
+        if isinstance(alias, AliasChoices):
+            names = {str(a).upper() for a in alias.choices}
+        elif alias:
+            names = {str(alias).upper()}
+        else:
+            names = {name.upper()}  # what pydantic-settings binds by default
+        clash = (names & RESERVED_BY_ACTIONS) - DELIBERATE_OVERLAP
+        if clash:
+            offenders.append(f"{name} reads {sorted(clash)}")
+
+    assert offenders == [], (
+        "these settings are overwritten by the CI runner's own environment: "
+        + "; ".join(offenders)
+        + ". Give them a validation_alias outside the GITHUB_* namespace."
+    )
