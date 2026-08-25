@@ -73,10 +73,37 @@ class Semantics:
     note: str = ""
 
 
+# Relationships that exist and deliberately propagate nothing, with the
+# reason. Separate from "not yet declared", which is a gap: an edge type in
+# neither table fails the framework invariant, so adding one forces a
+# decision rather than being silently untraversed.
+NON_PROPAGATING: dict[str, str] = {
+    "BELONGS_TO": "a file belonging to a module is containment, not coupling",
+    "DECOMPOSES_TO": "requirement structure; impact runs over code, not intent",
+    "SATISFIES": "traceability from code to criterion, read by coverage rather than impact",
+    "AFFECTS": "asserted by the design phase as an outcome of impact, not an input to it",
+    "IMPLEMENTS": "traceability, same direction as SATISFIES",
+    "GOVERNED_BY": "control attachment; carries audit obligation, not test scope",
+    "VERIFIED_BY": "criterion to scenario, consumed by coverage",
+    "IMPLEMENTED_BY": "scenario to script, consumed by coverage",
+    "EXERCISED_IN": "script to run, consumed by coverage",
+    "COVERS": "script to module, the coverage claim impact is checked against",
+    "PRODUCED": "run to evidence, an output of the pipeline",
+    "RAISED": "run to defect, an output of the pipeline",
+    "CONTAINS": "release composition; operational, not code-test scope",
+    "IMPACTS": "the recorded conclusion of an assessment, not a premise for one",
+}
+
+
 # The registry. A client's own edge type is not gated on until it appears
 # here with semantics — a namespaced `x_depends_on_policy` edge that nothing
 # knows how to propagate is stored and displayed, never silently traversed
 # as though its meaning were understood.
+#
+# Mutable, and contributed to through `register`. A module-level literal
+# would mean a client whose relationship genuinely propagates has two
+# options: have it ignored, or edit this file. Both are the fork the ports
+# and adapters exist to prevent.
 SEMANTICS: dict[str, Semantics] = {
     "IMPORTS": Semantics(
         edge="IMPORTS",
@@ -104,6 +131,26 @@ SEMANTICS: dict[str, Semantics] = {
         note="operational blast radius, not code-test scope",
     ),
 }
+
+
+def register(semantics: Semantics, *, replace: bool = False) -> None:
+    """Teach the engine what one relationship means.
+
+    Called by an adapter at build time, so a client contributes traversal
+    behaviour rather than data alone — an `x_depends_on_policy` edge is not
+    useful unless whoever supplies it can also say how impact moves along it.
+
+    Replacing a built-in is deliberate and must be asked for: a client
+    silently redefining what IMPORTS means would make every measured number
+    in this platform incomparable with every other deployment's.
+    """
+    existing = SEMANTICS.get(semantics.edge)
+    if existing is not None and not replace:
+        raise ValueError(
+            f"{semantics.edge} already has semantics; pass replace=True to override, "
+            f"and expect impact numbers to stop being comparable with other deployments"
+        )
+    SEMANTICS[semantics.edge] = semantics
 
 
 @dataclass(frozen=True)

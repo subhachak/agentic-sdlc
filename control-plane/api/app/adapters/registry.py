@@ -222,12 +222,74 @@ def build_code_design_context(
     return StubSimilarityCodeDesignContext()
 
 
-def build_adapters(settings: Settings, graph: Any = None) -> Adapters:
-    from app.adapters.audit_sink.sqlite_audit_sink import SqliteAuditSink
-    from app.adapters.build_deploy.noop import NoOpBuildDeploy
-    from app.adapters.requirements_source.plain_text_csv import PlainTextCSVRequirementsSource
+def build_requirements_source(settings: Settings) -> RequirementsSource:
+    """Where work arrives from.
+
+    One implementation today. The branch exists so a Jira or Azure DevOps
+    connector is a new arm here and a configuration value, not a change to
+    build_adapters and a fork of the platform.
+    """
+    from app.adapters.requirements_source.plain_text_csv import (
+        PlainTextCSVRequirementsSource,
+    )
+
+    return PlainTextCSVRequirementsSource()
+
+
+def build_test_management(settings: Settings) -> TestManagement:
+    """Where test cases and their results live for the client."""
     from app.adapters.test_management.json_file import JsonFileTestManagement
 
+    return JsonFileTestManagement()
+
+
+def build_build_deploy(settings: Settings) -> BuildDeploy:
+    """How a release reaches an environment."""
+    from app.adapters.build_deploy.noop import NoOpBuildDeploy
+
+    return NoOpBuildDeploy()
+
+
+def build_audit_sink(settings: Settings) -> AuditSink:
+    """Where the decision trail is written.
+
+    A client with a retention or WORM requirement replaces this; the trail
+    is the thing an auditor asks for, so where it lands is theirs to choose.
+    """
+    from app.adapters.audit_sink.sqlite_audit_sink import SqliteAuditSink
+
+    return SqliteAuditSink()
+
+
+def build_design_agent(settings: Settings) -> Any:
+    """Who proposes the design.
+
+    `inline` is this platform's own agent. A client agent is dispatched and
+    read back later, which is why this returns through a port rather than
+    being called directly.
+    """
+    from app.adapters.design_agent.inline import InlineDesignAgent
+
+    return InlineDesignAgent()
+
+
+def build_context_graph_store(settings: Settings) -> Any:
+    """Where the context graph is persisted.
+
+    The platform's central abstraction, and the only port that used to be
+    constructed directly in main.py — so a client wanting Postgres, Neo4j or
+    a hosted graph service had to edit the entry point.
+
+    The storage engine is not the architecture. The versioned semantic model
+    is, and it is the Protocol in app/ports/context_graph.py; SQLite is one
+    implementation of it.
+    """
+    from app.core.context_graph import SqlContextGraph
+
+    return SqlContextGraph(build_entity_resolver(settings))
+
+
+def build_adapters(settings: Settings, graph: Any = None) -> Adapters:
     source_control = build_source_control(settings)
 
     return Adapters(
@@ -236,10 +298,10 @@ def build_adapters(settings: Settings, graph: Any = None) -> Adapters:
         code_intelligence=build_code_intelligence(settings),
         source_control=source_control,
         implementation_dispatch=build_implementation_dispatch(settings),
-        requirements_source=PlainTextCSVRequirementsSource(),
+        requirements_source=build_requirements_source(settings),
         code_design_context=build_code_design_context(settings, graph, source_control),
-        test_management=JsonFileTestManagement(),
-        build_deploy=NoOpBuildDeploy(),
+        test_management=build_test_management(settings),
+        build_deploy=build_build_deploy(settings),
         llm_provider=build_llm_provider(settings),
-        audit_sink=SqliteAuditSink(),
+        audit_sink=build_audit_sink(settings),
     )

@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     # "repo" grounds the design agent in the indexed repository; "stub" is
     # the fixture placeholder, kept only so tests can run with no source.
     code_design_context_adapter: Literal["repo", "stub"] = "repo"
+    # Ports whose implementation used to be chosen by whichever concrete
+    # class build_adapters happened to import. A client bringing Jira for
+    # requirements or ServiceNow for test cases had to edit that function,
+    # which is the fork the ports exist to prevent.
+    requirements_source_adapter: Literal["csv"] = "csv"
+    test_management_adapter: Literal["json-file"] = "json-file"
+    build_deploy_adapter: Literal["noop"] = "noop"
+    audit_sink_adapter: Literal["sqlite"] = "sqlite"
     claude_model: str = "claude-opus-5"
     anthropic_api_key: str | None = None
 

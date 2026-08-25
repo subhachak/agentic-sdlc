@@ -362,8 +362,17 @@ async def export_graph(
     """The derived graph in the form the execution plane consumes.
 
     Served rather than shared, because the execution plane runs in client CI
-    with no route to this database. The provenance stamp travels with it so a
-    QA run can refuse a graph that describes a commit it is not testing.
+    with no route to this database.
+
+    The provenance stamp travels with it so a QA run can tell whether the
+    graph describes the commit under test. It *warns* rather than refuses,
+    and that is deliberate — a stale graph still scopes better than no graph,
+    so refusing would make an out-of-date export worse than never having
+    generated one. This docstring used to claim a refusal, which was a
+    control the platform did not have.
+
+    The export version is refused, however: a contract this pipeline cannot
+    read produces wrong scope silently, which is a different thing entirely.
     """
     return await build_export(
         request.app.state.context_graph, scope=scope, project=_project(request, project)

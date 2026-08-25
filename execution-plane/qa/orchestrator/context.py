@@ -47,10 +47,36 @@ def _scoped(system: str) -> str:
 # --------------------------------------------------------------------- read
 
 
+# The export shapes this plane knows how to read. A versioned artefact
+# nobody validates is an unversioned artefact: export_version went 2 to 3
+# and no reader noticed, because this function read the file and trusted its
+# shape. A newer control plane reaching an older pipeline would have
+# produced wrong scope rather than an error.
+SUPPORTED_EXPORT_VERSIONS = frozenset({2, 3})
+
+
+class IncompatibleGraphExport(RuntimeError):
+    """The control plane speaks a version of the contract this cannot read."""
+
+
 def _load_code_graph() -> dict[str, Any]:
     if not CODE_GRAPH_FILE.exists():
         return {"modules": [], "depends_on": []}
-    return json.loads(CODE_GRAPH_FILE.read_text())
+    graph = json.loads(CODE_GRAPH_FILE.read_text())
+
+    version = graph.get("export_version")
+    if version is None:
+        # A hand-maintained file rather than a generated export. Allowed, and
+        # already reported by graph_warnings as unindexed scope.
+        return graph
+    if version not in SUPPORTED_EXPORT_VERSIONS:
+        raise IncompatibleGraphExport(
+            f"the code graph declares export_version {version}; this pipeline reads "
+            f"{sorted(SUPPORTED_EXPORT_VERSIONS)}. Upgrade the execution plane, or "
+            f"re-export from a control plane that matches it — scoping against a "
+            f"contract this does not understand is worse than not scoping."
+        )
+    return graph
 
 
 def _normalise(path: str) -> str:
@@ -216,7 +242,9 @@ def graph_warnings(head_sha: str = "") -> list[str]:
     return warnings
 
 
-def regression_candidates(changed_paths: list[str]) -> dict[str, Any]:
+def regression_candidates(
+    changed_paths: list[str], head_sha: str = ""
+) -> dict[str, Any]:
     """What a change obliges this run to re-test, and what it cannot.
 
     Three separate answers, because they carry different weight:
@@ -261,7 +289,12 @@ def regression_candidates(changed_paths: list[str]) -> dict[str, Any]:
         "required_scripts": sorted(required),
         "uncovered_components": sorted(widened - covered_modules),
         "dangling_coverage": dangling,
-        "graph_warnings": graph_warnings(),
+        # Passed, at last. The staleness branch inside graph_warnings tests
+        # `head_sha and commit != head_sha`, and nothing in production ever
+        # supplied one — so the check that catches a graph describing the
+        # wrong commit could not fire outside its own test. A control that
+        # cannot fire is not a control.
+        "graph_warnings": graph_warnings(head_sha=head_sha),
     }
 
 

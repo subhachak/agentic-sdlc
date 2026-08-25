@@ -354,3 +354,49 @@ def test_an_export_with_no_project_is_the_default(monkeypatch):
 
     monkeypatch.setattr(context, "_load_code_graph", lambda: {"modules": [], "depends_on": []})
     assert context._node("MODULE", "code", "x", {})["system"] == "code"
+
+
+def test_an_export_this_pipeline_cannot_read_is_refused(tmp_path, monkeypatch):
+    """A versioned artefact nobody validates is an unversioned artefact.
+
+    export_version went 2 to 3 and no reader noticed, because the loader read
+    the file and trusted its shape. A newer control plane reaching an older
+    pipeline produced wrong scope rather than an error, which is the failure
+    mode this whole plane exists to prevent.
+    """
+    import json
+
+    import pytest
+
+    from orchestrator import context
+
+    path = tmp_path / "future-graph.json"
+    path.write_text(json.dumps({"export_version": 99, "modules": [], "depends_on": []}))
+    monkeypatch.setattr(context, "CODE_GRAPH_FILE", path)
+
+    with pytest.raises(context.IncompatibleGraphExport) as raised:
+        context._load_code_graph()
+    assert "99" in str(raised.value)
+
+
+def test_a_hand_maintained_graph_is_still_allowed(tmp_path, monkeypatch):
+    """No version means no generated export, which graph_warnings already
+    reports as unindexed scope. Refusing it too would make a hand-written
+    file worse than no file."""
+    import json
+
+    from orchestrator import context
+
+    path = tmp_path / "hand.json"
+    path.write_text(json.dumps({"modules": [], "depends_on": []}))
+    monkeypatch.setattr(context, "CODE_GRAPH_FILE", path)
+    assert context._load_code_graph() == {"modules": [], "depends_on": []}
+
+
+def test_a_graph_describing_another_commit_is_reported(tmp_path, monkeypatch):
+    """The staleness check existed and could never fire: head_sha was never
+    passed in production, so it only ever ran in its own test."""
+    from orchestrator.context import regression_candidates
+
+    out = regression_candidates([], head_sha="deadbeefcafe")
+    assert any("not the deadbee" in w for w in out["graph_warnings"]), out["graph_warnings"]

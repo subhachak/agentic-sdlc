@@ -9,7 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from app.adapters.registry import build_adapters, build_entity_resolver
+from app.adapters.registry import (
+    build_adapters,
+    build_context_graph_store,
+    build_entity_resolver,
+)
 from app.agents.graph import build_graph
 from app.agents.nodes import build_nodes
 from app.core.audit import AuditLogger
@@ -39,7 +43,7 @@ def build_runtime(app: FastAPI, settings, checkpointer=None) -> None:
     # retrieval grounds the design agent in the same snapshot that impact and
     # containment are computed from, rather than indexing the repository a
     # second time on its own.
-    context_graph = SqlContextGraph(build_entity_resolver(settings))
+    context_graph = build_context_graph_store(settings)
     adapters = build_adapters(settings, graph=context_graph)
     app.state.settings = settings
     app.state.adapters = adapters

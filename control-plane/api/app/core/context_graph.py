@@ -50,56 +50,10 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class ContextGraphStore(Protocol):
-    async def ingest(
-        self, run_id: str, phase: str, assertions: list[Assertion]
-    ) -> int: ...
-
-    async def purge_phase(self, phase: str) -> dict[str, int]: ...
-
-    async def phase_edges(
-        self, phase: str, project: str = DEFAULT_PROJECT
-    ) -> set[tuple[str, str, str]]: ...
-
-    async def retract(
-        self, phase: str, edges: set[tuple[str, str, str]], project: str = DEFAULT_PROJECT
-    ) -> dict[str, int]: ...
-
-    async def index_provenance(self, project: str = DEFAULT_PROJECT) -> dict[str, Any]: ...
-
-    async def neighbours(self, node_id: str) -> list[dict[str, Any]]: ...
-
-    async def untested_criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]: ...
-
-    async def trace(
-        self, criterion_id: str, project: str = DEFAULT_PROJECT
-    ) -> dict[str, Any]: ...
-
-    async def blast_radius(
-        self, module_id: str, project: str = DEFAULT_PROJECT
-    ) -> list[dict[str, Any]]: ...
-
-    async def counts(self, project: str = DEFAULT_PROJECT) -> dict[str, int]: ...
-
-    async def modules(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]: ...
-
-    async def module_paths(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]: ...
-
-    async def module_catalogue(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]: ...
-
-    async def module_dependents(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]: ...
-
-    async def file_dependents(
-        self,
-        project: str = DEFAULT_PROJECT,
-        *,
-        runtime_only: bool = True,
-        include_tests: bool = True,
-        include_contracts: bool = True,
-    ) -> dict[str, set[str]]: ...
-
-    async def criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]: ...
-
+# The Protocol now lives in app/ports/context_graph.py, where every other
+# port is. Re-exported so callers that reason about the store through core
+# keep working, and so the import does not read as a layering violation.
+from app.ports.context_graph import ContextGraphStore  # noqa: E402,F401
 
 class SqlContextGraph:
     def __init__(self, resolver: EntityResolver) -> None:

@@ -103,7 +103,9 @@ def run(state: PipelineState, author: TestAuthor | None = None) -> PipelineState
     # agent. Those scripts are installed into the run by test_gen and enforced
     # by the gate, so the request tells the agent to skip them and spend its
     # scenarios on the areas nothing covers.
-    scope = regression_candidates(state.get("changed_paths", []))
+    scope = regression_candidates(
+        state.get("changed_paths", []), head_sha=state.get("head_sha") or ""
+    )
 
     request = {
         "change_summary": state["change_summary"],
