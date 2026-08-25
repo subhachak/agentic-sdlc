@@ -41,6 +41,10 @@ class IndexedRepoCodeDesignContext:
         self._index: ChunkIndex | None = None
         self._built_for: str | None = None
         self._lock = asyncio.Lock()
+        # How the last build went. An index over zero files answers every
+        # question with nothing and looks identical to a question with no
+        # good answer, so the build has to be able to say it read nothing.
+        self._last_read: dict[str, Any] = {}
 
     async def retrieve_context(self, query: str, top_k: int = 8) -> list[ContextSnippet]:
         index = await self._ensure_index()
@@ -78,17 +82,31 @@ class IndexedRepoCodeDesignContext:
             {path for paths in (await self._graph.module_paths()).values() for path in paths}
         )
         sources: dict[str, str] = {}
+        failures: list[str] = []
         for start in range(0, len(paths), BATCH):
             batch = paths[start : start + BATCH]
             try:
                 sources.update(
                     await self._source_control.read_files(self._repo, self._ref, batch)
                 )
-            except Exception:
+            except Exception as exc:  # noqa: BLE001
                 # A file the graph knows about that source control will not
                 # return is a stale-graph symptom, not a reason to leave the
-                # agent with no grounding at all.
+                # agent with no grounding at all — so the build continues.
+                #
+                # But it is recorded. Swallowing these silently is how the
+                # graph came to be indexed from one repository while
+                # retrieval read a different one, and the console reported
+                # the index as built.
+                failures.append(f"{type(exc).__name__}: {exc}")
                 continue
+
+        self._last_read = {
+            "requested": len(paths),
+            "read": len(sources),
+            "missing": len(paths) - len(sources),
+            "batch_errors": failures[:3],
+        }
         return sources
 
     async def status(self) -> dict[str, Any]:
@@ -99,9 +117,24 @@ class IndexedRepoCodeDesignContext:
         exactly like a question with no good answer.
         """
         provenance = await self._graph.index_provenance()
+        read = self._last_read
+        requested = read.get("requested", 0)
+        empty = self._index is not None and not len(self._index)
         return {
             "built": self._index is not None,
             "chunks": len(self._index) if self._index is not None else 0,
+            "files_requested": requested,
+            "files_read": read.get("read", 0),
+            # The useful message, not the count. "0 chunks" reads as "small
+            # repository"; this reads as the configuration mistake it is.
+            "problem": (
+                f"read 0 of {requested} files from {self._repo or 'an unnamed repository'!r} "
+                f"at {self._ref!r} — the graph is indexed from one place and grounding "
+                f"is reading another"
+                if empty and requested
+                else None
+            ),
+            "batch_errors": read.get("batch_errors", []),
             "built_for": self._built_for,
             "current_commit": provenance.get("commit_sha"),
             "stale": self._index is not None

@@ -45,6 +45,10 @@ def assertions_from_index(
         "indexed_at": prov.indexed_at,
         "internal_capture_rate": prov.internal_capture_rate,
         "most_missed": prov.most_missed[:5],
+        # Where the deployable units are. Manifests are not source and are
+        # not stored as files, so if this is not carried here nothing can
+        # work out what is separately testable after the fact.
+        "units": prov.units,
     }
     metadata = {f.path: f for f in index.files}
 

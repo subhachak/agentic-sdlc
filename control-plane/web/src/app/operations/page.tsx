@@ -22,14 +22,17 @@ export default function OperationsPage() {
       <HydrationPanel />
 
       <div className="card">
-        <h2 style={{ marginTop: 0, fontSize: "1rem" }}>When these need running</h2>
+        <h2 style={{ marginTop: 0, fontSize: "1rem" }}>When to press it</h2>
         <div className="field">
           <div>
             <div className="field-label">On a new engagement</div>
             <div className="field-help">
-              All three, in order. Nothing downstream works until the graph holds the
-              codebase: the design phase refuses against an empty graph rather than
-              approving a design nothing validated.
+              Once. Nothing downstream works until the graph holds the codebase: the design
+              phase refuses against an empty graph rather than approving a design nothing
+              validated. If the repository has more than one separately buildable unit you
+              will be asked which one the execution plane tests — that choice is not a size
+              question, it is what stops a QA run being told a change reaches an app it
+              does not deploy.
             </div>
           </div>
         </div>
@@ -37,22 +40,25 @@ export default function OperationsPage() {
           <div>
             <div className="field-label">As code and tests change</div>
             <div className="field-help">
-              <strong>Update</strong>. A completed run already refreshes the graph itself —
-              it has just changed the codebase, so leaving the graph on the previous commit
-              would have the next design phase reasoning about code that no longer exists.
-              Run it by hand when the repository moved without a run: a merge, a hotfix,
-              someone else&rsquo;s branch.
+              The same button. It re-reads the repository and reports what moved — new files,
+              deleted ones, edges that changed — rather than rebuilding silently. A completed
+              run already does this for itself, since it has just changed the codebase; press
+              it by hand when the repository moved without a run: a merge, a hotfix, someone
+              else&rsquo;s branch.
             </div>
           </div>
         </div>
         <div className="field">
           <div>
-            <div className="field-label">After any update</div>
+            <div className="field-label">What it does besides indexing</div>
             <div className="field-help">
-              <strong>Re-export</strong>, if the execution plane should see the change. It
-              runs in client CI with no route to this database, so its copy of the graph is
-              a generated file rather than a query — and a copy describing an older commit
-              scopes the next QA run against the wrong code.
+              Two things that used to be separate buttons, because forgetting either
+              produced a confident wrong answer rather than an error. It rebuilds the index
+              the design agent is grounded in, so the agent is not reasoning about a commit
+              that has moved. And it rewrites the copy the execution plane reads: that plane
+              runs in client CI with no route to this database, so its graph is a generated
+              file, and one describing an older commit scopes the next QA run against the
+              wrong code.
             </div>
           </div>
         </div>

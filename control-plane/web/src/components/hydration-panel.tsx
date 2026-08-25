@@ -2,119 +2,137 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  exportGraph,
   hydrationStatus,
-  rebuildRetrieval,
-  refreshGraph,
-  seedGraph,
+  listRepositories,
+  syncGraph,
   type HydrationStatus,
   type HydrationStep,
+  type RepositoryList,
+  type ScopeCandidate,
+  type SyncResult,
+  type SyncStep,
 } from "@/lib/api";
 
 /**
  * First-time setup, and every update after it.
  *
- * "Is it set up" has more than one answer. The graph can be indexed while
- * retrieval is unbuilt and the execution plane's copy describes last week's
- * commit — and each of those fails differently, so each is a step with its
- * own state rather than one button that either worked or did not.
+ * This was four buttons and three text boxes that had to agree with each
+ * other — index, build retrieval, export, with a repository, a ref and a
+ * scope typed in separately. Nothing enforced the order, nothing checked
+ * that the fields matched, and the commonest mistake produced an error
+ * naming a step that was not the problem.
+ *
+ * All of it is derivable. Which repositories exist is a question for the
+ * credentials already configured. The ref is a property of the repository.
+ * The scope is a property of the code that was just indexed. Whether this
+ * is a first index or a delta is a question about the graph. So: pick a
+ * repository, press one button, and answer a question only when there is a
+ * genuine choice to make.
+ *
+ * The per-step state below is still shown, because "it worked" and "the
+ * index worked and grounding read nothing" are different answers and the
+ * second one used to be reported as success.
  */
 
-type Busy = "seed" | "refresh" | "export" | "retrieval" | null;
+const TONE: Record<string, string> = {
+  ok: "var(--success)",
+  failed: "var(--danger)",
+  needs_choice: "var(--warning)",
+  skipped: "var(--muted)",
+};
 
-function StepRow({
-  step,
-  action,
-  label,
-  busy,
-  disabled,
-}: {
-  step: HydrationStep;
-  action: () => void;
-  label: string;
-  busy: boolean;
-  disabled: boolean;
-}) {
-  const blocked = step.blocked_by !== null;
-  const state = step.ready ? "ready" : blocked ? "blocked" : "pending";
-  const colour =
-    state === "ready" ? "var(--success)" : state === "blocked" ? "var(--muted)" : "var(--warning)";
-
+function StepResult({ step }: { step: SyncStep }) {
   return (
-    <div className="field">
-      <div style={{ minWidth: 0 }}>
-        <div className="field-label" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span aria-hidden style={{ color: colour, fontSize: "1.1em", lineHeight: 1 }}>
-            {step.ready ? "●" : "○"}
-          </span>
-          {step.title}
-          <span className="sr-only">{state}</span>
+    <li style={{ marginBottom: "0.4rem" }}>
+      <span aria-hidden style={{ color: TONE[step.status], marginRight: "0.4rem" }}>
+        {step.status === "ok" ? "●" : step.status === "skipped" ? "○" : "▲"}
+      </span>
+      <strong style={{ textTransform: "capitalize" }}>{step.step}</strong>
+      <span className="sr-only">{step.status}</span> — {step.summary}
+    </li>
+  );
+}
+
+function StepState({ step }: { step: HydrationStep }) {
+  const blocked = step.blocked_by !== null;
+  const colour = step.ready ? "var(--success)" : blocked ? "var(--muted)" : "var(--warning)";
+  return (
+    <li style={{ marginBottom: "0.35rem" }}>
+      <span aria-hidden style={{ color: colour, marginRight: "0.4rem" }}>
+        {step.ready ? "●" : "○"}
+      </span>
+      <strong>{step.title}</strong>
+      <span className="sr-only">{step.ready ? "ready" : "not ready"}</span>
+      <span className="muted"> — {step.detail}</span>
+      {step.quality && !step.quality.sufficient && (
+        <div className="field-help" style={{ color: "var(--danger)" }}>
+          Only {(step.quality.internal_capture_rate * 100).toFixed(1)}% of internal imports
+          resolved. Below 80% the design phase refuses, because an impact set derived from this
+          many missing edges cannot be trusted.
+          {step.quality.most_missed.length > 0 && (
+            <> Unresolved: {step.quality.most_missed.map(([spec]) => spec).join(", ")}</>
+          )}
         </div>
-        <div className="field-help">{step.detail}</div>
-        {step.quality && !step.quality.sufficient && (
-          <div className="field-help" style={{ color: "var(--danger)" }}>
-            Only {(step.quality.internal_capture_rate * 100).toFixed(1)}% of internal imports
-            resolved. Below 80% the design phase refuses, because an impact set derived from
-            this many missing edges cannot be trusted.
-            {step.quality.most_missed.length > 0 && (
-              <> Unresolved: {step.quality.most_missed.map(([spec]) => spec).join(", ")}</>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="field-action">
-        <button onClick={action} disabled={busy || disabled || blocked}>
-          {busy ? "Working..." : label}
-        </button>
-      </div>
-    </div>
+      )}
+    </li>
   );
 }
 
 export function HydrationPanel({ onChanged }: { onChanged?: () => void }) {
   const [status, setStatus] = useState<HydrationStatus | null>(null);
+  const [catalogue, setCatalogue] = useState<RepositoryList | null>(null);
   const [repo, setRepo] = useState("");
-  const [ref, setRef] = useState("main");
-  const [scope, setScope] = useState("demo-app");
-  const [busy, setBusy] = useState<Busy>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [scope, setScope] = useState<string | null>(null);
+  const [choices, setChoices] = useState<ScopeCandidate[] | null>(null);
+  const [result, setResult] = useState<SyncResult | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const next = await hydrationStatus();
       setStatus(next);
-      if (!repo && next.provenance.repo) setRepo(next.provenance.repo);
+      setRepo((current) => current || next.provenance.repo || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [repo]);
+  }, []);
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void (async () => {
+      try {
+        const list = await listRepositories();
+        setCatalogue(list);
+        // Whatever is already indexed wins; otherwise the most recently
+        // pushed, which is nearly always the one someone is here about.
+        setRepo((current) => current || list.current || list.repositories[0]?.full_name || "");
+      } catch (err) {
+        setCatalogue({ available: false, reason: String(err), repositories: [] });
+      }
+    })();
+  }, [load]);
 
-  async function run(kind: Exclude<Busy, null>, work: () => Promise<string>) {
-    setBusy(kind);
+  async function sync(withScope?: string | null) {
+    setBusy(true);
     setError(null);
-    setMessage(null);
+    setResult(null);
     try {
-      setMessage(await work());
+      const next = await syncGraph(repo, withScope ?? scope);
+      setResult(next);
+      const choice = next.steps.find((s) => s.status === "needs_choice");
+      setChoices(choice?.candidates ?? null);
       await load();
       onChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
-  const step = (id: string) => status?.steps.find((s) => s.id === id);
-  const indexStep = step("index");
-  const retrievalStep = step("retrieval");
-  const exportStep = step("export");
-  const noRepo = !repo.trim();
+  const selected = catalogue?.repositories.find((r) => r.full_name === repo);
+  const canList = catalogue?.available && catalogue.repositories.length > 0;
 
   return (
     <div className="card">
@@ -130,141 +148,111 @@ export function HydrationPanel({ onChanged }: { onChanged?: () => void }) {
         )}
       </h2>
       <p className="field-help" style={{ marginTop: "-0.4rem" }}>
-        Run these in order the first time. After that, <strong>Update</strong> re-reads the
-        repository and reports what moved — new files, deleted ones, edges that changed — rather
-        than rebuilding silently.
+        Choose a repository and press Sync. The same button does the first index and every update
+        after it — it reads the repository, grounds the design agent, and writes the copy the
+        execution plane tests against, reporting what changed rather than rebuilding silently.
       </p>
 
       <div className="field">
         <div>
           <div className="field-label">Repository</div>
-          <div className="field-help">Public, or private with a token configured</div>
+          <div className="field-help">
+            {canList
+              ? `${catalogue!.repositories.length} available to the configured credentials`
+              : catalogue?.reason || "loading..."}
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          <input
-            type="text"
-            placeholder="owner/name"
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-            style={{ flex: "2 1 12rem" }}
-          />
-          <input
-            type="text"
-            placeholder="main"
-            value={ref}
-            onChange={(e) => setRef(e.target.value)}
-            style={{ flex: "1 1 5rem" }}
-          />
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", flex: "1 1 18rem" }}>
+          {canList ? (
+            <select
+              value={repo}
+              onChange={(e) => {
+                setRepo(e.target.value);
+                // A different repository has different subtrees, so a scope
+                // chosen for the last one is not an answer for this one.
+                setScope(null);
+                setChoices(null);
+                setResult(null);
+              }}
+              style={{ flex: "1 1 14rem" }}
+            >
+              {catalogue!.repositories.map((r) => (
+                <option key={r.full_name} value={r.full_name}>
+                  {r.full_name}
+                  {r.private ? " (private)" : ""}
+                  {r.full_name === catalogue!.current ? " — indexed" : ""}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              placeholder="owner/name"
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
+              style={{ flex: "1 1 14rem" }}
+            />
+          )}
+          <button onClick={() => void sync()} disabled={busy || !repo.trim()}>
+            {busy ? "Syncing..." : "Sync"}
+          </button>
         </div>
       </div>
 
-      {indexStep && (
-        <StepRow
-          step={indexStep}
-          busy={busy === "seed"}
-          disabled={noRepo}
-          label={indexStep.ready ? "Re-index" : "Index"}
-          action={() =>
-            run("seed", async () => {
-              const s = await seedGraph(repo.trim(), ref.trim() || "main");
-              return `Indexed ${s.repo} at ${(s.commit_sha ?? "unpinned").slice(0, 7)}: ${
-                s.modules
-              } modules, ${s.files} files, ${s.file_imports} import edges. Captured ${(
-                s.resolution.internal_capture_rate * 100
-              ).toFixed(1)}% of internal imports.`;
-            })
-          }
-        />
+      {selected && (
+        <p className="field-help" style={{ marginTop: "-0.5rem" }}>
+          Branch <code>{selected.default_branch}</code>
+          {selected.description ? ` · ${selected.description}` : ""}
+        </p>
       )}
 
-      {indexStep && (
-        <div className="field">
-          <div>
-            <div className="field-label">Update from the repository</div>
-            <div className="field-help">
-              Re-reads the source and applies only what differs. Use this as code and tests
-              change; it names what moved instead of replacing the graph wholesale.
-            </div>
-          </div>
-          <div className="field-action">
-            <button
-            onClick={() =>
-              run("refresh", async () => {
-                const s = await refreshGraph(repo.trim(), ref.trim() || "main");
-                const d = s.delta;
-                if (d.edges_added === 0 && d.edges_removed === 0) {
-                  return `Already current at ${(s.commit_sha ?? "unpinned").slice(0, 7)} — ${
-                    d.unchanged
-                  } edges unchanged.`;
-                }
-                return `Updated to ${(s.commit_sha ?? "unpinned").slice(0, 7)}: ${
-                  d.edges_added
-                } edge(s) added, ${d.edges_removed} removed, ${d.nodes_removed} file(s) dropped, ${
-                  d.unchanged
-                } unchanged.`;
-              })
-            }
-            disabled={busy !== null || noRepo || !indexStep.ready}
-          >
-            {busy === "refresh" ? "Updating..." : "Update"}
-            </button>
+      {choices && (
+        <div className="card notice" style={{ marginTop: "0.75rem" }}>
+          <strong>Which part does the execution plane test?</strong>
+          <p className="field-help" style={{ margin: "0.35rem 0 0.6rem" }}>
+            This repository has more than one separately buildable unit. Scoping is not only about
+            size: a QA run testing one app should not be told a change reaches another.
+          </p>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            {choices.map((c) => (
+              <button
+                key={c.path || "__all__"}
+                onClick={() => {
+                  setScope(c.path);
+                  void sync(c.path);
+                }}
+                disabled={busy}
+              >
+                {c.label}{" "}
+                {/* Not .muted — that colour is chosen against the page
+                    background and is close to unreadable on a filled
+                    button. */}
+                <span style={{ opacity: 0.75 }}>({c.files} files)</span>
+              </button>
+            ))}
           </div>
         </div>
       )}
 
-      {retrievalStep && (
-        <StepRow
-          step={retrievalStep}
-          busy={busy === "retrieval"}
-          disabled={false}
-          label={retrievalStep.ready ? "Rebuild" : "Build"}
-          action={() =>
-            run("retrieval", async () => {
-              const s = await rebuildRetrieval();
-              return `Retrieval index built: ${s.chunks} chunks at ${(
-                s.built_for ?? "unpinned"
-              ).slice(0, 7)}.`;
-            })
-          }
-        />
+      {result && (
+        <ul style={{ margin: "0.75rem 0 0", paddingLeft: "1.1rem", listStyle: "none" }}>
+          {result.steps.map((s) => (
+            <StepResult key={s.step} step={s} />
+          ))}
+        </ul>
       )}
 
-      {exportStep && (
-        <>
-          <StepRow
-            step={exportStep}
-            busy={busy === "export"}
-            disabled={false}
-            label={exportStep.ready ? "Re-export" : "Export"}
-            action={() =>
-              run("export", async () => {
-                const s = await exportGraph(scope.trim() || "demo-app");
-                return `Exported ${s.modules} modules and ${s.routes} routes at ${(
-                  s.commit_sha ?? "unpinned"
-                ).slice(0, 7)} to ${s.path}.`;
-              })
-            }
-          />
-          <div className="field">
-            <div>
-              <div className="field-label">Export scope</div>
-              <div className="field-help">
-                The subtree the execution plane tests. Not only a size question: a QA run
-                testing the app should not be told a change reaches the control plane.
-              </div>
-            </div>
-            <input
-              type="text"
-              value={scope}
-              onChange={(e) => setScope(e.target.value)}
-              style={{ flex: "1 1 8rem" }}
-            />
-          </div>
-        </>
+      {status && !result && (
+        <ul style={{ margin: "0.75rem 0 0", paddingLeft: "1.1rem", listStyle: "none" }}>
+          {status.steps.map((s) => (
+            <StepState key={s.id} step={s} />
+          ))}
+        </ul>
       )}
 
-      {message && <p style={{ color: "var(--success)", marginBottom: 0 }}>{message}</p>}
-      {error && <p style={{ color: "var(--danger)", marginBottom: 0 }}>{error}</p>}
+      {error && (
+        <p style={{ color: "var(--danger)", marginBottom: 0, marginTop: "0.75rem" }}>{error}</p>
+      )}
     </div>
   );
 }

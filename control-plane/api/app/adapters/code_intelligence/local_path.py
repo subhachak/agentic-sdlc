@@ -11,7 +11,8 @@ from pathlib import Path
 
 from app.adapters.code_intelligence.github import _index_from_sources
 from app.adapters.code_intelligence.parsing import is_ignored, is_source
-from app.ports.code_intelligence import CodeIndex
+from app.core.scoping import is_marker
+from app.ports.code_intelligence import CodeIndex, Repository
 
 MAX_FILE_BYTES = 400_000
 MAX_FILES = 4000
@@ -22,6 +23,35 @@ class LocalPathCodeIntelligence:
         self._root = Path(root)
         self._max_depth = max_depth
 
+    async def repositories(self) -> list[Repository]:
+        """The configured root, named by what it actually is.
+
+        A single entry rather than an empty list: the console's job is to
+        stop someone typing a name, and there is exactly one thing this
+        adapter can index. `ref` reports the checked-out branch so the same
+        UI shows a real value here as it does for GitHub.
+        """
+        return [
+            Repository(
+                full_name=self._root.resolve().name,
+                default_branch=self._current_branch() or "local",
+                private=True,
+                description=f"local checkout at {self._root.resolve()}",
+            )
+        ]
+
+    def _current_branch(self) -> str:
+        try:
+            out = subprocess.run(
+                ["git", "-C", str(self._root), "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return out.stdout.strip() if out.returncode == 0 else ""
+        except (OSError, subprocess.SubprocessError):
+            # Not a checkout, or no git. Neither is an error worth raising
+            # for a label.
+            return ""
+
     async def index(self, repo: str, ref: str = "local") -> CodeIndex:
         base = self._root / repo if repo and (self._root / repo).exists() else self._root
         if not base.exists():
@@ -30,6 +60,7 @@ class LocalPathCodeIntelligence:
         sources: dict[str, str] = {}
         skipped = 0
         tsconfigs: dict[str, str] = {}
+        units: set[str] = set()
 
         for path in sorted(base.rglob("*")):
             if not path.is_file():
@@ -37,6 +68,9 @@ class LocalPathCodeIntelligence:
             rel = path.relative_to(base).as_posix()
             if is_ignored(rel):
                 continue
+            # Before the source filter drops it — see the GitHub adapter.
+            if is_marker(rel.rsplit("/", 1)[-1]):
+                units.add(rel.rsplit("/", 1)[0] if "/" in rel else "")
             # Every config, not the first: a monorepo has one per package.
             if rel.endswith(("tsconfig.json", "jsconfig.json")):
                 tsconfigs[rel] = path.read_text(encoding="utf-8", errors="replace")
@@ -50,7 +84,7 @@ class LocalPathCodeIntelligence:
 
         return _index_from_sources(
             _repo_identity(base), ref, sources, skipped, tsconfigs,
-            self._max_depth, _head_sha(base),
+            self._max_depth, _head_sha(base), units=sorted(units),
         )
 
 

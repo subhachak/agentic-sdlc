@@ -55,17 +55,28 @@ async def status(
     ]
 
     retrieval_status = await _retrieval_status(retrieval)
+    # An index built over zero files is not a built index. It answers every
+    # design question with nothing, which is indistinguishable from a question
+    # that has no good answer — and it reported itself as ready, in green,
+    # while grounding was reading a repository the graph knows nothing about.
+    chunks = retrieval_status.get("chunks", 0)
+    empty = bool(retrieval_status.get("built")) and not chunks and not retrieval_status.get("fixed")
     steps.append(
         {
             "id": STEP_RETRIEVAL,
             "title": "Build the retrieval index",
             "detail": (
-                f"{retrieval_status.get('chunks', 0)} chunks"
+                retrieval_status.get("problem")
+                or "built over no files — the design agent is grounded in nothing"
+                if empty
+                else f"{chunks} chunks"
                 + (" — stale, rebuilt on next query" if retrieval_status.get("stale") else "")
                 if retrieval_status.get("built")
                 else "not built — the design agent is grounded in nothing until it is"
             ),
-            "ready": bool(retrieval_status.get("built")) and not retrieval_status.get("stale"),
+            "ready": bool(retrieval_status.get("built"))
+            and not retrieval_status.get("stale")
+            and not empty,
             "blocked_by": None if indexed else STEP_INDEX,
             "quality": None,
         }

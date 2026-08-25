@@ -362,6 +362,7 @@ class SqlContextGraph:
             "pinned": bool(projection.get("commit_sha")),
             "internal_capture_rate": projection.get("internal_capture_rate"),
             "most_missed": projection.get("most_missed") or [],
+            "units": projection.get("units") or [],
         }
 
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]:

@@ -258,6 +258,63 @@ export async function checkImplementationAgent(): Promise<{
   return json(res);
 }
 
+
+export type RepositoryOption = {
+  full_name: string;
+  default_branch: string;
+  private: boolean;
+  description: string;
+  updated_at: string;
+};
+
+export type RepositoryList = {
+  available: boolean;
+  reason?: string;
+  current?: string | null;
+  repositories: RepositoryOption[];
+};
+
+export type ScopeCandidate = {
+  path: string;
+  files: number;
+  marker: string;
+  label: string;
+  nested: string[];
+};
+
+export type SyncStep = {
+  step: "index" | "retrieval" | "export";
+  status: "ok" | "failed" | "skipped" | "needs_choice";
+  summary: string;
+  candidates?: ScopeCandidate[];
+  selected?: string | null;
+  must_choose?: boolean;
+  scope?: string;
+};
+
+export type SyncResult = {
+  ok: boolean;
+  repo: string;
+  ref: string;
+  first_time: boolean;
+  steps: SyncStep[];
+};
+
+export async function listRepositories(): Promise<RepositoryList> {
+  const res = await fetch(`${API_URL}/api/graph/repositories`, { cache: "no-store" });
+  return json(res);
+}
+
+/** Index or update, ground the agent, and export — in one call. */
+export async function syncGraph(repo: string, scope?: string | null): Promise<SyncResult> {
+  const res = await fetch(`${API_URL}/api/graph/sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(scope ? { repo, scope } : { repo }),
+  });
+  return json(res);
+}
+
 export async function hydrationStatus(): Promise<HydrationStatus> {
   const res = await fetch(`${API_URL}/api/graph/status`, { cache: "no-store" });
   return json(res);

@@ -79,6 +79,10 @@ class IndexProvenance(BaseModel):
     contract_edges: int = 0
     unmatched_calls: int = 0
     uncalled_routes: int = 0
+    # Directories holding a build manifest — the separately deployable units
+    # in the tree. Recorded during indexing because manifests are not source
+    # and are not kept as files, so nothing downstream could find them later.
+    units: list[str] = Field(default_factory=list)
     # resolved / (resolved + unresolved). The headline completeness number.
     internal_capture_rate: float = 1.0
     most_missed: list[tuple[str, int]] = Field(default_factory=list)
@@ -107,3 +111,32 @@ class CodeIndex(BaseModel):
 
 class CodeIntelligence(Protocol):
     async def index(self, repo: str, ref: str = "main") -> CodeIndex: ...
+
+
+class Repository(BaseModel):
+    """A repository the configured credentials can actually see.
+
+    Carried so the console can offer a choice instead of a text box. The
+    default branch comes back with the listing, which is the point: a ref
+    someone types is a ref someone can get wrong.
+    """
+
+    full_name: str
+    default_branch: str = "main"
+    private: bool = False
+    description: str = ""
+    updated_at: str = ""
+
+
+class RepositoryCatalogue(Protocol):
+    """Optional capability: enumerate what this source can index.
+
+    Deliberately not part of CodeIntelligence. A client adapter that can
+    index one repository it was pointed at — a mounted checkout, an internal
+    mirror with no listing API — is a perfectly good adapter, and requiring
+    it to invent a catalogue would be a tax for a convenience. Callers check
+    for it and fall back to asking for a name.
+    """
+
+    async def repositories(self) -> list[Repository]: ...
+
