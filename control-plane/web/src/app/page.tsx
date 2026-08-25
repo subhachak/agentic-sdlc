@@ -1,58 +1,30 @@
 import Link from "next/link";
-import CoverageMeter from "@/components/coverage-meter";
-import StatTile from "@/components/stat-tile";
 import { getDashboard } from "@/lib/api";
 import type { DashboardData } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const WAITING_LABEL: Record<DashboardData["recent"][number]["waiting_on"], string> = {
-  awaiting_human: "waiting for a person",
-  awaiting_machine: "waiting for CI",
-  working: "in progress",
-  finished: "finished",
-};
-
-const WAITING_TONE: Record<string, string> = {
-  awaiting_human: "warning",
-  awaiting_machine: "working",
-  working: "working",
-  finished: "good",
-};
-
-
 /**
- * One configured fact. Absent is stated rather than left blank: an empty cell
- * reads as "nothing to show here", and the useful message is that a field
- * nothing has filled in is why the next run will not work.
+ * What needs attention, and nothing else.
+ *
+ * This page used to restate the engagement and platform settings as two
+ * read-only cards — a third copy of values that already lived in two places
+ * and disagreed. Overview answers one question now: is anything waiting for
+ * me, and can this thing ship? Everything it names links to the page that
+ * owns it rather than duplicating it.
  */
-function Fact({
-  label,
-  value,
-  suffix,
-}: {
-  label: string;
-  value: string | null | undefined;
-  suffix?: string | null;
-}) {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>
-        {value ? (
-          <>
-            <code>{value}</code>
-            {suffix && <span className="muted"> · {suffix}</span>}
-          </>
-        ) : (
-          <span className="muted">not set</span>
-        )}
-      </dd>
-    </>
-  );
-}
 
-export default async function DashboardPage() {
+const WAITING: Record<
+  DashboardData["recent"][number]["waiting_on"],
+  { label: string; tone: string }
+> = {
+  awaiting_human: { label: "Needs approval", tone: "warn" },
+  awaiting_machine: { label: "Waiting for CI", tone: "busy" },
+  working: { label: "In progress", tone: "busy" },
+  finished: { label: "Finished", tone: "ok" },
+};
+
+export default async function OverviewPage() {
   let data: DashboardData | null = null;
   let error: string | null = null;
   try {
@@ -63,170 +35,184 @@ export default async function DashboardPage() {
 
   if (!data) {
     return (
-      <main className="wide">
-        <h1>Dashboard</h1>
-        <div className="card">
-          <p style={{ margin: 0 }}>The control plane is not reachable.</p>
-          <p className="muted" style={{ marginBottom: 0 }}>{error}</p>
+      <main>
+        <div className="page-head">
+          <h1>Overview</h1>
+        </div>
+        <div className="notice crit">
+          <h3>The control plane is not reachable</h3>
+          <p>{error}</p>
         </div>
       </main>
     );
   }
 
-  const { runs, coverage, graph, recent, dispatches, engagement, platform, credentials, hydration } = data;
+  const { runs, coverage, graph, recent, dispatches, hydration } = data;
   const pending = dispatches.pending ?? 0;
+  const tested = coverage.criteria ? Math.round((coverage.tested / coverage.criteria) * 100) : 0;
 
   return (
-    <main className="wide">
-      <h1>Dashboard</h1>
-      <p className="muted" style={{ marginTop: "-0.5rem" }}>
-        What the platform is running, what it is waiting on, and what it can prove.
-      </p>
+    <main>
+      <div className="page-head">
+        <h1>Overview</h1>
+        <p>What the platform is running, what it is waiting on, and what it can prove.</p>
+      </div>
 
       {!hydration.hydrated && (
-        <div className="card notice">
-          <strong>Setup is incomplete.</strong> Runs will not produce trustworthy results
-          until the graph is populated — a design phase refuses against an empty graph, and
-          scoping derived from a stale one describes the wrong commit.
-          <ul style={{ margin: "0.5rem 0 0.5rem 1.1rem", padding: 0 }}>
+        <div className="notice warn">
+          <h3>Setup is incomplete</h3>
+          <p>
+            Runs will not produce trustworthy results until this is finished — a design
+            phase refuses against an empty graph, and scoping from a stale one describes the
+            wrong commit.
+          </p>
+          <ul>
             {hydration.steps
               .filter((step) => !step.ready)
               .map((step) => (
-                <li key={step.id} style={{ fontSize: "0.85rem" }}>
+                <li key={step.id}>
                   <strong>{step.title}</strong> — {step.detail}
                 </li>
               ))}
           </ul>
-          <Link href="/operations">Go to Operations</Link>
+          <p style={{ marginTop: "var(--s3)" }}>
+            <Link href="/setup">Finish setup →</Link>
+          </p>
         </div>
       )}
 
-      <div className="card">
-        <h2 style={{ marginTop: 0, fontSize: "1rem" }}>
-          This engagement{" "}
-          <span className="muted" style={{ fontWeight: 400, fontSize: "0.8rem" }}>
-            — <Link href="/config">configure</Link>
+      <div className="stats">
+        <div className={`stat ${runs.awaiting_human ? "attention" : ""}`}>
+          <span className="stat-label">Needs a person</span>
+          <span className="stat-value">{runs.awaiting_human}</span>
+          <span className="stat-note">
+            {runs.awaiting_human ? "gate approval" : "nothing blocked"}
           </span>
-        </h2>
-        <dl className="facts">
-          <Fact label="Codebase indexed" value={engagement.indexed_repo} suffix={engagement.indexed_ref} />
-          <Fact label="At commit" value={engagement.commit?.slice(0, 7) ?? null}
-                suffix={engagement.indexed_at ? new Date(engagement.indexed_at).toLocaleString() : null} />
-          <Fact label="Changes proposed against" value={engagement.target_repo} suffix={engagement.target_ref} />
-          <Fact label="CI repository" value={engagement.ci_repo} />
-          <Fact label="Deploys to" value={engagement.environment} />
-          <Fact label="Tested subtree" value={engagement.export_scope} />
-        </dl>
-      </div>
-
-      <div className="card">
-        <h2 style={{ marginTop: 0, fontSize: "1rem" }}>
-          Platform{" "}
-          <span className="muted" style={{ fontWeight: 400, fontSize: "0.8rem" }}>
-            — <Link href="/config">configure</Link>
+        </div>
+        <div className="stat">
+          <span className="stat-label">Waiting for CI</span>
+          <span className="stat-value">{runs.awaiting_machine}</span>
+          <span className="stat-note">
+            {pending ? `${pending} dispatch${pending === 1 ? "" : "es"} in flight` : "no jobs"}
           </span>
-        </h2>
-        <dl className="facts">
-          <Fact label="Model" value={platform.model_provider === "mock" ? "mock (no model)" : platform.model} />
-          <Fact label="Runs QA on" value={platform.execution_target} />
-          <Fact label="Indexes from" value={platform.index_source} />
-          <Fact label="Proposes changes via" value={platform.change_target} />
-          <Fact label="Gates" value={platform.gates} />
-          <Fact
-            label="Credentials"
-            value={
-              Object.entries(credentials)
-                .filter(([, present]) => present)
-                .map(([name]) => name.replace(/_/g, " "))
-                .join(", ") || null
-            }
-          />
-        </dl>
+        </div>
+        <div className={`stat ${coverage.untested ? "bad" : coverage.criteria ? "good" : ""}`}>
+          <span className="stat-label">Untested criteria</span>
+          <span className="stat-value">{coverage.untested}</span>
+          <span className="stat-note">
+            {coverage.criteria === 0 ? "graph not seeded" : "no passing test"}
+          </span>
+        </div>
+        <div className="stat">
+          <span className="stat-label">Runs</span>
+          <span className="stat-value">{runs.total}</span>
+          <span className="stat-note">all time</span>
+        </div>
+        <div className="stat">
+          <span className="stat-label">Modules</span>
+          <span className="stat-value">{graph.modules}</span>
+          <span className="stat-note">{graph.dependencies} dependencies</span>
+        </div>
       </div>
 
-      <div className="tiles">
-        <StatTile label="Runs" value={runs.total} large />
-        <StatTile
-          label="Waiting for a person"
-          value={runs.awaiting_human}
-          note={runs.awaiting_human ? "gate approval needed" : "nothing blocked"}
-          tone={runs.awaiting_human ? "warning" : "neutral"}
-        />
-        <StatTile
-          label="Waiting for CI"
-          value={runs.awaiting_machine}
-          note={pending ? `${pending} dispatch${pending === 1 ? "" : "es"} in flight` : "no jobs running"}
-          tone={runs.awaiting_machine ? "working" : "neutral"}
-        />
-        <StatTile
-          label="Untested criteria"
-          value={coverage.untested}
-          note={coverage.criteria === 0 ? "graph not seeded" : "no passing test"}
-          tone={coverage.untested ? "critical" : "good"}
-        />
-        <StatTile label="Modules" value={graph.modules} note={`${graph.dependencies} dependencies`} />
-      </div>
-
-      <div className="card">
-        <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Release readiness</h2>
-        <CoverageMeter tested={coverage.tested} total={coverage.criteria} />
-        {coverage.gaps.length > 0 && (
-          <table style={{ marginTop: "0.9rem" }}>
-            <thead>
-              <tr>
-                <th>Criterion with no passing test</th>
-                <th>Text</th>
-              </tr>
-            </thead>
-            <tbody>
-              {coverage.gaps.map((gap) => (
-                <tr key={gap.id}>
-                  <td><code>{gap.id}</code></td>
-                  <td className="muted">{gap.text || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <div className="card">
-        <h2 style={{ marginTop: 0, fontSize: "1rem" }}>Recent runs</h2>
-        {recent.length === 0 ? (
-          <p className="muted" style={{ marginBottom: 0 }}>
-            No runs yet. <Link href="/new">Start one →</Link>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Release readiness</h2>
+            <p>
+              An acceptance criterion counts as covered only when a test that claims it was
+              observed to run and pass.
+            </p>
+          </div>
+          <div className="panel-head-end">
+            <span className={`pill ${coverage.untested ? "warn" : coverage.criteria ? "ok" : "idle"}`}>
+              {coverage.criteria === 0 ? "No criteria" : `${tested}% covered`}
+            </span>
+          </div>
+        </div>
+        <div className="panel-body">
+          <div className="meter" role="img" aria-label={`${tested}% of criteria covered`}>
+            <div
+              className={`meter-fill ${tested === 100 ? "" : tested === 0 ? "none" : "partial"}`}
+              style={{ width: `${tested}%` }}
+            />
+          </div>
+          <p className="muted" style={{ marginTop: "var(--s2)", fontSize: "0.85rem" }}>
+            {coverage.tested} of {coverage.criteria} criteria
           </p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Requirement</th>
-                <th>Status</th>
-                <th>Started</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recent.map((run) => (
-                <tr key={run.run_id}>
-                  <td>
-                    <Link href={`/runs/${run.run_id}`}>
-                      {run.requirement.slice(0, 60) || "(no text)"}
-                    </Link>
-                  </td>
-                  <td>
-                    <span className="status">
-                      <span className={`status-dot ${WAITING_TONE[run.waiting_on]}`} aria-hidden="true" />
-                      {WAITING_LABEL[run.waiting_on]}
-                    </span>
-                  </td>
-                  <td className="muted">{new Date(run.created_at).toLocaleString()}</td>
+        </div>
+        {coverage.gaps.length > 0 && (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Criterion with no passing test</th>
+                  <th>Text</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {coverage.gaps.map((gap) => (
+                  <tr key={gap.id}>
+                    <td>
+                      <code>{gap.id}</code>
+                    </td>
+                    <td className="muted">{gap.text || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
+      </section>
 
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Recent runs</h2>
+          </div>
+          <div className="panel-head-end">
+            <Link href="/new">
+              <button>Start a run</button>
+            </Link>
+          </div>
+        </div>
+        {recent.length === 0 ? (
+          <div className="panel-body">
+            <p className="muted" style={{ margin: 0 }}>
+              No runs yet.
+            </p>
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Requirement</th>
+                  <th>State</th>
+                  <th>Started</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((run) => (
+                  <tr key={run.run_id}>
+                    <td>
+                      <Link href={`/runs/${run.run_id}`}>
+                        {run.requirement.slice(0, 70) || "(no text)"}
+                      </Link>
+                    </td>
+                    <td>
+                      <span className={`pill ${WAITING[run.waiting_on].tone}`}>
+                        {WAITING[run.waiting_on].label}
+                      </span>
+                    </td>
+                    <td className="muted">{new Date(run.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </main>
   );
 }

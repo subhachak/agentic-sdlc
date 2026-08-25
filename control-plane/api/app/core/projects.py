@@ -65,14 +65,74 @@ class ProjectRecord:
         }
 
 
+# Keys derivation can supply. A stored value for one of these is only a
+# decision when it differs from what derivation would have produced.
+DERIVABLE = ("target_repo", "target_ref", "github_repo", "github_ref")
+
+
+def _canonical(value: Any) -> Any:
+    """A repository name reduced to one form.
+
+    `https://github.com/acme/widgets` and `acme/widgets` are one repository
+    written two ways, and treating them as different answers is how a value
+    identical to the derived one reads as a deliberate override.
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip().rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "git@github.com:"):
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+    return text.removesuffix(".git").lower()
+
+
+def redundant(engagement: dict[str, Any], settings: Settings) -> set[str]:
+    """Stored answers derivation would have given anyway.
+
+    Every engagement key used to be copied into a new project record,
+    including the ones that were only defaults or were themselves derived.
+    That froze them as decisions: the console could no longer tell "someone
+    chose this" from "nothing chose this", so it asked for four fields that
+    already had answers.
+    """
+    if not engagement:
+        return set()
+
+    # What derivation produces from this project's own repository, with every
+    # derivable field cleared so none of them is taken as given.
+    probe_values = {
+        **undone(settings),
+        **{k: v for k, v in engagement.items() if k not in DERIVABLE and v not in (None, "")},
+        **{k: Settings.model_fields[k].default for k in DERIVABLE},
+    }
+    probe = derive(Settings(**probe_values))
+
+    return {
+        key
+        for key in DERIVABLE
+        if key in engagement
+        and _canonical(engagement[key]) == _canonical(getattr(probe, key, None))
+    }
+
+
 def defaults_from(settings: Settings) -> dict[str, Any]:
     """The environment's answers, used to seed a new project.
 
     A new engagement starts from whatever the deployment was configured with
     rather than from blank fields, because most of them are right most of the
     time and the ones that are not are obvious.
+
+    Only what was actually answered. Storing a derived or default value here
+    turns it into something someone appears to have chosen, and the console
+    then asks about it forever.
     """
-    return {key: getattr(settings, key, None) for key in ENGAGEMENT_KEYS}
+    stored = {key: getattr(settings, key, None) for key in ENGAGEMENT_KEYS}
+    for key in settings.derived_keys:
+        stored.pop(key, None)
+    for key in DERIVABLE:
+        if key in stored and stored[key] == Settings.model_fields[key].default:
+            stored.pop(key)
+    return {k: v for k, v in stored.items() if v not in (None, "")}
 
 
 async def list_all(include_archived: bool = False) -> list[ProjectRecord]:
@@ -195,6 +255,11 @@ def applied_to(settings: Settings, record: ProjectRecord | None) -> Settings:
     if record is None:
         return settings
     overlay = {k: v for k, v in (record.engagement or {}).items() if v not in (None, "")}
+    # Values already stored by an older version, or written before this rule
+    # existed. Dropped rather than migrated: they say nothing, so honouring
+    # them only suppresses the derivation that would say the same thing.
+    for key in redundant(overlay, settings):
+        overlay.pop(key, None)
     if not overlay:
         return settings
     # model_copy does not re-run validators, so the derived fields would

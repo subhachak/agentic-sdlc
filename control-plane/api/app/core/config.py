@@ -114,6 +114,22 @@ class Settings(BaseSettings):
         return self.database_url.split(":///")[-1]
 
 
+def canonical_repo(value: str | None) -> str | None:
+    """A repository name reduced to one form.
+
+    `https://github.com/acme/widgets` and `acme/widgets` are one repository
+    written two ways. Comparing them raw makes a value identical to the
+    derived one look like a deliberate override.
+    """
+    if not value:
+        return None
+    text = value.strip().rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "git@github.com:"):
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+    return text.removesuffix(".git").lower()
+
+
 def undone(settings: "Settings") -> dict:
     """This settings object as a dict, with derivation undone.
 
@@ -170,10 +186,35 @@ def derive(settings: "Settings") -> "Settings":
     fill("target_repo", settings.code_index_repo)
     fill("github_repo", settings.code_index_repo)
 
+    # A value that already equals what derivation would have produced is not
+    # a separate decision, however it got there — an environment variable
+    # repeating the repository is still the repository. Marked derived so the
+    # console shows it as worked out rather than asking about it again, which
+    # is what made one repository look like three different questions.
+    indexed_repo = canonical_repo(settings.code_index_repo)
+    for key in ("target_repo", "github_repo"):
+        # Both sides must name something. Nothing is derived from nothing,
+        # and two absent values are not a match.
+        if key in derived or not indexed_repo:
+            continue
+        if canonical_repo(getattr(settings, key, None)) == indexed_repo:
+            derived.add(key)
+
     # A ref is a property of the repository, not a separate decision. Only
     # carried across when the repositories actually match: a base branch from
     # one repository is not a fact about another.
     indexed_ref = settings.code_index_ref
+    # Same rule for refs: a base branch equal to the indexed ref is not an
+    # independent answer, and the common case is that all three say "main".
+    for key, repo_key in (("target_ref", "target_repo"), ("github_ref", "github_repo")):
+        if key in derived:
+            continue
+        same_repo = bool(indexed_repo) and canonical_repo(
+            getattr(settings, repo_key, None)
+        ) == indexed_repo
+        if same_repo and getattr(settings, key, None) == indexed_ref:
+            derived.add(key)
+
     if indexed_ref and indexed_ref != "main":
         if settings.target_repo == settings.code_index_repo and settings.target_ref == "main":
             object.__setattr__(settings, "target_ref", indexed_ref)

@@ -181,3 +181,32 @@ def test_a_derived_value_is_reported_as_derived_after_an_unrelated_override():
     current = settings_store.effective(base, {"target_environment": "prod"})
     entries = {e["key"]: e for e in settings_store.describe(base, {}, current)}
     assert entries["target_repo"]["derived"] is True
+
+
+def test_a_value_equal_to_the_derived_one_is_not_a_separate_question():
+    """An environment variable repeating the repository is still the
+    repository. Presented as a decision, one repository looked like three
+    different questions — which is what made the console confusing."""
+    s = mk(code_index_repo="acme/widgets", github_repo="https://github.com/acme/widgets")
+    assert "github_repo" in s.derived_keys
+
+
+def test_matching_refs_are_not_separate_questions_either():
+    s = mk(code_index_repo="acme/widgets")
+    assert {"target_ref", "github_ref"} <= s.derived_keys
+
+
+def test_a_genuinely_different_value_is_still_a_decision():
+    s = mk(code_index_repo="acme/widgets", github_repo="acme/ci")
+    assert "github_repo" not in s.derived_keys
+    # And its ref is not carried across, because it belongs to that repository.
+    assert "github_ref" not in s.derived_keys
+
+
+def test_a_new_project_does_not_freeze_derived_values_as_decisions():
+    """Copying every key into the record turned defaults into choices, so the
+    console asked about four fields that already had answers."""
+    stored = projects.defaults_from(mk(code_index_repo="acme/widgets"))
+    assert "code_index_repo" in stored
+    for key in ("target_repo", "github_repo", "target_ref", "github_ref"):
+        assert key not in stored, key

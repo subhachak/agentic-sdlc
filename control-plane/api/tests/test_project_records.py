@@ -48,16 +48,23 @@ def test_a_new_project_starts_from_the_environment_rather_than_blank(client):
     """Most defaults are right most of the time, and the two that are not are
     obvious. Thirteen empty fields are not."""
     created = client.post("/api/projects", json={"id": "team-a", "name": "Team A"}).json()
+    engagement = created["engagement"]
 
-    assert created["engagement"]["target_ref"] == "main"
-    assert created["engagement"]["qa_export_path"]
-    # The export scope is deliberately *not* prefilled. It used to default to
-    # the sample app's name, which is a guess about the client's repository
-    # layout dressed up as a default — and pointing the platform anywhere
-    # else then failed with an error blaming the index. Empty means "derive
-    # it from what was indexed", and the console writes the answer back once
-    # someone has chosen.
-    assert created["engagement"]["qa_export_scope"] == ""
+    assert engagement["qa_export_path"]
+
+    # Derivable fields are deliberately *not* stored. Copying them in froze
+    # them as decisions — the console could no longer tell "someone chose
+    # this" from "nothing chose this", and asked about four fields that
+    # already had answers. They still resolve; they are just not answers the
+    # record has to hold.
+    assert "target_ref" not in engagement
+    assert "github_ref" not in engagement
+
+    # Nor is the export scope. It used to default to the sample app's name,
+    # which is a guess about the client's repository layout dressed up as a
+    # default — and pointing the platform anywhere else then failed with an
+    # error blaming the index.
+    assert not engagement.get("qa_export_scope")
 
 
 def test_a_partial_update_does_not_blank_the_rest(client):
@@ -67,7 +74,12 @@ def test_a_partial_update_does_not_blank_the_rest(client):
     ).json()
 
     assert updated["engagement"]["target_repo"] == "acme/widgets"
-    assert updated["engagement"]["target_ref"] == "main"
+    # Everything else the record held is still there — a partial update sends
+    # only the edited fields and must not blank the rest.
+    assert updated["engagement"]["target_environment"]
+    # And what the record does not hold still resolves, from derivation.
+    assert client.get("/api/config").json()
+
 
 
 def test_an_unknown_engagement_key_is_ignored_not_stored(client):

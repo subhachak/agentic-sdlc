@@ -25,38 +25,48 @@ export default function NewRunPage() {
   }
 
   return (
-    <main>
-      <h1>Agentic SDLC Pipeline Accelerator</h1>
-      <p className="muted">
-        Submit a requirement to watch it flow through a governed pipeline: agents propose,
-        deterministic gates decide, and a person approves at every phase boundary.
-      </p>
+    <main className="narrow">
+      <div className="page-head">
+        <h1>Start a run</h1>
+        <p>
+          Describe what should change, in the words you would use with a colleague. Agents
+          propose, deterministic gates decide, and you approve at every phase boundary.
+        </p>
+      </div>
 
-      <form className="card" onSubmit={onSubmit}>
-        <label htmlFor="requirement" style={{ display: "block", marginBottom: "0.5rem" }}>
-          Requirement
-        </label>
-        <textarea
-          id="requirement"
-          rows={5}
-          placeholder="As a user, I want to reset my password..."
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          disabled={submitting}
-        />
-        <div style={{ marginTop: "0.75rem" }}>
-          <button type="submit" disabled={submitting || !text.trim()}>
-            {submitting ? "Starting..." : "Start pipeline run"}
-          </button>
-        </div>
-        {error && (
-          <p style={{ color: "var(--danger)", marginTop: "0.75rem" }}>{error}</p>
-        )}
+      <form onSubmit={onSubmit}>
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>Requirement</h2>
+              <p>Plain English. The platform derives the acceptance criteria from it.</p>
+            </div>
+          </div>
+          <div className="panel-body">
+            <textarea
+              id="requirement"
+              rows={6}
+              placeholder="Add a status filter to the claims list, so an adjuster can see only open claims."
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              disabled={submitting}
+              autoFocus
+            />
+          </div>
+          <div className="row" style={{ borderBottom: 0 }}>
+            <div className="row-main">
+              <div className="row-help" style={{ color: error ? "var(--crit)" : undefined }}>
+                {error ?? "You will be asked to approve before anything is written."}
+              </div>
+            </div>
+            <div className="row-end">
+              <button type="submit" disabled={submitting || !text.trim()}>
+                {submitting ? "Starting…" : "Start run"}
+              </button>
+            </div>
+          </div>
+        </section>
       </form>
-
-      <p>
-        <a href="/runs">View past runs →</a>
-      </p>
     </main>
   );
 }
