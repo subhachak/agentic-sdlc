@@ -1,0 +1,502 @@
+<title>Architecture at a Glance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap">
+<style>
+  :root {
+    --ground: #F1F4F3;
+    --surface: #FFFFFF;
+    --surface-2: #E8EDEB;
+    --ink: #121A19;
+    --ink-2: #3A4846;
+    --muted: #61706D;
+    --line: #D2DAD8;
+    --line-strong: #B4C0BD;
+
+    /* Ownership is the encoding. Teal is ours and does not vary; amber is the
+       client's and varies entirely. Everything else is structure. */
+    --fixed: #0E6F62;
+    --fixed-soft: #DDEBE8;
+    --varies: #9C6413;
+    --varies-soft: #F4E9D6;
+    --crit: #9B3527;
+
+    --f-display: "IBM Plex Serif", Georgia, serif;
+    --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --pad: clamp(1.25rem, 4vw, 3.5rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0E1413; --surface: #161E1D; --surface-2: #1E2827;
+      --ink: #E7EDEB; --ink-2: #C0CBC8; --muted: #90A09C;
+      --line: #2A3634; --line-strong: #3B4A47;
+      --fixed: #57BFAE; --fixed-soft: #16302C;
+      --varies: #D9A253; --varies-soft: #33270F;
+      --crit: #DE8878;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0E1413; --surface: #161E1D; --surface-2: #1E2827;
+    --ink: #E7EDEB; --ink-2: #C0CBC8; --muted: #90A09C;
+    --line: #2A3634; --line-strong: #3B4A47;
+    --fixed: #57BFAE; --fixed-soft: #16302C;
+    --varies: #D9A253; --varies-soft: #33270F;
+    --crit: #DE8878;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: var(--pad); }
+
+  header.top { padding-bottom: 1.5rem; border-bottom: 1px solid var(--line-strong); margin-bottom: 2.5rem; }
+  .eyebrow {
+    font-family: var(--f-mono); font-size: 0.72rem; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 0.5rem;
+  }
+  h1 {
+    font-family: var(--f-display); font-weight: 600; font-size: clamp(1.9rem, 4vw, 2.9rem);
+    margin: 0 0 0.65rem; letter-spacing: -0.015em; text-wrap: balance;
+  }
+  .standfirst { font-size: 1.02rem; color: var(--ink-2); max-width: 74ch; margin: 0; }
+
+  h2 {
+    font-family: var(--f-display); font-weight: 600; font-size: 1.35rem;
+    margin: 3.5rem 0 0.35rem; letter-spacing: -0.01em;
+  }
+  .section-lede { color: var(--ink-2); max-width: 78ch; margin: 0 0 1.5rem; }
+
+  figure { margin: 0 0 1rem; }
+  .frame {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: clamp(0.85rem, 2vw, 1.6rem);
+    overflow-x: auto;
+  }
+  .frame svg { display: block; width: 100%; height: auto; min-width: 720px; }
+  figcaption {
+    font-size: 0.85rem; color: var(--muted); margin-top: 0.85rem; max-width: 82ch;
+  }
+  figcaption strong { color: var(--ink-2); font-weight: 600; }
+
+  /* --- diagram vocabulary, shared by every figure --- */
+  .d-plate { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+  .d-fixed { fill: var(--fixed-soft); stroke: var(--fixed); stroke-width: 1.5; }
+  .d-varies { fill: var(--varies-soft); stroke: var(--varies); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .d-core { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.5; }
+  .d-gate { fill: none; stroke: var(--crit); stroke-width: 1.75; }
+
+  .d-band { font-family: var(--f-mono); font-size: 10.5px; font-weight: 600;
+            letter-spacing: 0.14em; text-transform: uppercase; fill: var(--muted); }
+  .d-title { font-family: var(--f-body); font-size: 13px; font-weight: 600; fill: var(--ink); }
+  .d-label { font-family: var(--f-body); font-size: 12px; fill: var(--ink); }
+  .d-sub { font-family: var(--f-body); font-size: 10.5px; fill: var(--muted); }
+  .d-mono { font-family: var(--f-mono); font-size: 10.5px; fill: var(--ink-2); }
+  .d-edge { stroke: var(--line-strong); stroke-width: 1.4; fill: none; }
+  .d-edge-fixed { stroke: var(--fixed); stroke-width: 1.6; fill: none; }
+  .d-lead { stroke: var(--line-strong); stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
+  .d-boundary { stroke: var(--fixed); stroke-width: 3; }
+  .d-accent { fill: var(--fixed); }
+  .d-warn { fill: var(--varies); }
+  .d-crit { fill: var(--crit); }
+
+  .key { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; margin: 0 0 2rem;
+         padding: 0.9rem 1.1rem; background: var(--surface); border: 1px solid var(--line);
+         border-radius: 10px; }
+  .key div { display: flex; align-items: center; gap: 0.55rem; font-size: 0.84rem; color: var(--ink-2); }
+  .swatch { width: 22px; height: 14px; border-radius: 3px; flex: none; }
+  .sw-fixed { background: var(--fixed-soft); border: 1.5px solid var(--fixed); }
+  .sw-varies { background: var(--varies-soft); border: 1.5px dashed var(--varies); }
+  .sw-core { background: var(--surface); border: 1.5px solid var(--line-strong); }
+  .sw-gate { background: transparent; border: 1.75px solid var(--crit); }
+
+  table { width: 100%; border-collapse: collapse; margin: 0.5rem 0 0; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: var(--f-mono); font-size: 0.72rem; letter-spacing: 0.1em;
+       text-transform: uppercase; color: var(--muted); font-weight: 600;
+       border-bottom: 1px solid var(--line-strong); }
+  td code, .mono { font-family: var(--f-mono); font-size: 0.86em; }
+  .tenet { font-family: var(--f-mono); font-weight: 600; color: var(--fixed); white-space: nowrap; }
+
+  footer { margin-top: 3.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line);
+           font-size: 0.85rem; color: var(--muted); max-width: 80ch; }
+
+  @media (max-width: 720px) {
+    .frame { padding: 0.75rem; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Enterprise architecture · reference view</p>
+    <h1>Architecture at a Glance</h1>
+    <p class="standfirst">A governed pipeline for agent-run software delivery. Three views of one
+      structure: what is fixed and what is bought per client, where a model is allowed to sit, and
+      what actually changes between engagements. Every encoding below carries meaning — colour is
+      ownership, a dashed border is something written for one client, and the heavy line is the
+      contract that does not move.</p>
+  </header>
+
+  <div class="key" role="list" aria-label="Diagram encoding">
+    <div role="listitem"><span class="swatch sw-fixed"></span> Platform — ships unchanged</div>
+    <div role="listitem"><span class="swatch sw-varies"></span> Client-specific — written per engagement</div>
+    <div role="listitem"><span class="swatch sw-core"></span> Structural component</div>
+    <div role="listitem"><span class="swatch sw-gate"></span> Deterministic gate — no model participates</div>
+  </div>
+
+  <h2>1 · The boundary that defines the product</h2>
+  <p class="section-lede">Most integration architectures draw the same boxes. What matters is where
+    the line sits and what it guarantees: above it, everything is written for one client; below it,
+    nothing changes between them. Each tenet on the right is drawn against the structure it
+    produces, because a principle that is not visible in the diagram is not doing any work.</p>
+  <figure>
+    <div class="frame"><svg viewBox="0 0 1200 690" role="img" aria-label="A layered architecture. The client estate at the top varies completely between engagements. Beneath it a row of adapters, one per integration, written per client. Between the adapters and the platform sits the port boundary: eleven protocols that never change. Below it the platform core — lifecycle state machine, deterministic gates, context graph and evidence — which is identical for every client. Four architecture tenets are annotated on the right, each pointing at the layer it produces.">
+<defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+  </marker>
+</defs>
+<text class="d-band" x="40" y="30">Client estate · varies completely</text>
+<text class="d-sub" x="798" y="30" text-anchor="end">no two engagements alike</text>
+<rect class="d-varies" x="40" y="44" width="118" height="62" rx="7"/>
+<text class="d-label" x="99.0" y="72" text-anchor="middle">Jira</text>
+<text class="d-sub" x="99.0" y="90" text-anchor="middle">demand</text>
+<rect class="d-varies" x="168" y="44" width="118" height="62" rx="7"/>
+<text class="d-label" x="227.0" y="72" text-anchor="middle">GitHub</text>
+<text class="d-sub" x="227.0" y="90" text-anchor="middle">code</text>
+<rect class="d-varies" x="296" y="44" width="118" height="62" rx="7"/>
+<text class="d-label" x="355.0" y="72" text-anchor="middle">Copilot</text>
+<text class="d-sub" x="355.0" y="90" text-anchor="middle">agent</text>
+<rect class="d-varies" x="424" y="44" width="118" height="62" rx="7"/>
+<text class="d-label" x="483.0" y="72" text-anchor="middle">Jenkins</text>
+<text class="d-sub" x="483.0" y="90" text-anchor="middle">CI</text>
+<rect class="d-varies" x="552" y="44" width="118" height="62" rx="7"/>
+<text class="d-label" x="611.0" y="72" text-anchor="middle">Zephyr</text>
+<text class="d-sub" x="611.0" y="90" text-anchor="middle">tests</text>
+<rect class="d-varies" x="680" y="44" width="118" height="62" rx="7"/>
+<text class="d-label" x="739.0" y="72" text-anchor="middle">Splunk</text>
+<text class="d-sub" x="739.0" y="90" text-anchor="middle">audit</text>
+<text class="d-band" x="40" y="136">Adapters · one per integration, written per client</text>
+<rect class="d-varies" x="40" y="152" width="118" height="60" rx="7"/>
+<text class="d-label" x="99.0" y="176" text-anchor="middle">Requirements</text>
+<text class="d-label" x="99.0" y="192" text-anchor="middle">Source</text>
+<rect class="d-varies" x="168" y="152" width="118" height="60" rx="7"/>
+<text class="d-label" x="227.0" y="176" text-anchor="middle">Source</text>
+<text class="d-label" x="227.0" y="192" text-anchor="middle">Control</text>
+<rect class="d-varies" x="296" y="152" width="118" height="60" rx="7"/>
+<text class="d-label" x="355.0" y="176" text-anchor="middle">Agent</text>
+<text class="d-label" x="355.0" y="192" text-anchor="middle">design · impl</text>
+<rect class="d-varies" x="424" y="152" width="118" height="60" rx="7"/>
+<text class="d-label" x="483.0" y="176" text-anchor="middle">Work</text>
+<text class="d-label" x="483.0" y="192" text-anchor="middle">Dispatch</text>
+<rect class="d-varies" x="552" y="152" width="118" height="60" rx="7"/>
+<text class="d-label" x="611.0" y="176" text-anchor="middle">Test</text>
+<text class="d-label" x="611.0" y="192" text-anchor="middle">Management</text>
+<rect class="d-varies" x="680" y="152" width="118" height="60" rx="7"/>
+<text class="d-label" x="739.0" y="176" text-anchor="middle">Audit</text>
+<text class="d-label" x="739.0" y="192" text-anchor="middle">Sink</text>
+<line class="d-edge-fixed" x1="99.0" y1="212" x2="99.0" y2="250" marker-end="url(#ah)"/>
+<line class="d-edge-fixed" x1="227.0" y1="212" x2="227.0" y2="250" marker-end="url(#ah)"/>
+<line class="d-edge-fixed" x1="355.0" y1="212" x2="355.0" y2="250" marker-end="url(#ah)"/>
+<line class="d-edge-fixed" x1="483.0" y1="212" x2="483.0" y2="250" marker-end="url(#ah)"/>
+<line class="d-edge-fixed" x1="611.0" y1="212" x2="611.0" y2="250" marker-end="url(#ah)"/>
+<line class="d-edge-fixed" x1="739.0" y1="212" x2="739.0" y2="250" marker-end="url(#ah)"/>
+<line class="d-boundary" x1="26" y1="262" x2="812" y2="262"/>
+<rect x="248" y="246" width="342" height="32" rx="16" fill="var(--surface)" stroke="var(--fixed)" stroke-width="1.5"/>
+<text class="d-title" x="419" y="266" text-anchor="middle" fill="var(--fixed)">THE PORT BOUNDARY · 11 protocols</text>
+<text class="d-sub" x="26" y="292">Everything above this line is written for one client.</text>
+<text class="d-sub" x="812" y="292" text-anchor="end">Everything below it ships unchanged.</text>
+<rect class="d-plate" x="26" y="312" width="786" height="216" rx="10"/>
+<text class="d-band" x="40" y="336">Platform core · identical for every client</text>
+<rect class="d-core" x="40" y="350" width="182" height="86" rx="7"/>
+<text class="d-title" x="131.0" y="378" text-anchor="middle">Lifecycle</text>
+<text class="d-sub" x="131.0" y="397" text-anchor="middle">13 phases, resumable</text>
+<text class="d-mono" x="131.0" y="416" text-anchor="middle" fill="var(--fixed)">state machine</text>
+<rect class="d-core" x="232" y="350" width="182" height="86" rx="7"/>
+<text class="d-title" x="323.0" y="378" text-anchor="middle">Gates</text>
+<text class="d-sub" x="323.0" y="397" text-anchor="middle">no model participates</text>
+<text class="d-mono" x="323.0" y="416" text-anchor="middle" fill="var(--fixed)">deterministic</text>
+<rect class="d-core" x="424" y="350" width="182" height="86" rx="7"/>
+<text class="d-title" x="515.0" y="378" text-anchor="middle">Context graph</text>
+<text class="d-sub" x="515.0" y="397" text-anchor="middle">15 node · 18 edge types</text>
+<text class="d-mono" x="515.0" y="416" text-anchor="middle" fill="var(--fixed)">fixed ontology</text>
+<rect class="d-core" x="616" y="350" width="182" height="86" rx="7"/>
+<text class="d-title" x="707.0" y="378" text-anchor="middle">Evidence</text>
+<text class="d-sub" x="707.0" y="397" text-anchor="middle">asserted at decision time</text>
+<text class="d-mono" x="707.0" y="416" text-anchor="middle" fill="var(--fixed)">append-only</text>
+<rect class="d-fixed" x="40" y="452" width="758" height="58" rx="7"/>
+<text class="d-title" x="419" y="476" text-anchor="middle">Agents propose · deterministic code decides · humans approve what carries risk</text>
+<text class="d-sub" x="419" y="495" text-anchor="middle">the invariant every layer above is arranged to preserve</text>
+<line class="d-lead" x1="818" y1="82" x2="840" y2="82"/><text class="d-mono" x="848" y="86" fill="var(--fixed)" font-weight="600">T1</text>
+<text class="d-title" x="874" y="86">Own the decisions,</text>
+<text class="d-title" x="874" y="102">borrow the execution</text>
+<text class="d-sub" x="874" y="122">The client's estate keeps the code,</text>
+<text class="d-sub" x="874" y="136">the credentials and the runners.</text>
+<line class="d-lead" x1="818" y1="192" x2="840" y2="192"/><text class="d-mono" x="848" y="196" fill="var(--fixed)" font-weight="600">T2</text>
+<text class="d-title" x="874" y="196">One adapter per integration,</text>
+<text class="d-title" x="874" y="212">never per phase</text>
+<text class="d-sub" x="874" y="232">A new client is a row of adapters,</text>
+<text class="d-sub" x="874" y="246">not a fork of the pipeline.</text>
+<line class="d-lead" x1="818" y1="268" x2="840" y2="268"/><text class="d-mono" x="848" y="272" fill="var(--fixed)" font-weight="600">T3</text>
+<text class="d-title" x="874" y="272">The contract is the product</text>
+<text class="d-sub" x="874" y="292">Eleven protocols. Phase logic sees</text>
+<text class="d-sub" x="874" y="306">only the interface — enforced by tests,</text>
+<text class="d-sub" x="874" y="320">not by convention.</text>
+<line class="d-lead" x1="818" y1="400" x2="840" y2="400"/><text class="d-mono" x="848" y="404" fill="var(--fixed)" font-weight="600">T4</text>
+<text class="d-title" x="874" y="404">Fixed ontology,</text>
+<text class="d-title" x="874" y="420">pluggable everything else</text>
+<text class="d-sub" x="874" y="440">Node and edge types are ours, or no</text>
+<text class="d-sub" x="874" y="454">phase logic would be portable.</text>
+<rect class="d-plate" x="26" y="552" width="1148" height="108" rx="10"/>
+<text class="d-band" x="44" y="576">What a new engagement actually costs</text>
+<text class="d-title" x="44" y="606">Adapters</text>
+<text class="d-sub" x="44" y="624">one per system they already run</text>
+<text class="d-mono" x="44" y="646" fill="var(--fixed)" font-weight="600">days</text>
+<text class="d-title" x="334" y="606">Configuration</text>
+<text class="d-sub" x="334" y="624">repositories, branches, environments</text>
+<text class="d-mono" x="334" y="646" fill="var(--fixed)" font-weight="600">minutes</text>
+<text class="d-title" x="624" y="606">Agent choice</text>
+<text class="d-sub" x="624" y="624">ours, or theirs, per phase</text>
+<text class="d-mono" x="624" y="646" fill="var(--fixed)" font-weight="600">a setting</text>
+<text class="d-title" x="914" y="606">Platform core</text>
+<text class="d-sub" x="914" y="624">unchanged</text>
+<text class="d-mono" x="914" y="646" fill="var(--fixed)" font-weight="600">zero</text>
+</svg></div>
+    <figcaption><strong>The port boundary is the architecture.</strong> Eleven protocols separate
+      what a client brings from what the platform guarantees. A new engagement is a row of adapters
+      and a configuration record — it cannot reach past the boundary to weaken a gate, because
+      phase logic only ever sees the interface, and three architectural tests fail the build if a
+      concrete integration is imported anywhere below the line.</figcaption>
+  </figure>
+
+  <h2>2 · The agentic foundation, and its limit</h2>
+  <p class="section-lede">Every phase is the same loop, and the loop is what carries the guarantee
+    rather than any phase's cleverness. An agent occupies exactly one station in it. The other
+    three are code.</p>
+  <figure>
+    <div class="frame"><svg viewBox="0 0 1200 560" role="img" aria-label="The agentic control loop. A phase assembles a request from the graph, an agent proposes, deterministic code decides, and the phase asserts what happened as typed edges. A rejection returns to the agent for a bounded number of attempts. A heavy line marks the boundary no model may cross: every gate is plain code, and only a person or code decides. Below, the same loop is shown carrying either the platform own agent or a client agent, with the review identical in both cases.">
+<defs>
+  <marker id="bh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+  </marker>
+</defs>
+<text class="d-band" x="40" y="30">The control loop · every phase, without exception</text>
+<rect class="d-core" x="40" y="46" width="250" height="84" rx="8"/>
+<text class="d-title" x="165.0" y="74" text-anchor="middle">Assemble</text>
+<text class="d-sub" x="165.0" y="93" text-anchor="middle">the request</text>
+<text class="d-sub" x="165.0" y="150" text-anchor="middle">from the graph — never</text>
+<text class="d-sub" x="165.0" y="164" text-anchor="middle">fetched by the agent</text>
+<line class="d-edge" x1="290" y1="88" x2="328" y2="88" marker-end="url(#bh)"/>
+<rect class="d-fixed" x="330" y="46" width="250" height="84" rx="8"/>
+<text class="d-title" x="455.0" y="74" text-anchor="middle">Propose</text>
+<text class="d-sub" x="455.0" y="93" text-anchor="middle">an agent answers</text>
+<text class="d-sub" x="455.0" y="150" text-anchor="middle">the only place a model</text>
+<text class="d-sub" x="455.0" y="164" text-anchor="middle">appears in the system</text>
+<line class="d-edge" x1="580" y1="88" x2="618" y2="88" marker-end="url(#bh)"/>
+<rect class="d-core" x="620" y="46" width="250" height="84" rx="8"/>
+<text class="d-title" x="745.0" y="74" text-anchor="middle">Decide</text>
+<text class="d-sub" x="745.0" y="93" text-anchor="middle">deterministic predicate</text>
+<text class="d-sub" x="745.0" y="150" text-anchor="middle">does every name exist?</text>
+<text class="d-sub" x="745.0" y="164" text-anchor="middle">is every outcome observable?</text>
+<line class="d-edge" x1="870" y1="88" x2="908" y2="88" marker-end="url(#bh)"/>
+<rect class="d-core" x="910" y="46" width="250" height="84" rx="8"/>
+<text class="d-title" x="1035.0" y="74" text-anchor="middle">Assert</text>
+<text class="d-sub" x="1035.0" y="93" text-anchor="middle">typed edges + audit</text>
+<text class="d-sub" x="1035.0" y="150" text-anchor="middle">evidence is a byproduct,</text>
+<text class="d-sub" x="1035.0" y="164" text-anchor="middle">not a later step</text>
+<path class="d-edge" d="M 745 130 C 745 200, 455 200, 455 134" marker-end="url(#bh)" stroke="var(--crit)"/>
+<text class="d-sub" x="600" y="196" text-anchor="middle" fill="var(--crit)">rejected — reasons returned, bounded attempts</text>
+<line class="d-boundary" x1="26" y1="236" x2="1174" y2="236" stroke="var(--crit)"/>
+<rect x="404" y="220" width="392" height="32" rx="16" fill="var(--surface)" stroke="var(--crit)" stroke-width="1.5"/>
+<text class="d-title" x="600" y="240" text-anchor="middle" fill="var(--crit)">NO MODEL DECIDES ANYTHING BELOW THIS LINE</text>
+<text class="d-sub" x="26" y="270">Every gate is plain code with no model in it. An agent that could approve its own output would make the audit trail decorative.</text>
+<text class="d-band" x="40" y="308">The gates · what each refuses</text>
+<rect class="d-gate" x="40" y="322" width="250" height="104" rx="8"/>
+<text class="d-title" x="54" y="346">Design review</text>
+<text class="d-sub" x="54" y="366">a module or file that does not exist;</text>
+<text class="d-sub" x="54" y="381">a file outside the modules claimed;</text>
+<text class="d-sub" x="54" y="396">an index too incomplete to trust</text>
+<rect class="d-gate" x="330" y="322" width="250" height="104" rx="8"/>
+<text class="d-title" x="344" y="346">Change review</text>
+<text class="d-sub" x="344" y="366">an edit outside the approved scope —</text>
+<text class="d-sub" x="344" y="381">or a path the graph cannot place</text>
+<text class="d-sub" x="344" y="396">at all, which fails closed</text>
+<rect class="d-gate" x="620" y="322" width="250" height="104" rx="8"/>
+<text class="d-title" x="634" y="346">Testability</text>
+<text class="d-sub" x="634" y="366">a scenario with no observable outcome,</text>
+<text class="d-sub" x="634" y="381">an unresolvable criterion, data the</text>
+<text class="d-sub" x="634" y="396">store cannot provide</text>
+<rect class="d-gate" x="910" y="322" width="250" height="104" rx="8"/>
+<text class="d-title" x="924" y="346">Release</text>
+<text class="d-sub" x="924" y="366">a required regression that did not run</text>
+<text class="d-sub" x="924" y="381">or pass; a coverage claim the run</text>
+<text class="d-sub" x="924" y="396">disproves</text>
+<rect class="d-plate" x="26" y="450" width="1148" height="92" rx="10"/>
+<text class="d-band" x="44" y="474">Who occupies the propose station · a configuration choice, per phase</text>
+<rect class="d-fixed" x="44" y="486" width="356" height="42" rx="7"/>
+<text class="d-label" x="222" y="504" text-anchor="middle">Platform agent · in-process, answers in seconds</text>
+<text class="d-sub" x="222" y="520" text-anchor="middle">the default; behaviour known here</text>
+<rect class="d-varies" x="422" y="486" width="356" height="42" rx="7"/>
+<text class="d-label" x="600" y="504" text-anchor="middle">Client agent · dispatched, answers in hours</text>
+<text class="d-sub" x="600" y="520" text-anchor="middle">parks on the same seam CI uses</text>
+<line class="d-edge" x1="790" y1="507" x2="836" y2="507" marker-end="url(#bh)"/>
+<rect class="d-core" x="844" y="486" width="312" height="42" rx="7"/>
+<text class="d-label" x="1000" y="504" text-anchor="middle">Identical deterministic review</text>
+<text class="d-sub" x="1000" y="520" text-anchor="middle">the client’s agent is trusted less, not more</text>
+</svg></div>
+    <figcaption><strong>Agents propose; deterministic code decides.</strong> The request is
+      assembled by the phase from the graph — never fetched by the agent — so an agent cannot widen
+      what it looks at. A rejection returns with reasons for a bounded number of attempts. Whether
+      the proposing station holds the platform's own agent or a client's is a configuration choice
+      per phase; the review that follows is byte-identical, and applies to a client's agent slightly
+      more strictly because it is the only one that can change without us knowing.</figcaption>
+  </figure>
+
+  <h2>3 · Three clients, one core</h2>
+  <p class="section-lede">The test of a pluggable architecture is not that it has interfaces. It is
+    whether two engagements with nothing in common produce the same platform underneath.</p>
+  <figure>
+    <div class="frame"><svg viewBox="0 0 1200 520" role="img" aria-label="Three clients with entirely different toolchains — one on Jira, GitHub and Copilot; one on Azure DevOps, Jenkins and a self-hosted model; one on a regulated stack with an air-gapped model and its own coding agent — all resting on the same unchanged platform core. Only the adapter row and the configuration differ between them.">
+<defs>
+  <marker id="ch" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+  </marker>
+</defs>
+<text class="d-title" x="40" y="28">Client A · product org</text>
+<rect class="d-varies" x="26" y="40" width="380" height="196" rx="9"/>
+<rect class="d-plate" x="42" y="54" width="348" height="27" rx="5"/>
+<text class="d-label" x="54" y="72">Jira</text>
+<rect class="d-plate" x="42" y="89" width="348" height="27" rx="5"/>
+<text class="d-label" x="54" y="107">GitHub</text>
+<rect class="d-plate" x="42" y="124" width="348" height="27" rx="5"/>
+<text class="d-label" x="54" y="142">GitHub Actions</text>
+<rect class="d-plate" x="42" y="159" width="348" height="27" rx="5"/>
+<text class="d-label" x="54" y="177">Copilot cloud agent</text>
+<rect class="d-plate" x="42" y="194" width="348" height="27" rx="5"/>
+<text class="d-label" x="54" y="212">Anthropic direct</text>
+<text class="d-sub" x="40" y="258" fill="var(--varies)">Their agent implements.</text>
+<text class="d-sub" x="40" y="273" fill="var(--varies)">Ours designs and plans.</text>
+<line class="d-edge-fixed" x1="216.0" y1="290" x2="216.0" y2="322" marker-end="url(#ch)"/>
+<text class="d-mono" x="226.0" y="312">adapters</text>
+<text class="d-title" x="424" y="28">Client B · enterprise IT</text>
+<rect class="d-varies" x="410" y="40" width="380" height="196" rx="9"/>
+<rect class="d-plate" x="426" y="54" width="348" height="27" rx="5"/>
+<text class="d-label" x="438" y="72">Azure DevOps</text>
+<rect class="d-plate" x="426" y="89" width="348" height="27" rx="5"/>
+<text class="d-label" x="438" y="107">Azure Repos</text>
+<rect class="d-plate" x="426" y="124" width="348" height="27" rx="5"/>
+<text class="d-label" x="438" y="142">ADO Pipelines</text>
+<rect class="d-plate" x="426" y="159" width="348" height="27" rx="5"/>
+<text class="d-label" x="438" y="177">Platform agent</text>
+<rect class="d-plate" x="426" y="194" width="348" height="27" rx="5"/>
+<text class="d-label" x="438" y="212">Bedrock</text>
+<text class="d-sub" x="424" y="258" fill="var(--varies)">Ours throughout.</text>
+<text class="d-sub" x="424" y="273" fill="var(--varies)">Model in their tenancy.</text>
+<line class="d-edge-fixed" x1="600.0" y1="290" x2="600.0" y2="322" marker-end="url(#ch)"/>
+<text class="d-mono" x="610.0" y="312">adapters</text>
+<text class="d-title" x="808" y="28">Client C · regulated</text>
+<rect class="d-varies" x="794" y="40" width="380" height="196" rx="9"/>
+<rect class="d-plate" x="810" y="54" width="348" height="27" rx="5"/>
+<text class="d-label" x="822" y="72">ServiceNow</text>
+<rect class="d-plate" x="810" y="89" width="348" height="27" rx="5"/>
+<text class="d-label" x="822" y="107">Bitbucket</text>
+<rect class="d-plate" x="810" y="124" width="348" height="27" rx="5"/>
+<text class="d-label" x="822" y="142">Jenkins</text>
+<rect class="d-plate" x="810" y="159" width="348" height="27" rx="5"/>
+<text class="d-label" x="822" y="177">Their own agent</text>
+<rect class="d-plate" x="810" y="194" width="348" height="27" rx="5"/>
+<text class="d-label" x="822" y="212">Air-gapped model</text>
+<text class="d-sub" x="808" y="258" fill="var(--varies)">Their agents throughout.</text>
+<text class="d-sub" x="808" y="273" fill="var(--varies)">We hold no model key.</text>
+<line class="d-edge-fixed" x1="984.0" y1="290" x2="984.0" y2="322" marker-end="url(#ch)"/>
+<text class="d-mono" x="994.0" y="312">adapters</text>
+<line class="d-boundary" x1="26" y1="336" x2="1174" y2="336"/>
+<rect x="452" y="320" width="296" height="32" rx="16" fill="var(--surface)" stroke="var(--fixed)" stroke-width="1.5"/>
+<text class="d-title" x="600" y="340" text-anchor="middle" fill="var(--fixed)">THE SAME 11 PROTOCOLS</text>
+<rect class="d-fixed" x="26" y="372" width="1148" height="118" rx="10"/>
+<text class="d-band" x="44" y="396">One platform core · byte-identical across all three</text>
+<rect class="d-core" x="44" y="410" width="206" height="34" rx="6"/>
+<text class="d-label" x="147" y="431" text-anchor="middle">13-phase lifecycle</text>
+<rect class="d-core" x="274" y="410" width="206" height="34" rx="6"/>
+<text class="d-label" x="377" y="431" text-anchor="middle">Deterministic gates</text>
+<rect class="d-core" x="504" y="410" width="206" height="34" rx="6"/>
+<text class="d-label" x="607" y="431" text-anchor="middle">Fixed ontology</text>
+<rect class="d-core" x="734" y="410" width="206" height="34" rx="6"/>
+<text class="d-label" x="837" y="431" text-anchor="middle">Derived identity</text>
+<rect class="d-core" x="964" y="410" width="206" height="34" rx="6"/>
+<text class="d-label" x="1067" y="431" text-anchor="middle">Evidence + audit</text>
+<text class="d-sub" x="600" y="470" text-anchor="middle">A new engagement adds a row of adapters and a project record. It does not fork the pipeline, and it cannot weaken a gate.</text>
+</svg></div>
+    <figcaption><strong>Nothing in the shared base varies.</strong> Client C holds no model
+      credential of ours at all — their agents design, implement and author tests, and the platform
+      contributes only the graph, the gates and the evidence. That configuration reaches zero model
+      calls made by us, and it is a settings change rather than a variant of the product.</figcaption>
+  </figure>
+
+  <h2>4 · Tenets, and what each one forces</h2>
+  <p class="section-lede">A tenet earns its place by ruling something out. These are stated with the
+    structural consequence beside them, because that is the only way to tell an architecture
+    principle from an aspiration.</p>
+  <table>
+    <thead><tr><th>Tenet</th><th>What it rules out</th><th>Structural consequence</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="tenet">T1</td>
+        <td>Agents deciding anything</td>
+        <td>Every gate is plain code. An agent that could approve its own output would make the audit trail decorative.</td>
+      </tr>
+      <tr>
+        <td class="tenet">T2</td>
+        <td>Owning the execution</td>
+        <td>Real work runs in the client's CI, where the code and credentials already are. The control plane never executes agent-authored code.</td>
+      </tr>
+      <tr>
+        <td class="tenet">T3</td>
+        <td>A client redefining the ontology</td>
+        <td>Node and edge types are fixed, or no phase logic is portable. Clients extend through namespaced types the platform stores but never reasons about.</td>
+      </tr>
+      <tr>
+        <td class="tenet">T4</td>
+        <td>Coordinated identifiers</td>
+        <td>A node's id is derived from what it is. Two components that never talk arrive at the same id, with no round trip — which is what lets the two planes assert about one criterion.</td>
+      </tr>
+      <tr>
+        <td class="tenet">T5</td>
+        <td>Evidence as a later step</td>
+        <td>Each phase asserts the edges it created at the moment its gate decides. There is no crawler, and the record cannot describe something that did not happen.</td>
+      </tr>
+      <tr>
+        <td class="tenet">T6</td>
+        <td>A gate passing when it cannot check</td>
+        <td>Fail closed. An empty graph, an unplaceable file path, an index that resolved four fifths of a codebase — each once passed silently in exactly the case it existed for.</td>
+      </tr>
+      <tr>
+        <td class="tenet">T7</td>
+        <td>Migrating derived data</td>
+        <td>The code graph is a function of a commit and is rebuilt, not migrated — which is why it is kept apart from the traceability graph, which is only ever appended to.</td>
+      </tr>
+      <tr>
+        <td class="tenet">T8</td>
+        <td>Unmeasured controls</td>
+        <td>Blast radius, coverage and capture rate are produced by harnesses with corpora and baselines. A control whose accuracy is unknown cannot carry the weight the design puts on it.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <footer>
+    Companion to the full solution design, which carries the measurements behind T8 and the current
+    implementation status. Encoding is consistent across all three figures: colour is ownership,
+    a dashed border is client-specific, and the heavy rule is a boundary that code enforces rather
+    than convention.
+  </footer>
+</div>
