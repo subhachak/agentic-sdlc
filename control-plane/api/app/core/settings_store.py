@@ -25,7 +25,7 @@ from typing import Any, Literal
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from app.core.config import Settings
+from app.core.config import Settings, undone
 from app.core.db import get_sessionmaker
 from app.models.setting import SettingChange, SettingOverride
 
@@ -207,7 +207,10 @@ def effective(base: Settings, overrides: dict[str, Any]) -> Settings:
     applicable = {k: v for k, v in overrides.items() if k in MUTABLE_KEYS}
     if not applicable:
         return base
-    return Settings(**{**base.model_dump(), **applicable})
+    # Derivation undone before re-validating: `base` already has its derived
+    # fields filled in, and passing those through makes them look explicitly
+    # set, so they are never recomputed against the override.
+    return Settings(**{**undone(base), **applicable})
 
 
 def _coerce(spec: SettingSpec, raw: Any) -> Any:

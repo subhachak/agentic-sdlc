@@ -25,7 +25,12 @@ class Settings(BaseSettings):
     llm_provider_adapter: Literal["claude", "mock"] = "mock"
     work_dispatch_adapter: Literal["github-actions", "local", "local-pipeline"] = "local"
     code_intelligence_adapter: Literal["github", "local"] = "github"
-    source_control_adapter: Literal["github", "local"] = "local"
+    # Empty means "follow the index source". Where the code is read from and
+    # where changes are proposed are the same question in every ordinary
+    # setup, and they were two independent settings with opposite defaults —
+    # so indexing from GitHub while proposing changes into an unrelated local
+    # checkout was what you got by doing nothing.
+    source_control_adapter: Literal["github", "local", ""] = ""
     # Who writes the change. "inline" is this platform's own agent, refused
     # before its edits reach a branch. "github-copilot" hands the work to the
     # client's cloud agent, which opens its own pull request — containment
@@ -109,6 +114,27 @@ class Settings(BaseSettings):
         return self.database_url.split(":///")[-1]
 
 
+def undone(settings: "Settings") -> dict:
+    """This settings object as a dict, with derivation undone.
+
+    Anything that rebuilds a Settings from an existing one has to strip what
+    derivation filled in first. Dumping a derived object and re-validating
+    makes every derived value look explicitly chosen, so it is never
+    re-derived when the thing it was derived *from* changes — which is how a
+    field went on naming the previous repository, and how the console
+    reported a derived value as one someone had set.
+    """
+    data = settings.model_dump()
+    for key in settings.derived_keys:
+        if key in Settings.model_fields:
+            # The field's own default, not None: `target_ref` defaults to
+            # "main", and blanking it nulls a default derivation cannot
+            # refill when no repository is named.
+            data[key] = Settings.model_fields[key].default
+    data.pop("derived_keys", None)
+    return data
+
+
 def derive(settings: "Settings") -> "Settings":
     """One repository, and the things that follow from it.
 
@@ -133,6 +159,13 @@ def derive(settings: "Settings") -> "Settings":
         if not getattr(settings, key, None) and value:
             object.__setattr__(settings, key, value)
             derived.add(key)
+
+    # Where changes are proposed follows where code is read from. Grounding
+    # asks source control for the files the graph names, so the two
+    # answering different repositories means the design agent reads nothing.
+    if not settings.source_control_adapter:
+        object.__setattr__(settings, "source_control_adapter", settings.code_intelligence_adapter)
+        derived.add("source_control_adapter")
 
     fill("target_repo", settings.code_index_repo)
     fill("github_repo", settings.code_index_repo)

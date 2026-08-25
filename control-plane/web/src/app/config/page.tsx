@@ -174,6 +174,28 @@ export default function ConfigPage() {
         </div>
       )}
 
+      {(data.incoherent ?? []).map((finding) => (
+        <div
+          key={finding.id}
+          className="card notice"
+          style={{ borderLeftColor: "var(--warning)" }}
+        >
+          {/* Separate from `problem` above, which is a stored value that would
+              not apply. These applied perfectly and read the wrong thing —
+              the failure mode that produced a green tick beside an index
+              built over zero files. */}
+          <strong>This builds, but will not work.</strong> {finding.problem} —{" "}
+          {finding.consequence}.
+          <ul style={{ margin: "0.5rem 0 0 1.1rem", padding: 0 }}>
+            {finding.remedies.map((remedy) => (
+              <li key={remedy} style={{ fontSize: "0.85rem" }}>
+                {remedy}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+
       {SECTIONS.map((section) => {
         const entries = data.settings.filter((s) => s.section === section.id);
         if (entries.length === 0) return null;

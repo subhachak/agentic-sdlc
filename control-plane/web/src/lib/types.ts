@@ -146,6 +146,16 @@ export interface ConfigData {
   settings: SettingEntry[];
   history: SettingChange[];
   active: Record<string, string>;
+  /** Combinations that build and cannot work. */
+  incoherent?: IncoherentFinding[];
+}
+
+export interface IncoherentFinding {
+  id: string;
+  problem: string;
+  consequence: string;
+  remedies: string[];
+  keys: string[];
 }
 
 export interface ModuleEntry {

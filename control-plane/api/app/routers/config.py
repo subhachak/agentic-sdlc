@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from app.core import settings_store
+from app.core import coherence, settings_store
 from app.core.config import get_settings
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -36,6 +36,10 @@ async def read_config(request: Request) -> dict:
         # started on its environment defaults instead. Surfaced here because
         # the console is where it has to be fixed.
         "problem": getattr(request.app.state, "config_problem", None),
+        # Combinations that build and cannot work. Separate from `problem`,
+        # which is a stored override that would not apply: these applied
+        # perfectly and read the wrong thing.
+        "incoherent": coherence.summary(settings, _working_copy_remote(request)),
         "active": {
             "model_provider": settings.llm_provider_adapter,
             "execution_target": settings.work_dispatch_adapter,
@@ -43,6 +47,22 @@ async def read_config(request: Request) -> dict:
             "gates": "auto-approved" if settings.auto_approve_gates else "human",
         },
     }
+
+
+def _working_copy_remote(request: Request) -> str | None:
+    """What the local checkout points at, when there is one to ask.
+
+    Asked of the adapter rather than read here, because finding out is a git
+    call and the coherence rules are meant to stay a pure function.
+    """
+    source_control = getattr(request.app.state.adapters, "source_control", None)
+    reporter = getattr(source_control, "remote", None)
+    if reporter is None:
+        return None
+    try:
+        return reporter()
+    except Exception:  # noqa: BLE001 - a label, not a control
+        return None
 
 
 @router.post("/preflight")

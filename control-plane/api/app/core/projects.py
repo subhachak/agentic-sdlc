@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy import delete, select
 
-from app.core.config import Settings, derive
+from app.core.config import Settings, derive, undone
 from app.core.db import get_sessionmaker
 from app.graph.projects import DEFAULT_PROJECT, ProjectError
 from app.graph.projects import validate as validate_id
@@ -185,11 +185,6 @@ async def delete_forever(project_id: str) -> None:
         await session.commit()
 
 
-# Fields `derive` fills in from the repository. Cleared before an overlay is
-# applied so they follow the project's repository rather than the last one's.
-_DERIVED = ("target_repo", "github_repo", "target_ref", "github_ref")
-
-
 def applied_to(settings: Settings, record: ProjectRecord | None) -> Settings:
     """Settings as they should read while this project is active.
 
@@ -207,13 +202,16 @@ def applied_to(settings: Settings, record: ProjectRecord | None) -> Settings:
     # derive: a project that names only a repository should have the rest
     # follow from *its* repository, not from the one before it.
     #
-    # Reset to the field's own default rather than to None — `target_ref`
+    # Only what derivation itself filled in — `derived_keys` is the record of
+    # exactly that. Resetting a fixed list instead discarded values someone
+    # had set deliberately, which is the opposite of the point.
+    #
+    # Reset to the field's own default rather than to None: `target_ref`
     # defaults to "main", and blanking it outright nulls a default that
     # derivation cannot refill when no repository is named.
     blanks = {
-        k: Settings.model_fields[k].default
-        for k in _DERIVED
-        if k not in overlay and k in Settings.model_fields
+        k: v for k, v in undone(settings).items()
+        if k in settings.derived_keys and k not in overlay
     }
     return derive(settings.model_copy(update={**blanks, **overlay}))
 

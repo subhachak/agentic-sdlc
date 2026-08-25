@@ -45,10 +45,29 @@ def test_a_ref_does_not_cross_to_a_different_repository():
     assert s.github_ref == "main"
 
 
-def test_nothing_configured_derives_nothing():
+def test_no_repository_means_no_repository_is_invented():
     s = mk()
-    assert s.derived_keys == frozenset()
     assert s.target_repo is None
+    assert s.github_repo is None
+    assert not {"target_repo", "github_repo"} & s.derived_keys
+
+
+def test_the_change_target_follows_the_index_source():
+    """These were independent settings with opposite defaults, so indexing
+    from GitHub while proposing changes into an unrelated local checkout was
+    what you got by doing nothing. Grounding reads files from source control
+    for paths that came from the graph, so the two disagreeing means the
+    design agent reads nothing — and nothing said so."""
+    assert mk(code_intelligence_adapter="github").source_control_adapter == "github"
+    assert mk(code_intelligence_adapter="local").source_control_adapter == "local"
+
+
+def test_a_deliberate_split_is_still_allowed():
+    """A working copy that *is* a checkout of the indexed repository is a
+    legitimate setup; coherence warns about the case that is not."""
+    s = mk(code_intelligence_adapter="github", source_control_adapter="local")
+    assert s.source_control_adapter == "local"
+    assert "source_control_adapter" not in s.derived_keys
 
 
 def test_the_export_scope_is_not_guessed():
@@ -129,3 +148,36 @@ def test_a_field_another_setting_makes_meaningless_is_not_asked(key, adapter_key
     other = "github" if needs == "local" else "local"
     off = {e["key"]: e for e in settings_store.describe(mk(**{adapter_key: other}), {})}
     assert off[key]["relevant"] is False
+
+
+def test_an_explicit_setting_survives_the_project_overlay():
+    """Resetting a fixed list of fields before re-deriving discarded values
+    someone had set deliberately — a change saved through the console read
+    back as the derived default, as though it had never been made."""
+    base = mk(code_intelligence_adapter="github", source_control_adapter="local")
+    applied = projects.applied_to(base, record(code_index_repo="acme/widgets"))
+    assert applied.source_control_adapter == "local"
+
+
+def test_a_derived_field_still_follows_the_projects_repository():
+    base = mk(code_index_repo="acme/widgets")
+    applied = projects.applied_to(base, record(code_index_repo="other/thing"))
+    assert applied.target_repo == "other/thing"
+
+
+def test_an_override_recomputes_what_depends_on_it():
+    """Rebuilding from a dumped Settings made derived values look explicitly
+    set, so changing the thing they derive *from* left them stale."""
+    base = mk(code_index_repo="acme/widgets")
+    assert base.target_repo == "acme/widgets"
+
+    changed = settings_store.effective(base, {"code_index_repo": "other/thing"})
+    assert changed.target_repo == "other/thing"
+    assert changed.github_repo == "other/thing"
+
+
+def test_a_derived_value_is_reported_as_derived_after_an_unrelated_override():
+    base = mk(code_index_repo="acme/widgets")
+    current = settings_store.effective(base, {"target_environment": "prod"})
+    entries = {e["key"]: e for e in settings_store.describe(base, {}, current)}
+    assert entries["target_repo"]["derived"] is True

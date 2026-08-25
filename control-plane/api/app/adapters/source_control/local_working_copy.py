@@ -36,6 +36,21 @@ class LocalWorkingCopy:
             raise RuntimeError(f"git {' '.join(args)}: {result.stderr.strip()}")
         return result.stdout
 
+    def remote(self) -> str | None:
+        """What repository this checkout actually points at, if any.
+
+        Reported so the console can tell whether a local change target and a
+        remote index describe the same codebase. They did not, and nothing
+        was in a position to notice: retrieval read zero files and called
+        itself built.
+        """
+        try:
+            return self._git("remote", "get-url", "origin") or None
+        except (RuntimeError, OSError):
+            # Not a checkout, or no origin. Both are legitimate, and neither
+            # is worth an exception for a label.
+            return None
+
     async def read_files(self, repo: str, ref: str, paths: list[str]) -> dict[str, str]:
         """Read files at a revision, not from whatever is on disk.
 
