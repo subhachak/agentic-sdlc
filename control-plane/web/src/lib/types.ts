@@ -119,6 +119,17 @@ export interface SettingEntry {
   overridden: boolean;
   value: string | number | boolean | null;
   configured?: boolean;
+  /** The setting this falls back to when nobody sets it. */
+  derived_from?: string;
+  /** Currently taking its value from `derived_from` rather than being set. */
+  derived?: boolean;
+  /** Set on another page. Shown read-only here, with a pointer to it. */
+  owned_by?: string;
+  /** Has a working default; tuning rather than setup. */
+  advanced?: boolean;
+  /** False when another setting makes this one inapplicable. */
+  relevant?: boolean;
+  relevant_when?: string[];
 }
 
 export interface SettingChange {

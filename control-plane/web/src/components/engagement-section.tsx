@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   archiveProject,
@@ -68,7 +69,19 @@ export default function EngagementSection({ specs }: { specs: SettingEntry[] }) 
   }
 
   const dirty = Object.keys(draft).length;
-  const editable = specs.filter((s) => data.engagement_keys.includes(s.key));
+  const engagement = specs.filter((s) => data.engagement_keys.includes(s.key));
+  // Three groups, because they are three different kinds of thing and
+  // presenting them as one list is what made this page look like twenty
+  // questions. Asked: nothing else can supply it. Elsewhere: a control on
+  // another page already owns it, and two controls writing one value is how
+  // they drift. Derived: it follows from the repository, and only needs
+  // touching for the layouts where it does not.
+  const ownedElsewhere = engagement.filter((s) => s.owned_by);
+  // A field another setting has made inapplicable is not a question either —
+  // a working copy path means nothing when the change target is GitHub.
+  const applicable = engagement.filter((s) => !s.owned_by && s.relevant !== false);
+  const editable = applicable.filter((s) => !s.derived_from && !s.advanced);
+  const derivable = applicable.filter((s) => s.derived_from || s.advanced);
 
   return (
     <>
@@ -146,6 +159,38 @@ export default function EngagementSection({ specs }: { specs: SettingEntry[] }) 
         )}
       </div>
 
+      {ownedElsewhere.length > 0 && (
+        <div className="card">
+          <h3 style={{ margin: "0 0 0.15rem", fontSize: "0.9rem" }}>Set from Operations</h3>
+          <p className="field-help" style={{ marginTop: 0 }}>
+            Chosen when you sync the repository, and shown here so this page and that one
+            cannot disagree. <Link href="/operations">Go to Operations</Link>.
+          </p>
+          {ownedElsewhere.map((spec) => {
+            const stored = active.engagement[spec.key];
+            const shown = stored === null || stored === undefined || stored === "" ? null : String(stored);
+            return (
+              <div className="field" key={spec.key}>
+                <div>
+                  <div className="field-label">{spec.label}</div>
+                  <div className="field-help">
+                    <code>{spec.key}</code>
+                    {spec.help && <> — {spec.help}</>}
+                  </div>
+                </div>
+                <div className="field-action">
+                  {shown ? (
+                    <code>{shown}</code>
+                  ) : (
+                    <span className="muted">not set yet — sync to choose</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div className="card">
         {editable.map((spec) => {
           const stored = active.engagement[spec.key];
@@ -168,6 +213,54 @@ export default function EngagementSection({ specs }: { specs: SettingEntry[] }) 
             </div>
           );
         })}
+
+        {derivable.length > 0 && (
+          <details style={{ marginTop: "0.5rem" }}>
+            <summary style={{ cursor: "pointer", fontSize: "0.85rem" }}>
+              {derivable.length} more, already answered — open only to override
+            </summary>
+            <p className="field-help" style={{ marginTop: "0.4rem" }}>
+              These either follow from the repository being indexed or have a working
+              default. The uncommon layouts — CI in a separate repository, a fork as the
+              change target, a pipeline reading the graph from elsewhere — are the reason
+              they can be set at all, not the reason to ask up front.
+            </p>
+            {derivable.map((spec) => {
+              const stored = active.engagement[spec.key];
+              const explicit = stored !== null && stored !== undefined && stored !== "";
+              const value =
+                draft[spec.key] ?? (explicit ? String(stored) : "");
+              return (
+                <div className="field" key={spec.key}>
+                  <div>
+                    <div className="field-label">{spec.label}</div>
+                    <div className="field-help">
+                      <code>{spec.key}</code>
+                      {spec.help && <> — {spec.help}</>}
+                      {!explicit && spec.value != null && spec.value !== "" && (
+                        <>
+                          {" "}
+                          Currently <code>{String(spec.value)}</code>, from{" "}
+                          <code>{spec.derived_from}</code>.
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    value={value}
+                    placeholder={
+                      spec.value != null && spec.value !== ""
+                        ? String(spec.value)
+                        : spec.placeholder
+                    }
+                    onChange={(e) => setDraft((d) => ({ ...d, [spec.key]: e.target.value }))}
+                  />
+                </div>
+              );
+            })}
+          </details>
+        )}
 
         <div className="field">
           <div>

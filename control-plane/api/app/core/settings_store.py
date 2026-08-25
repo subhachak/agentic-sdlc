@@ -58,6 +58,22 @@ class SettingSpec:
     options: tuple[str, ...] = ()
     help: str = ""
     placeholder: str = ""
+    # Where this comes from when nobody sets it. A field with a source is an
+    # override, not a question — the console keeps it out of the way and
+    # shows what it resolved to, rather than presenting an empty box that
+    # looks like something someone forgot.
+    derived_from: str = ""
+    # Set somewhere other than this page. Shown read-only with a pointer,
+    # because two controls writing one value is how they drift apart.
+    owned_by: str = ""
+    # (key, value) — only worth asking when another setting says so. A
+    # working copy path is meaningless when the change target is GitHub, and
+    # a field that cannot affect anything is still a field someone reads.
+    relevant_when: tuple[str, str] = ()
+    # Has a working default and exists for tuning. Kept out of the way
+    # rather than off the page: "only ask what cannot be derived" is about
+    # what is presented first, not about removing control.
+    advanced: bool = False
 
 
 SPECS: tuple[SettingSpec, ...] = (
@@ -87,10 +103,15 @@ SPECS: tuple[SettingSpec, ...] = (
                 help="local simulates a job; local-pipeline runs the real QA pipeline "
                      "against the working copy; github-actions dispatches to CI."),
     SettingSpec("github_repo", "CI repository", "Delivery targets", section="engagement",
-                placeholder="owner/name"),
+                placeholder="owner/name", derived_from="code_index_repo",
+                help="Only when the workflow lives somewhere other than the repository "
+                     "being indexed."),
     SettingSpec("github_workflow_file", "Workflow file", "Delivery targets", section="engagement",
-                placeholder="agentic-qa.yml"),
-    SettingSpec("github_ref", "Workflow ref", "Delivery targets", section="engagement", placeholder="main"),
+                placeholder="agentic-qa.yml", advanced=True,
+                relevant_when=("work_dispatch_adapter", "github-actions"),
+                help="The workflow the QA phase dispatches. Convention unless yours differs."),
+    SettingSpec("github_ref", "Workflow ref", "Delivery targets", section="engagement",
+                placeholder="main", derived_from="code_index_ref"),
     SettingSpec("github_token", "GitHub token", "Credentials", section="credential", kind="secret",
                 help="Needs actions:write to dispatch and actions:read to fetch results."),
     SettingSpec("dispatch_timeout_seconds", "Dispatch timeout (s)", "Remote execution", type="int",
@@ -114,10 +135,15 @@ SPECS: tuple[SettingSpec, ...] = (
     SettingSpec("source_control_adapter", "Change target", "Implementation", type="enum",
                 options=("local", "github"),
                 help="local writes a branch in a working copy and pushes nothing."),
-    SettingSpec("target_repo", "Repository", "Delivery targets", section="engagement", placeholder="owner/name"),
-    SettingSpec("target_ref", "Base branch", "Delivery targets", section="engagement", placeholder="main"),
+    SettingSpec("target_repo", "Repository", "Delivery targets", section="engagement",
+                placeholder="owner/name", derived_from="code_index_repo",
+                help="Only when changes are proposed somewhere other than the repository "
+                     "being indexed — a fork, or a mirror."),
+    SettingSpec("target_ref", "Base branch", "Delivery targets", section="engagement",
+                placeholder="main", derived_from="code_index_ref"),
     SettingSpec("target_working_copy", "Working copy", "Delivery targets", section="engagement",
-                help="Used when the change target is local."),
+                relevant_when=("source_control_adapter", "local"),
+                help="The checkout the local change target writes a branch in."),
     SettingSpec("target_environment", "Deploy environment", "Delivery targets", section="engagement",
                 placeholder="staging"),
 
@@ -126,12 +152,19 @@ SPECS: tuple[SettingSpec, ...] = (
                 options=("github", "local"),
                 help="Where the code graph is derived from."),
     SettingSpec("code_index_repo", "Repository to index", "Codebase", section="engagement",
-                placeholder="owner/name"),
-    SettingSpec("code_index_ref", "Ref to index", "Codebase", section="engagement", placeholder="main"),
-    SettingSpec("code_index_max_depth", "Module depth", "Codebase", section="engagement", type="int",
-                help="A module is a directory collapsed to this many path segments."),
+                placeholder="owner/name", owned_by="operations",
+                help="The engagement's repository. Everything else that names a "
+                     "repository falls back to this one."),
+    SettingSpec("code_index_ref", "Ref to index", "Codebase", section="engagement",
+                placeholder="main", owned_by="operations",
+                help="The repository's default branch, unless overridden."),
+    SettingSpec("code_index_max_depth", "Module depth", "Codebase", section="engagement",
+                type="int", advanced=True,
+                help="A module is a directory collapsed to this many path segments. "
+                     "Deeper means finer modules; measured at 4 for this codebase."),
     SettingSpec("code_index_local_root", "Local path", "Codebase", section="engagement",
-                help="Used when the index source is local."),
+                relevant_when=("code_intelligence_adapter", "local"),
+                help="The directory indexed when the index source is a checkout."),
 
     # --- platform ---
     SettingSpec("database_url", "Database", "Platform", kind="static"),
@@ -139,11 +172,15 @@ SPECS: tuple[SettingSpec, ...] = (
 
     # --- where the execution plane reads its copy of the graph ---
     SettingSpec("qa_export_path", "Graph export path", "Codebase", section="engagement",
-                help="The execution plane runs in client CI with no route to this "
-                     "database, so the graph is handed over as a generated file."),
+                advanced=True,
+                help="Where the generated graph is written for the execution plane, which "
+                     "runs in client CI with no route to this database. A convention; "
+                     "change it only if the pipeline reads from somewhere else."),
     SettingSpec("qa_export_scope", "Export scope", "Codebase", section="engagement",
-                help="The subtree the execution plane tests. A QA run testing the app "
-                     "should not be told a change reaches the control plane."),
+                owned_by="operations",
+                help="The subtree the execution plane tests, chosen when syncing. A QA "
+                     "run testing the app should not be told a change reaches the "
+                     "control plane."),
 )
 
 BY_KEY = {spec.key: spec for spec in SPECS}
@@ -263,13 +300,22 @@ async def save(changes: dict[str, Any], updated_by: str = "console") -> dict[str
     return cleaned
 
 
-def describe(base: Settings, overrides: dict[str, Any]) -> list[dict[str, Any]]:
+def describe(
+    base: Settings, overrides: dict[str, Any], current: Settings | None = None
+) -> list[dict[str, Any]]:
     """The settings as the console should render them.
 
     Secrets report presence only. Everything else reports its effective value
     and whether that came from an override or from the environment.
+
+    `current` is what is actually in force — the environment, plus stored
+    overrides, plus the active project's engagement record, plus whatever
+    was derived from the repository. Passed in rather than recomputed here
+    because this module knows nothing about projects, and reporting the
+    pre-overlay value made the page show one repository while the platform
+    used another.
     """
-    current = effective(base, overrides)
+    current = current if current is not None else effective(base, overrides)
     out: list[dict[str, Any]] = []
 
     for spec in SPECS:
@@ -284,6 +330,20 @@ def describe(base: Settings, overrides: dict[str, Any]) -> list[dict[str, Any]]:
             "help": spec.help,
             "placeholder": spec.placeholder,
             "overridden": spec.key in overrides and spec.kind == "mutable",
+            "derived_from": spec.derived_from,
+            "owned_by": spec.owned_by,
+            "advanced": spec.advanced,
+            # Evaluated here rather than in the console, so the rule lives
+            # beside the setting it qualifies.
+            "relevant": (
+                not spec.relevant_when
+                or str(getattr(current, spec.relevant_when[0], None)) == spec.relevant_when[1]
+            ),
+            "relevant_when": list(spec.relevant_when),
+            # Currently taking its value from somewhere else rather than
+            # being set. The distinction the console needs: an empty box is
+            # a question, a derived value is an answer.
+            "derived": spec.key in getattr(current, "derived_keys", frozenset()),
         }
         if spec.kind == "secret":
             entry["configured"] = bool(getattr(current, spec.key, None))

@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,7 +66,11 @@ class Settings(BaseSettings):
     # Where the execution plane reads its copy of the graph. It runs in client
     # CI with no route to this database, so the handover is a generated file.
     qa_export_path: str = "execution-plane/qa/code-graph.json"
-    qa_export_scope: str = "demo-app"
+    # No default. It used to be the sample app's name, so pointing the
+    # platform at any other repository failed with a message blaming the
+    # index. Empty means "work it out from what was indexed", and the
+    # console writes the answer here once someone has chosen.
+    qa_export_scope: str = ""
 
     # --- implementation phase ---
     # The repository the implementation agent proposes changes against, and
@@ -76,6 +81,18 @@ class Settings(BaseSettings):
     target_environment: str = "staging"
     reconciler_interval_seconds: float = 5.0
     local_dispatch_duration_seconds: float = 3.0
+
+    # Which values were filled in from another rather than set. The console
+    # shows these as derived instead of as blanks someone forgot, which is
+    # the difference between "one repository" and "three fields that must
+    # agree with each other".
+    derived_keys: frozenset[str] = frozenset()
+
+    @model_validator(mode="after")
+    def _derive_on_load(self) -> "Settings":
+        return derive(self)
+
+
 
     @property
     def checkpointer_db_path(self) -> str:
@@ -90,6 +107,50 @@ class Settings(BaseSettings):
     @property
     def db_file_path(self) -> str:
         return self.database_url.split(":///")[-1]
+
+
+def derive(settings: "Settings") -> "Settings":
+    """One repository, and the things that follow from it.
+
+    There were three: the one to index, the one changes are proposed against,
+    and the one holding the CI workflow — plus a ref each. In almost every
+    deployment they are the same value typed three times, and the three that
+    are not are the interesting case, not the default.
+
+    So the indexed repository is the engagement's repository, and the rest
+    fall back to it. Setting one explicitly still wins, which is what makes
+    the uncommon layouts — CI in a separate repository, a fork as the change
+    target — possible rather than merely awkward.
+
+    A module-level function rather than only a validator because a project
+    record is applied with `model_copy`, which does not re-run validation.
+    Without this being callable, choosing a repository for a project would
+    leave the derived fields pointing at the previous one.
+    """
+    derived: set[str] = set()
+
+    def fill(key: str, value: str | None) -> None:
+        if not getattr(settings, key, None) and value:
+            object.__setattr__(settings, key, value)
+            derived.add(key)
+
+    fill("target_repo", settings.code_index_repo)
+    fill("github_repo", settings.code_index_repo)
+
+    # A ref is a property of the repository, not a separate decision. Only
+    # carried across when the repositories actually match: a base branch from
+    # one repository is not a fact about another.
+    indexed_ref = settings.code_index_ref
+    if indexed_ref and indexed_ref != "main":
+        if settings.target_repo == settings.code_index_repo and settings.target_ref == "main":
+            object.__setattr__(settings, "target_ref", indexed_ref)
+            derived.add("target_ref")
+        if settings.github_repo == settings.code_index_repo and settings.github_ref == "main":
+            object.__setattr__(settings, "github_ref", indexed_ref)
+            derived.add("github_ref")
+
+    object.__setattr__(settings, "derived_keys", frozenset(derived))
+    return settings
 
 
 @lru_cache

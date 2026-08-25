@@ -26,8 +26,15 @@ LIBRARY_DIR = QA_ROOT / "test-scripts"
 # it, so a module cannot claim coverage from a script that does not exist.
 MANIFEST_FILE = LIBRARY_DIR / "manifest.json"
 FEATURES_FILE = QA_ROOT / "features.yaml"
-# Seeded code-intelligence graph. Derived from the repository in production.
-CODE_GRAPH_FILE = QA_ROOT / "code-graph.json"
+# Seeded code-intelligence graph. Derived from the repository in production,
+# where the control plane writes it here on every sync.
+#
+# QA_CODE_GRAPH lets a caller read one from somewhere else. The tests use it:
+# this file is a live artefact that the control plane overwrites, and it was
+# doing double duty as their fixture — so syncing the platform against any
+# repository other than demo-app made nine tests fail, with nothing in the
+# failure pointing at the cause.
+CODE_GRAPH_FILE = Path(os.environ.get("QA_CODE_GRAPH") or (QA_ROOT / "code-graph.json"))
 
 GENERATED_DIR = APP_ROOT / "generated-tests"
 DATA_STORE = APP_ROOT / "lib" / "data-store.json"

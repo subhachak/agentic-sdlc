@@ -27,7 +27,10 @@ async def read_config(request: Request) -> dict:
     changes = await settings_store.history()
     settings = request.app.state.settings
     return {
-        "settings": settings_store.describe(get_settings(), overrides),
+        # The live settings, not the environment's: this page showed the
+        # value before the active project was applied, so a repository set
+        # for a project read as unset here.
+        "settings": settings_store.describe(get_settings(), overrides, settings),
         "history": changes,
         # Set when a stored override could not be applied and the platform
         # started on its environment defaults instead. Surfaced here because

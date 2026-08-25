@@ -6,6 +6,7 @@ intelligence graph describes the codebase, not any one delivery.
 """
 
 import json
+from typing import Any
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -106,7 +107,7 @@ async def sync_graph(request: Request, body: SyncRequest) -> dict:
     scope = body.scope if body.scope is not None else (settings.qa_export_scope or None)
 
     async with _indexing_errors(repo, body.ref or ""):
-        return await sync_core.sync(
+        result = await sync_core.sync(
             request.app.state.context_graph,
             request.app.state.adapters.code_intelligence,
             request.app.state.adapters.code_design_context,
@@ -116,6 +117,48 @@ async def sync_graph(request: Request, body: SyncRequest) -> dict:
             export_path=_export_path(settings),
             project=_project(request, body.project),
         )
+
+    # Remember what was chosen. Asking which subtree to test is reasonable
+    # once; asking again on every sync is the same question the text box was.
+    await _remember(request, result, repo, _project(request, body.project))
+    return result
+
+
+async def _remember(request: Request, result: dict, repo: str, project: str) -> None:
+    """Persist the answers this sync established, if they are new.
+
+    Written to the project record rather than the settings table, because
+    that is what the console reads and what `applied_to` overlays — writing
+    to the other one would leave the Configuration page showing a repository
+    the platform is no longer using.
+
+    Asking which subtree to test is reasonable once. Asking again on every
+    sync is the same question the text box was.
+    """
+    from app.core import projects
+
+    settings = request.app.state.settings
+    changes: dict[str, Any] = {}
+    if repo and settings.code_index_repo != repo:
+        changes["code_index_repo"] = repo
+    exported = next(
+        (s for s in result["steps"] if s["step"] == "export" and s["status"] == "ok"), None
+    )
+    if exported is not None and exported.get("scope") != settings.qa_export_scope:
+        changes["qa_export_scope"] = exported.get("scope") or ""
+    if not changes:
+        return
+
+    try:
+        await projects.update(project, engagement=changes)
+        from app.main import reload_runtime
+
+        await reload_runtime(request.app)
+    except Exception:  # noqa: BLE001
+        # The sync itself worked and its result is already computed. Failing
+        # the request because the convenience of remembering did not work
+        # would report a successful index as an error.
+        pass
 
 
 @router.post("/seed")

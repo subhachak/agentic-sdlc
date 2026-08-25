@@ -1,0 +1,82 @@
+{
+  "export_version": 2,
+  "project": "default",
+  "routes": {
+    "/": [
+      "demo-app/app/layout.tsx",
+      "demo-app/app/page.tsx"
+    ],
+    "/api/claims": [
+      "demo-app/app/api/claims/route.ts"
+    ],
+    "/claims": [
+      "demo-app/app/claims/page.tsx",
+      "demo-app/app/layout.tsx"
+    ]
+  },
+  "generated": true,
+  "scope": "demo-app",
+  "provenance": {
+    "repo": "subhachak/agentic-sdlc",
+    "commit_sha": "c6f0df2e934ffa1f51a5807cacc4fb2e7c508b20",
+    "indexer_version": "2.0.0",
+    "indexed_at": "2026-08-24T18:26:14.284430+00:00",
+    "pinned": true,
+    "internal_capture_rate": 0.9915,
+    "most_missed": [
+      [
+        "./.next/dev/types/root-params.d.ts",
+        1
+      ],
+      [
+        "./.next/dev/types/routes.d.ts",
+        1
+      ],
+      [
+        "./globals.css",
+        1
+      ]
+    ]
+  },
+  "modules": [
+    {
+      "id": "demo-app",
+      "paths": [
+        "demo-app/next-env.d.ts",
+        "demo-app/next.config.js",
+        "demo-app/playwright.config.ts"
+      ]
+    },
+    {
+      "id": "demo-app/app",
+      "paths": [
+        "demo-app/app/layout.tsx",
+        "demo-app/app/page.tsx"
+      ]
+    },
+    {
+      "id": "demo-app/app/api/claims",
+      "paths": [
+        "demo-app/app/api/claims/route.ts"
+      ]
+    },
+    {
+      "id": "demo-app/app/claims",
+      "paths": [
+        "demo-app/app/claims/page.tsx"
+      ]
+    }
+  ],
+  "depends_on": [
+    {
+      "from": "demo-app/app/claims",
+      "to": "demo-app/app/api/claims",
+      "weight": 1
+    }
+  ],
+  "file_dependents": {
+    "demo-app/app/api/claims/route.ts": [
+      "demo-app/app/claims/page.tsx"
+    ]
+  }
+}

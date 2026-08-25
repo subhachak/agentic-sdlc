@@ -50,7 +50,14 @@ def test_a_new_project_starts_from_the_environment_rather_than_blank(client):
     created = client.post("/api/projects", json={"id": "team-a", "name": "Team A"}).json()
 
     assert created["engagement"]["target_ref"] == "main"
-    assert created["engagement"]["qa_export_scope"]
+    assert created["engagement"]["qa_export_path"]
+    # The export scope is deliberately *not* prefilled. It used to default to
+    # the sample app's name, which is a guess about the client's repository
+    # layout dressed up as a default — and pointing the platform anywhere
+    # else then failed with an error blaming the index. Empty means "derive
+    # it from what was indexed", and the console writes the answer back once
+    # someone has chosen.
+    assert created["engagement"]["qa_export_scope"] == ""
 
 
 def test_a_partial_update_does_not_blank_the_rest(client):
