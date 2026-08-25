@@ -12,30 +12,16 @@ import {
   type SyncStep,
 } from "@/lib/api";
 
-/**
- * The whole of setup that is an action rather than a value.
- *
- * One control: choose a repository, press Sync. Everything the console used
- * to ask for around it — the ref, the scope, whether this is a first index
- * or a delta, whether to also build retrieval and export — is derivable, and
- * asking was how they came to disagree with each other.
- *
- * The one question that survives is a real one: a repository with more than
- * one deployable unit cannot be scoped without being told which, and getting
- * that wrong points a QA run at an app nobody changed.
- */
-
-const TONE: Record<SyncStep["status"], string> = {
-  ok: "ok",
-  failed: "crit",
-  needs_choice: "warn",
-  skipped: "idle",
+const STEP_TITLE: Record<SyncStep["step"], string> = {
+  index: "Architecture index",
+  retrieval: "Agent grounding",
+  export: "QA execution handoff",
 };
 
-const STEP_TITLE: Record<SyncStep["step"], string> = {
-  index: "Read the repository",
-  retrieval: "Ground the design agent",
-  export: "Hand off to the execution plane",
+const STEP_DETAIL: Record<SyncStep["step"], string> = {
+  index: "Parse modules, imports and HTTP contracts",
+  retrieval: "Build revision-pinned design context",
+  export: "Publish scoped evidence for CI",
 };
 
 export default function RepositoryPanel({ onChanged }: { onChanged?: () => void }) {
@@ -52,193 +38,111 @@ export default function RepositoryPanel({ onChanged }: { onChanged?: () => void 
       const next = await hydrationStatus();
       setStatus(next);
       setRepo((current) => current || next.provenance.repo || "");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }, []);
 
   useEffect(() => {
     void load();
-    void (async () => {
-      try {
-        const list = await listRepositories();
+    void listRepositories()
+      .then((list) => {
         setCatalogue(list);
         setRepo((current) => current || list.current || list.repositories[0]?.full_name || "");
-      } catch (err) {
-        setCatalogue({
-          available: false,
-          reason: err instanceof Error ? err.message : String(err),
-          repositories: [],
-        });
-      }
-    })();
+      })
+      .catch((reason) => setCatalogue({ available: false, reason: reason instanceof Error ? reason.message : String(reason), repositories: [] }));
   }, [load]);
+
+  const selected = catalogue?.repositories.find((item) => item.full_name === repo);
+  const canList = Boolean(catalogue?.available && catalogue.repositories.length);
 
   async function sync(scope?: string | null) {
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const next = await syncGraph(repo, scope ?? null);
+      const next = await syncGraph(repo, scope ?? null, selected?.default_branch ?? null);
       setResult(next);
-      setChoices(next.steps.find((s) => s.status === "needs_choice")?.candidates ?? null);
+      setChoices(next.steps.find((step) => step.status === "needs_choice")?.candidates ?? null);
       await load();
       onChanged?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
     }
   }
 
-  const selected = catalogue?.repositories.find((r) => r.full_name === repo);
-  const canList = Boolean(catalogue?.available && catalogue.repositories.length);
-  const ready = status?.hydrated;
+  const steps = result?.steps ?? status?.steps.map((step) => ({
+    step: step.id as SyncStep["step"],
+    status: step.ready ? "ok" as const : "skipped" as const,
+    summary: step.detail,
+  })) ?? [];
 
   return (
-    <section className="panel">
+    <section className="panel elevated">
       <div className="panel-head">
         <div>
-          <h2>Repository</h2>
-          <p>
-            One button for the first index and every update after it. It reads the
-            repository, grounds the design agent in it, and writes the copy the execution
-            plane tests against — reporting what moved rather than rebuilding silently.
-          </p>
+          <h2>Repository and architecture context</h2>
+          <p>One sync keeps the architecture graph, agent grounding and QA handoff on the same revision.</p>
         </div>
-        <div className="panel-head-end">
-          <span className={`pill ${busy ? "busy" : ready ? "ok" : "warn"}`}>
-            {busy ? "Syncing" : ready ? "Ready" : "Incomplete"}
-          </span>
-        </div>
+        <div className="panel-head-end"><span className={`pill ${busy ? "busy" : status?.hydrated ? "ok" : "warn"}`}>{busy ? "Synchronizing" : status?.hydrated ? "Ready" : "Action required"}</span></div>
       </div>
-
-      <div className="row">
-        <div className="row-main">
-          <div className="row-label">
-            <label htmlFor="repo-select">Which repository</label>
-          </div>
-          <div className="row-help">
-            {canList
-              ? `${catalogue!.repositories.length} visible to the configured credentials`
-              : catalogue?.reason || "Loading…"}
-            {selected && (
-              <>
-                {" · branch "}
-                <code>{selected.default_branch}</code>
-              </>
+      <div className="panel-body">
+        <div className="repository-select-row">
+          <label>
+            <span className="field-label">Source repository</span>
+            {canList ? (
+              <select value={repo} onChange={(event) => { setRepo(event.target.value); setChoices(null); setResult(null); }}>
+                {catalogue!.repositories.map((item) => <option value={item.full_name} key={item.full_name}>{item.full_name}{item.private ? " · private" : ""}{item.full_name === catalogue!.current ? " · indexed" : ""}</option>)}
+              </select>
+            ) : (
+              <input type="text" value={repo} placeholder="owner/repository" onChange={(event) => setRepo(event.target.value)} />
             )}
-          </div>
+            <span className="field-help">
+              {selected ? `Default branch ${selected.default_branch} · updated ${new Date(selected.updated_at).toLocaleDateString()}` : catalogue?.reason || "Discovering repositories available to the configured source…"}
+            </span>
+          </label>
+          <button type="button" disabled={busy || !repo.trim()} onClick={() => void sync()}>{busy ? "Synchronizing…" : status?.provenance.repo === repo ? "Sync latest revision" : "Connect and index"}</button>
         </div>
-        <div className="row-end" style={{ flex: "1 1 22rem", justifyContent: "flex-end" }}>
-          {canList ? (
-            <select
-              id="repo-select"
-              value={repo}
-              className="grow"
-              onChange={(e) => {
-                setRepo(e.target.value);
-                // A different repository has different subtrees, so a scope
-                // chosen for the last one is not an answer for this one.
-                setChoices(null);
-                setResult(null);
-              }}
-            >
-              {catalogue!.repositories.map((r) => (
-                <option key={r.full_name} value={r.full_name}>
-                  {r.full_name}
-                  {r.private ? " · private" : ""}
-                  {r.full_name === catalogue!.current ? " · indexed" : ""}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              id="repo-select"
-              type="text"
-              className="grow"
-              placeholder="owner/name"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-            />
-          )}
-          <button onClick={() => void sync()} disabled={busy || !repo.trim()}>
-            {busy ? "Syncing…" : "Sync"}
-          </button>
-        </div>
-      </div>
 
-      {choices && (
-        <div style={{ padding: "var(--s4) var(--s5)", borderBottom: "1px solid var(--line)" }}>
-          <div className="notice warn" style={{ marginBottom: 0 }}>
-            <h3>Which part does the execution plane test?</h3>
-            <p>
-              This repository holds more than one separately buildable unit. Scoping is not
-              about size: a QA run testing one app should not be told a change reaches
-              another.
-            </p>
-            <div className="inline" style={{ marginTop: "var(--s3)" }}>
-              {choices.map((c) => (
-                <button
-                  key={c.path || "__all__"}
-                  className="ghost"
-                  disabled={busy}
-                  onClick={() => void sync(c.path)}
-                >
-                  {c.label}
-                  <span className="muted" style={{ marginLeft: 6 }}>
-                    {c.files} files
-                  </span>
+        {choices && (
+          <div className="notice warn" style={{ marginTop: 16, marginBottom: 0 }}>
+            <h3>Select the application this engagement tests</h3>
+            <p>The repository contains multiple deployable units. This is the only scope decision the platform cannot infer safely.</p>
+            <div className="scope-options">
+              {choices.map((choice) => (
+                <button type="button" key={choice.path || "__all__"} className="secondary scope-option" disabled={busy} onClick={() => void sync(choice.path)}>
+                  <span><strong>{choice.label}</strong><small>{choice.files} files · {choice.marker}</small></span>
                 </button>
               ))}
             </div>
           </div>
-        </div>
-      )}
-
-      <div className="panel-body flush">
-        {(result?.steps ?? []).map((step) => (
-          <div className="row" key={step.step}>
-            <div className="row-main">
-              <div className="row-label">{STEP_TITLE[step.step]}</div>
-              <div className="row-help">{step.summary}</div>
-            </div>
-            <div className="row-end">
-              <span className={`pill ${TONE[step.status]}`}>
-                {step.status === "needs_choice" ? "Needs a choice" : step.status}
-              </span>
-            </div>
-          </div>
-        ))}
-
-        {!result &&
-          (status?.steps ?? []).map((step) => (
-            <div className="row" key={step.id}>
-              <div className="row-main">
-                <div className="row-label">{step.title}</div>
-                <div className="row-help">{step.detail}</div>
-                {step.quality && !step.quality.sufficient && (
-                  <div className="row-help" style={{ color: "var(--crit)" }}>
-                    Only {(step.quality.internal_capture_rate * 100).toFixed(1)}% of internal
-                    imports resolved. Below 80% the design phase refuses, because an impact
-                    set derived from this many missing edges cannot be trusted.
-                  </div>
-                )}
-              </div>
-              <div className="row-end">
-                <span className={`pill ${step.ready ? "ok" : "warn"}`}>
-                  {step.ready ? "Ready" : "Not yet"}
-                </span>
-              </div>
-            </div>
-          ))}
+        )}
       </div>
 
-      {error && (
-        <div className="panel-body" style={{ borderTop: "1px solid var(--line)" }}>
-          <p style={{ margin: 0, color: "var(--crit)", fontSize: "0.875rem" }}>{error}</p>
+      {steps.length > 0 && (
+        <div className="sync-steps">
+          {steps.map((step, index) => {
+            const ready = step.status === "ok";
+            return (
+              <div className="sync-step" key={step.step}>
+                <span className={`sync-step-index ${ready ? "" : "pending"}`}>{ready ? "✓" : `0${index + 1}`}</span>
+                <strong>{STEP_TITLE[step.step]}</strong>
+                <span>{step.summary || STEP_DETAIL[step.step]}</span>
+              </div>
+            );
+          })}
         </div>
       )}
+
+      {status?.provenance.commit_sha && (
+        <div className="row">
+          <div className="row-main"><div className="row-label">Current indexed revision</div><div className="row-help">Pinned evidence used by design and QA scope calculations.</div></div>
+          <div className="row-end"><code>{status.provenance.commit_sha.slice(0, 12)}</code></div>
+        </div>
+      )}
+      {error && <div className="notice crit" role="alert" style={{ margin: 16 }}><h3>Repository synchronization failed</h3><p>{error}</p></div>}
     </section>
   );
 }

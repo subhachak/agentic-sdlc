@@ -1,37 +1,61 @@
 "use client";
 
 import { useState } from "react";
+import ProjectManager from "@/components/project-manager";
 import RepositoryPanel from "@/components/repository-panel";
-import SettingsPanel from "@/components/settings-panel";
+import SettingsPanel, { type SettingsView } from "@/components/settings-panel";
 
-/**
- * Setup — formerly Operations and Configuration.
- *
- * They were the same subject split by verb: what the platform is pointed at,
- * and pointing it. Nobody arrives knowing whether choosing a repository is a
- * setting or an action, and the split put a repository field on both pages,
- * where they promptly disagreed with each other.
- *
- * Ordered by what someone actually does: pick the repository, sync, then the
- * handful of things the repository cannot tell us.
- */
+const SECTIONS: { id: SettingsView; label: string; description: string }[] = [
+  { id: "engagement", label: "Engagement", description: "Clients, repositories and inferred delivery context" },
+  { id: "automation", label: "Agents & execution", description: "Model, implementation, CI and approval behavior" },
+  { id: "security", label: "Connections", description: "Credential presence and integration health" },
+  { id: "advanced", label: "Advanced", description: "Operational tuning and configuration history" },
+];
+
 export default function SetupPage() {
-  // A sync changes what the settings resolve to — it writes the repository
-  // and the export scope — so the settings below re-read when it finishes.
+  const [view, setView] = useState<SettingsView>("engagement");
   const [synced, setSynced] = useState(0);
+  const current = SECTIONS.find((section) => section.id === view)!;
 
   return (
     <main>
       <div className="page-head">
-        <h1>Setup</h1>
-        <p>
-          Point the platform at a codebase and it works out the rest. What is left here is
-          what nothing else can supply.
-        </p>
+        <div className="page-head-copy">
+          <span className="eyebrow">Platform management</span>
+          <h1>Administration</h1>
+          <p>Manage the active client context and the automation shared by every delivery team.</p>
+        </div>
       </div>
 
-      <RepositoryPanel onChanged={() => setSynced((n) => n + 1)} />
-      <SettingsPanel reloadKey={synced} />
+      <div className="tabs admin-tabs" role="tablist" aria-label="Administration sections">
+        {SECTIONS.map((section) => (
+          <button
+            type="button"
+            className="tab-button"
+            role="tab"
+            aria-selected={view === section.id}
+            key={section.id}
+            onClick={() => setView(section.id)}
+            title={section.description}
+          >
+            {section.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="page-head" style={{ marginBottom: 16 }}>
+        <div className="page-head-copy"><h2 style={{ margin: 0, fontSize: ".95rem" }}>{current.label}</h2><p>{current.description}</p></div>
+      </div>
+
+      <div className="admin-layout" role="tabpanel">
+        {view === "engagement" && (
+          <>
+            <ProjectManager />
+            <RepositoryPanel onChanged={() => setSynced((value) => value + 1)} />
+          </>
+        )}
+        <SettingsPanel reloadKey={synced} view={view} />
+      </div>
     </main>
   );
 }

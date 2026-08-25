@@ -45,6 +45,7 @@ export interface StreamedAuditEvent {
 }
 
 export interface DashboardData {
+  project?: string;
   runs: {
     total: number;
     by_status: Record<string, number>;

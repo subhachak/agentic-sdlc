@@ -12,7 +12,16 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    let detail = text;
+    try {
+      const parsed = JSON.parse(text) as { detail?: string | { message?: string } };
+      detail = typeof parsed.detail === "string"
+        ? parsed.detail
+        : parsed.detail?.message || text;
+    } catch {
+      // Plain-text error responses are already suitable for display.
+    }
+    throw new Error(detail || `${res.status} ${res.statusText}`);
   }
   return res.json() as Promise<T>;
 }
@@ -81,6 +90,32 @@ export async function saveConfig(
 
 export async function listModules(): Promise<{ modules: ModuleEntry[] }> {
   const res = await fetch(`${API_URL}/api/graph/modules`, { cache: "no-store" });
+  return json(res);
+}
+
+export interface GraphExportData {
+  export_version: number;
+  project: string;
+  scope: string;
+  generated: boolean;
+  provenance: {
+    repo: string | null;
+    commit_sha: string | null;
+    indexer_version: string | null;
+    indexed_at: string | null;
+    pinned: boolean;
+    internal_capture_rate: number | null;
+    most_missed: [string, number][];
+    units: string[];
+  };
+  routes: Record<string, string[]>;
+  modules: { id: string; paths: string[] }[];
+  depends_on: { from: string; to: string; weight: number }[];
+}
+
+export async function getGraphExport(scope = ""): Promise<GraphExportData> {
+  const query = new URLSearchParams({ scope });
+  const res = await fetch(`${API_URL}/api/graph/export?${query.toString()}`, { cache: "no-store" });
   return json(res);
 }
 
@@ -306,11 +341,11 @@ export async function listRepositories(): Promise<RepositoryList> {
 }
 
 /** Index or update, ground the agent, and export — in one call. */
-export async function syncGraph(repo: string, scope?: string | null): Promise<SyncResult> {
+export async function syncGraph(repo: string, scope?: string | null, ref?: string | null): Promise<SyncResult> {
   const res = await fetch(`${API_URL}/api/graph/sync`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(scope ? { repo, scope } : { repo }),
+    body: JSON.stringify({ repo, ...(scope ? { scope } : {}), ...(ref ? { ref } : {}) }),
   });
   return json(res);
 }

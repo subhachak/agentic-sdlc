@@ -141,6 +141,9 @@ async def _remember(request: Request, result: dict, repo: str, project: str) -> 
     changes: dict[str, Any] = {}
     if repo and settings.code_index_repo != repo:
         changes["code_index_repo"] = repo
+    resolved_ref = result.get("ref")
+    if resolved_ref and settings.code_index_ref != resolved_ref:
+        changes["code_index_ref"] = resolved_ref
     exported = next(
         (s for s in result["steps"] if s["step"] == "export" and s["status"] == "ok"), None
     )

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import Masthead from "@/components/masthead";
 
@@ -8,7 +9,7 @@ import Masthead from "@/components/masthead";
 // network is a tool people stop trusting.
 const sans = IBM_Plex_Sans({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
   variable: "--font-sans",
   display: "swap",
 });
@@ -18,14 +19,18 @@ const sans = IBM_Plex_Sans({
 // module paths is scannable in mono and a wall of text in a proportional.
 const mono = IBM_Plex_Mono({
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
   variable: "--font-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Agentic SDLC",
-  description: "Governed agentic delivery — agents propose, code decides, people approve.",
+  title: {
+    default: "Agentic Delivery Control",
+    template: "%s · Agentic Delivery Control",
+  },
+  description:
+    "Enterprise control center for governed, evidence-led agentic software delivery.",
 };
 
 // Runs before first paint. Without it the stored choice is applied after
@@ -37,11 +42,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
+        <Script id="restore-theme" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
       </head>
       <body>
+        <a className="skip-link" href="#main-content">Skip to main content</a>
         <Masthead />
-        {children}
+        <div className="application-content" id="main-content">{children}</div>
       </body>
     </html>
   );

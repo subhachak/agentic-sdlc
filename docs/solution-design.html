@@ -277,6 +277,7 @@
     white-space: nowrap;
   }
   .pill.real { background: var(--accent-soft); color: var(--accent); }
+  .architecture-image { display: block; width: 100%; height: auto; }
   .pill.partial { background: var(--warn-soft); color: var(--warn); }
   .pill.stub { background: var(--surface-2); color: var(--muted); }
   .pill.absent { background: var(--crit-soft); color: var(--crit); }
@@ -532,10 +533,20 @@
       <em>pulls</em> results rather than accepting pushed ones. There is no callback to authenticate
       and no shared secret to rotate, and a forged result cannot become run state because nothing
       outside the reconciler can write to it.</p>
-    <p>The same seam now carries three different kinds of remote work — a CI job, a client’s coding
-      agent, and a client’s test-authoring agent — because they are the same problem: start work
+    <p>The durable hand-off is implemented for a CI job and for a client coding agent: start work
       somewhere else and find out later how it went. One row per run and phase serves as the
-      idempotency guard, the result queue and the timeout ledger at once.</p>
+      idempotency guard, result queue and timeout ledger at once. DesignAgent and TestAuthor are
+      protocol seams, but client-supplied implementations are not yet selectable through the deployed
+      adapter registry; the architecture diagram marks that distinction as target-state wiring.</p>
+    <figure class="figure-frame wide">
+      <img class="architecture-image" src="agentic-pdlc-reference-architecture.png"
+        alt="End-to-end reference architecture showing client systems of record, experience, invariant governance, replaceable intelligence, project-scoped context and client execution." />
+      <figcaption class="figure-caption">Detailed enterprise reference architecture. It separates
+        implemented runtime paths, protocol-only extension seams and target-state capabilities; it
+        also exposes the three current impact calculations, partial project isolation, execution
+        privileges, persistent stores and residual production controls.</figcaption>
+    </figure>
+    <h3>Deployment zoom: control plane to client execution</h3>
     <div class="figure-frame wide">
       <svg viewBox="0 0 880 620" role="img" aria-label="The console talks to a FastAPI control plane containing the HTTP API, graph runtime with gate controller, reconciler and deterministic core; below a port boundary sit adapters that reach the Anthropic API, GitHub Actions and SQLite, and GitHub Actions runs the execution plane containing the QA orchestrator, Playwright and the app under test.">
             <defs>
@@ -963,6 +974,15 @@
       “worth reusing as regression”, and nothing verified the result. An agent could omit every one
       and the run still passed.</p>
 
+    <figure class="figure-frame wide">
+      <img class="architecture-image" src="agentic-pdlc-qa-flow.png"
+        alt="QA flow from change context and impact analysis through TestAuthor, deterministic testability, script resolution, data setup, Playwright execution, observed coverage, gate, restoration and evidence." />
+      <figcaption class="figure-caption">QA authoring, data lifecycle, execution and evidence. The
+        solid path is implemented. The TestDataProvider fixture lease is the intended client seam for
+        per-scenario isolation; the reference JSON adapter currently provides run-level restoration
+        and serial fallback for mutating tests.</figcaption>
+    </figure>
+
     <h3>Required, not suggested</h3>
     <p>Scripts covering an impacted module are installed into the run <em>by code</em>. The agent is
       told to skip them and spend its scenarios on the modules nothing covers. The gate then enforces
@@ -1059,7 +1079,7 @@ coverage a script claims  ⊆  what the run was observed to exercise</code></pre
           <tr><td class="mono">RequirementsSource</td><td>Where work arrives from</td><td>Jira, Azure DevOps, Confluence</td></tr>
           <tr><td class="mono">CodeDesignContext</td><td>What the system already does</td><td>Repo index, Confluence, SharePoint</td></tr>
           <tr><td class="mono">CodeIntelligence</td><td>What depends on what</td><td>GitHub, GitLab, a language server</td></tr>
-          <tr><td class="mono">DesignAgent</td><td>What a change should touch</td><td>In-process, or the client’s own agent</td></tr>
+          <tr><td class="mono">DesignAgent</td><td>What a change should touch</td><td>Inline implementation; client registry binding is target state</td></tr>
           <tr><td class="mono">EntityResolver</td><td>What a native identifier means</td><td>One per system of record</td></tr>
           <tr><td class="mono">SourceControl</td><td>Where a change is proposed, and what it changed</td><td>GitHub, GitLab, Bitbucket, ADO</td></tr>
           <tr><td class="mono">WorkDispatch</td><td>How a phase runs elsewhere</td><td>Actions, Jenkins, ADO, Copilot cloud agent</td></tr>
@@ -1067,7 +1087,7 @@ coverage a script claims  ⊆  what the run was observed to exercise</code></pre
           <tr><td class="mono">TestManagement</td><td>Where test cases live</td><td>Zephyr, TestRail, qTest, Xray</td></tr>
           <tr><td class="mono">AuditSink</td><td>Who did what, when</td><td>Postgres, Splunk, Sentinel</td></tr>
           <tr><td class="mono">BuildDeploy</td><td>How code ships</td><td>Actions, Jenkins, Harness</td></tr>
-          <tr><td class="mono">TestAuthor</td><td>What to test, and the spec that tests it</td><td>In-process, or the client’s own agent <span class="pill partial">execution plane</span></td></tr>
+          <tr><td class="mono">TestAuthor</td><td>What to test, and the spec that tests it</td><td>Inline execution-plane implementation; external selection is target state</td></tr>
         </tbody>
       </table>
     </div>

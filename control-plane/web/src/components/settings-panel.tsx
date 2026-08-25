@@ -1,131 +1,93 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getConfig, saveConfig } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import {
+  getConfig,
+  listProjects,
+  preflightConfig,
+  saveConfig,
+  updateProject,
+  type ProjectList,
+} from "@/lib/api";
 import AgentCheck from "@/components/agent-check";
 import type { ConfigData, SettingEntry } from "@/lib/types";
 
-/**
- * Everything that is a value rather than an action.
- *
- * Grouped by who changes it and how often, not by which module implements
- * it. Anything the platform can work out for itself is shown as a fact and
- * kept out of the way: an empty box is a question, and a question nobody
- * needs to answer is the whole reason this page was confusing.
- */
+export type SettingsView = "engagement" | "automation" | "security" | "advanced";
 
-function Control({
-  entry,
-  draft,
-  onChange,
-}: {
+function valueFor(entry: SettingEntry, draft: Record<string, unknown>) {
+  return entry.key in draft ? draft[entry.key] : entry.value;
+}
+
+function Control({ entry, draft, onChange }: {
   entry: SettingEntry;
   draft: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
 }) {
-  const value = entry.key in draft ? draft[entry.key] : entry.value;
-
-  if (entry.kind === "secret") {
-    return (
-      <span className={`pill ${entry.configured ? "ok" : "crit"}`}>
-        {entry.configured ? "Configured" : "Not set"}
-      </span>
-    );
-  }
-  if (entry.kind === "static") {
-    return <code className="muted">{String(entry.value ?? "—")}</code>;
-  }
+  const value = valueFor(entry, draft);
+  if (entry.kind === "secret") return <span className={`pill ${entry.configured ? "ok" : "crit"}`}>{entry.configured ? "Configured" : "Not configured"}</span>;
+  if (entry.kind === "static") return <code className="derived-value">{String(entry.value ?? "—")}</code>;
   if (entry.type === "bool") {
     return (
-      <label className="inline" style={{ fontSize: "0.875rem" }}>
-        <input
-          type="checkbox"
-          checked={Boolean(value)}
-          onChange={(e) => onChange(entry.key, e.target.checked)}
-        />
-        {value ? "On" : "Off"}
+      <label className="toggle-control">
+        <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(entry.key, event.target.checked)} />
+        <span>{value ? "Enabled" : "Disabled"}</span>
       </label>
     );
   }
   if (entry.options.length > 0) {
-    return (
-      <select value={String(value ?? "")} onChange={(e) => onChange(entry.key, e.target.value)}>
-        {entry.options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
-      </select>
-    );
+    return <select aria-label={entry.label} value={String(value ?? "")} onChange={(event) => onChange(entry.key, event.target.value)}>{entry.options.map((option) => <option value={option} key={option}>{option.replaceAll("-", " ")}</option>)}</select>;
   }
   return (
     <input
-      type="text"
+      aria-label={entry.label}
+      type={entry.type === "int" || entry.type === "float" ? "number" : "text"}
+      step={entry.type === "float" ? "any" : undefined}
       value={value === null || value === undefined ? "" : String(value)}
       placeholder={entry.placeholder}
-      onChange={(e) => onChange(entry.key, e.target.value)}
+      onChange={(event) => onChange(entry.key, entry.type === "int" || entry.type === "float" ? Number(event.target.value) : event.target.value)}
     />
   );
 }
 
-function Row({
-  entry,
-  draft,
-  onChange,
-}: {
+function SettingRow({ entry, draft, onChange, technical = false }: {
   entry: SettingEntry;
   draft: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
+  technical?: boolean;
 }) {
   return (
     <div className="row">
       <div className="row-main">
-        <div className="row-label">
-          {entry.label}
-          {entry.overridden && (
-            <span className="pill busy" style={{ marginLeft: "var(--s2)" }}>
-              changed here
-            </span>
-          )}
-        </div>
-        <div className="row-help">
-          <code>{entry.key}</code>
-          {entry.help && <> — {entry.help}</>}
-        </div>
+        <div className="row-label">{entry.label}{entry.overridden && <span className="pill info" style={{ marginLeft: 8 }}>Override</span>}</div>
+        <div className="row-help">{entry.help || (technical ? <code>{entry.key}</code> : "Uses the platform default unless changed here.")}</div>
       </div>
-      <div className="row-end">
-        <Control entry={entry} draft={draft} onChange={onChange} />
-      </div>
+      <div className="row-end"><Control entry={entry} draft={draft} onChange={onChange} /></div>
     </div>
   );
 }
 
-/** A value the platform worked out. Shown, not asked. */
-function Derived({ entry }: { entry: SettingEntry }) {
+function DerivedRow({ entry }: { entry: SettingEntry }) {
   return (
     <div className="row">
       <div className="row-main">
         <div className="row-label">{entry.label}</div>
-        <div className="row-help">
-          <code>{entry.key}</code>
-          {entry.derived_from && (
-            <>
-              {" — from "}
-              <code>{entry.derived_from}</code>
-            </>
-          )}
-          {entry.owned_by === "operations" && " — chosen when you sync"}
-        </div>
+        <div className="row-help">{entry.owned_by === "operations" ? "Resolved when the repository is synchronized." : entry.derived_from ? `Inherited from ${entry.derived_from.replaceAll("_", " ")}.` : "Resolved by the platform."}</div>
       </div>
-      <div className="row-end">
-        <code>{entry.value === null || entry.value === "" ? "—" : String(entry.value)}</code>
-      </div>
+      <div className="row-end"><code className="derived-value">{entry.value === null || entry.value === "" ? "—" : String(entry.value)}</code></div>
     </div>
   );
 }
 
-export default function SettingsPanel({ reloadKey }: { reloadKey?: number }) {
+function groupBy(entries: SettingEntry[]) {
+  return entries.reduce<Record<string, SettingEntry[]>>((groups, entry) => {
+    (groups[entry.group || "Configuration"] ??= []).push(entry);
+    return groups;
+  }, {});
+}
+
+export default function SettingsPanel({ reloadKey, view }: { reloadKey?: number; view: SettingsView }) {
   const [data, setData] = useState<ConfigData | null>(null);
+  const [projects, setProjects] = useState<ProjectList | null>(null);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -133,233 +95,152 @@ export default function SettingsPanel({ reloadKey }: { reloadKey?: number }) {
 
   async function load() {
     try {
-      setData(await getConfig());
+      const [configuration, projectData] = await Promise.all([getConfig(), listProjects()]);
+      setData(configuration);
+      setProjects(projectData);
       setDraft({});
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
-  useEffect(() => {
-    void load();
-  }, [reloadKey]);
+  useEffect(() => { void load(); }, [reloadKey, view]);
+
+  const settingsByKey = useMemo(
+    () => new Map((data?.settings ?? []).map((entry) => [entry.key, entry])),
+    [data]
+  );
 
   async function onSave() {
+    if (!data || !projects) return;
     setSaving(true);
     setError(null);
     setResult(null);
     try {
-      const response = await saveConfig(draft);
+      const platform: Record<string, unknown> = {};
+      const engagement: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(draft)) {
+        const entry = settingsByKey.get(key);
+        if (entry?.section === "engagement") engagement[key] = value;
+        else if (key !== "active_project") platform[key] = value;
+      }
+
+      if (Object.keys(platform).length) {
+        const preflight = await preflightConfig(platform);
+        if (!preflight.ok) throw new Error(preflight.problems.join(" "));
+        await saveConfig(platform);
+      }
+      if (Object.keys(engagement).length) {
+        await updateProject(projects.active, { engagement });
+      }
+      const count = Object.keys(draft).length;
       await load();
-      const count = Object.keys(response.applied).length;
-      setResult(
-        response.warning
-          ? `Applied ${count} change${count === 1 ? "" : "s"}. ${response.warning}`
-          : `Applied ${count} change${count === 1 ? "" : "s"} — adapters rebuilt, no restart.`
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setResult(`${count} change${count === 1 ? "" : "s"} validated and applied without a restart.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setSaving(false);
     }
   }
 
   if (!data) {
-    return (
-      <section className="panel">
-        <div className="panel-body">
-          <p className="muted" style={{ margin: 0 }}>
-            {error ?? "Loading…"}
-          </p>
-        </div>
-      </section>
-    );
+    return <section className="panel"><div className="panel-body"><p className="muted">{error || "Loading configuration…"}</p></div></section>;
   }
 
-  const onChange = (key: string, value: unknown) => setDraft((d) => ({ ...d, [key]: value }));
+  const applicable = data.settings.filter((entry) => entry.relevant !== false && entry.key !== "active_project");
+  const derived = applicable.filter((entry) => entry.owned_by || entry.derived);
+  const editable = applicable.filter((entry) => !entry.owned_by && !entry.derived && entry.kind === "mutable");
+  const credentials = data.settings.filter((entry) => entry.section === "credential");
+  const engagement = editable.filter((entry) => entry.section === "engagement" && !entry.advanced);
+  const automation = editable.filter((entry) => entry.section === "platform" && !entry.advanced);
+  const advanced = editable.filter((entry) => entry.advanced);
+  const onChange = (key: string, value: unknown) => setDraft((current) => ({ ...current, [key]: value }));
   const dirty = Object.keys(draft).length;
 
-  const settings = data.settings;
-  const applicable = settings.filter((s) => s.relevant !== false);
-  // Worked out rather than asked: shown as facts, in one place, so the page
-  // reads as "here is what it decided" instead of a wall of empty boxes.
-  const derived = applicable.filter((s) => s.owned_by || s.derived);
-  const asked = applicable.filter((s) => !s.owned_by && !s.derived);
-
-  const platform = asked.filter((s) => s.section === "platform" && !s.advanced && s.kind === "mutable");
-  const engagement = asked.filter((s) => s.section === "engagement" && !s.advanced);
-  const credentials = settings.filter((s) => s.section === "credential");
-  const advanced = asked.filter(
-    (s) => s.advanced || s.kind === "static" || (s.section === "platform" && s.kind !== "mutable")
-  );
+  const groups = view === "engagement" ? groupBy(engagement) : view === "automation" ? groupBy(automation) : view === "advanced" ? groupBy(advanced) : {};
 
   return (
     <>
       {(data.incoherent ?? []).map((finding) => (
-        <div key={finding.id} className="notice warn">
-          {/* Distinct from a stored value that would not apply: these applied
-              perfectly and read the wrong thing. */}
-          <h3>This builds, but will not work</h3>
-          <p>
-            {finding.problem} — {finding.consequence}.
-          </p>
-          <ul>
-            {finding.remedies.map((remedy) => (
-              <li key={remedy}>{remedy}</li>
-            ))}
-          </ul>
-        </div>
+        <div className="notice warn" key={finding.id}><h3>Configuration needs attention</h3><p>{finding.problem} — {finding.consequence}. {finding.remedies.join(" ")}</p></div>
       ))}
+      {data.problem && <div className="notice crit" role="alert"><h3>Saved configuration is not active</h3><p>{data.problem}</p></div>}
 
-      {data.problem && (
-        <div className="notice crit">
-          <h3>Saved configuration was not applied</h3>
-          <p>
-            {data.problem} Correct it below and save again — the platform is running on its
-            environment defaults, so this page is the way back.
-          </p>
-        </div>
+      {view === "engagement" && (
+        <>
+          {Object.entries(groups).map(([group, entries]) => (
+            <section className="panel" key={group}>
+              <div className="panel-head"><div><h2>{group}</h2><p>Values a client administrator owns because they cannot be inferred from source control.</p></div><span className="pill info">This engagement</span></div>
+              <div className="panel-body flush">{entries.map((entry) => <SettingRow key={entry.key} entry={entry} draft={draft} onChange={onChange} />)}</div>
+            </section>
+          ))}
+          {derived.length > 0 && (
+            <section className="panel">
+              <div className="panel-head"><div><h2>Resolved delivery context</h2><p>Inherited and derived values are visible for trust, but do not need to be re-entered.</p></div><span className="pill ok">Automatic</span></div>
+              <div className="panel-body flush">{derived.map((entry) => <DerivedRow key={entry.key} entry={entry} />)}</div>
+              <details className="disclosure"><summary>Override an inherited value</summary><div className="panel-body flush">{derived.filter((entry) => entry.kind === "mutable" && !entry.owned_by).map((entry) => <SettingRow key={entry.key} entry={entry} draft={draft} onChange={onChange} />)}</div></details>
+            </section>
+          )}
+        </>
       )}
 
-      {engagement.length > 0 && (
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2>This engagement</h2>
-              <p>
-                The few things about this client&rsquo;s setup that cannot be worked out from
-                the repository. Stored on the project, so two engagements can hold different
-                answers at once.
-              </p>
-            </div>
+      {view === "automation" && (
+        <>
+          <div className="config-summary">
+            <div className="config-summary-item"><span>Model provider</span><strong>{data.active.model_provider || "—"}</strong></div>
+            <div className="config-summary-item"><span>Execution target</span><strong>{data.active.execution_target || "—"}</strong></div>
+            <div className="config-summary-item"><span>Approval policy</span><strong>{data.active.gates === "human" ? "Human gated" : data.active.gates || "—"}</strong></div>
           </div>
-          <div className="panel-body flush">
-            {engagement.map((entry) => (
-              <Row key={entry.key} entry={entry} draft={draft} onChange={onChange} />
+          {Object.entries(groups).map(([group, entries]) => (
+            <section className="panel" key={group}>
+              <div className="panel-head"><div><h2>{group}</h2><p>Deployment-wide behavior shared by all active engagements.</p></div><span className="pill idle">Platform</span></div>
+              <div className="panel-body flush">{entries.map((entry) => <SettingRow key={entry.key} entry={entry} draft={draft} onChange={onChange} />)}{group === "Implementation" && <div className="row"><div className="row-main"><div className="row-label">Implementation agent connectivity</div><div className="row-help">Non-mutating reachability check against the configured agent.</div></div><div className="row-end"><AgentCheck /></div></div>}</div>
+            </section>
+          ))}
+        </>
+      )}
+
+      {view === "security" && (
+        <section className="panel elevated">
+          <div className="panel-head"><div><h2>Credentials and connection health</h2><p>Secrets stay in the runtime environment. Their values are never returned to this console or written to its audit log.</p></div><span className={`pill ${credentials.every((entry) => entry.configured) ? "ok" : "warn"}`}>{credentials.filter((entry) => entry.configured).length} of {credentials.length} ready</span></div>
+          <div className="credentials-grid">
+            {credentials.map((entry) => (
+              <div className="credential-card" key={entry.key}>
+                <div><strong>{entry.label}</strong><span>{entry.help || "Runtime-managed credential"}</span></div>
+                <span className={`pill ${entry.configured ? "ok" : "crit"}`}>{entry.configured ? "Configured" : "Missing"}</span>
+              </div>
             ))}
           </div>
+          <div className="row"><div className="row-main"><div className="row-label">Implementation agent</div><div className="row-help">Verify access and entitlement without creating a branch or consuming an agent task.</div></div><div className="row-end"><AgentCheck /></div></div>
         </section>
       )}
 
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Platform</h2>
-            <p>
-              Which integrations this deployment speaks to, which model writes, and who
-              approves. Set once and rarely revisited.
-            </p>
-          </div>
-        </div>
-        <div className="panel-body flush">
-          {platform.map((entry) => (
-            <Row key={entry.key} entry={entry} draft={draft} onChange={onChange} />
+      {view === "advanced" && (
+        <>
+          {Object.entries(groups).map(([group, entries]) => (
+            <section className="panel" key={group}>
+              <div className="panel-head"><div><h2>{group}</h2><p>Operational tuning with safe working defaults.</p></div><span className="pill warn">Advanced</span></div>
+              <div className="panel-body flush">{entries.map((entry) => <SettingRow key={entry.key} entry={entry} draft={draft} onChange={onChange} technical />)}</div>
+            </section>
           ))}
-          <div className="row">
-            <div className="row-main">
-              <div className="row-label">Reach the coding agent</div>
-              <div className="row-help">
-                Verify the configured agent answers before a run depends on it.
-              </div>
-            </div>
-            <div className="row-end">
-              <AgentCheck />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Credentials</h2>
-            <p>
-              Read from the environment and reported as present or absent, never read back —
-              a value entered here would be a secret in a database and in an audit trail.
-            </p>
-          </div>
-        </div>
-        <div className="panel-body flush">
-          {credentials.map((entry) => (
-            <Row key={entry.key} entry={entry} draft={draft} onChange={onChange} />
-          ))}
-        </div>
-      </section>
-
-      {derived.length > 0 && (
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2>Worked out for you</h2>
-              <p>
-                Derived from the repository or chosen when you sync. Listed so nothing is
-                hidden — override any of them below if your layout differs.
-              </p>
-            </div>
-          </div>
-          <div className="panel-body flush">
-            {derived.map((entry) => (
-              <Derived key={entry.key} entry={entry} />
-            ))}
-          </div>
-          <details className="disclosure">
-            <summary>Override a derived value</summary>
-            <div className="panel-body flush">
-              {derived
-                .filter((s) => s.kind === "mutable" && !s.owned_by)
-                .map((entry) => (
-                  <Row key={entry.key} entry={entry} draft={draft} onChange={onChange} />
-                ))}
-            </div>
-          </details>
-        </section>
-      )}
-
-      {advanced.length > 0 && (
-        <section className="panel">
-          <details className="disclosure" style={{ borderTop: 0 }}>
-            <summary>Advanced — tuning and fixed values</summary>
-            <div className="panel-body flush">
-              {advanced.map((entry) => (
-                <Row key={entry.key} entry={entry} draft={draft} onChange={onChange} />
-              ))}
-            </div>
-          </details>
-        </section>
-      )}
-
-      {/* Sticky rather than at the bottom of a long page: a change made at the
-          top used to need a scroll to find out whether it saved. */}
-      {(dirty > 0 || result || error) && (
-        <div
-          className="panel"
-          style={{ position: "sticky", bottom: "var(--s4)", boxShadow: "var(--shadow)" }}
-        >
-          <div className="row" style={{ borderBottom: 0 }}>
-            <div className="row-main">
-              <div className="row-label">
-                {dirty
-                  ? `${dirty} unsaved change${dirty === 1 ? "" : "s"}`
-                  : error
-                    ? "Not saved"
-                    : "Saved"}
-              </div>
-              <div className="row-help" style={{ color: error ? "var(--crit)" : undefined }}>
-                {error ?? result ?? "Applied by rebuilding the adapters — no restart."}
-              </div>
-            </div>
-            <div className="row-end">
-              {dirty > 0 && (
-                <button className="ghost" onClick={() => setDraft({})} disabled={saving}>
-                  Discard
-                </button>
+          <section className="panel">
+            <details className="disclosure">
+              <summary>Configuration change history · {data.history.length} recorded changes</summary>
+              {data.history.length === 0 ? <div className="panel-body"><p className="muted">No configuration changes have been recorded.</p></div> : (
+                <div className="table-wrap"><table><thead><tr><th>Setting</th><th>Previous</th><th>New value</th><th>Changed by</th><th>Time</th></tr></thead><tbody>{data.history.slice(0, 20).map((change, index) => <tr key={`${change.key}-${change.at}-${index}`}><td><strong>{change.label}</strong><br /><code>{change.key}</code></td><td><code>{String(change.previous ?? "—")}</code></td><td><code>{String(change.value ?? "—")}</code></td><td>{change.changed_by}</td><td>{new Date(change.at).toLocaleString()}</td></tr>)}</tbody></table></div>
               )}
-              <button onClick={() => void onSave()} disabled={saving || dirty === 0}>
-                {saving ? "Saving…" : "Save"}
-              </button>
-            </div>
+            </details>
+          </section>
+        </>
+      )}
+
+      {(dirty > 0 || result || error) && (
+        <section className="panel settings-savebar" aria-live="polite">
+          <div className="row">
+            <div className="row-main"><div className="row-label">{dirty ? `${dirty} unsaved change${dirty === 1 ? "" : "s"}` : error ? "Changes not applied" : "Configuration updated"}</div><div className="row-help" style={{ color: error ? "var(--danger)" : undefined }}>{error || result || "Changes will be validated before they are applied."}</div></div>
+            <div className="row-end">{dirty > 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setDraft({})}>Discard</button>}<button type="button" disabled={saving || dirty === 0} onClick={() => void onSave()}>{saving ? "Validating…" : "Validate and save"}</button></div>
           </div>
-        </div>
+        </section>
       )}
     </>
   );
