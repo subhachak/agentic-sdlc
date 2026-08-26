@@ -16,6 +16,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from app.graph.projects import DEFAULT_PROJECT
+
 from app.core.retrieval import ChunkIndex
 from app.ports.code_design_context import ContextSnippet
 
@@ -33,11 +35,23 @@ class IndexedRepoCodeDesignContext:
     snapshot returns the same excerpts.
     """
 
-    def __init__(self, graph: Any, source_control: Any, repo: str, ref: str = "main") -> None:
+    def __init__(
+        self,
+        graph: Any,
+        source_control: Any,
+        repo: str,
+        ref: str = "main",
+        project: str = DEFAULT_PROJECT,
+    ) -> None:
         self._graph = graph
         self._source_control = source_control
         self._repo = repo
         self._ref = ref
+        # Which engagement's files ground the agent. Unscoped, retrieval read
+        # the default project's paths whichever project was active — so the
+        # design agent for a second client was grounded in the first one's
+        # codebase, silently and with full confidence.
+        self._project = project
         self._index: ChunkIndex | None = None
         self._built_for: str | None = None
         self._lock = asyncio.Lock()
@@ -62,7 +76,7 @@ class IndexedRepoCodeDesignContext:
         ]
 
     async def _ensure_index(self) -> ChunkIndex | None:
-        provenance = await self._graph.index_provenance()
+        provenance = await self._graph.index_provenance(self._project)
         # An unpinned graph has no stable identity to cache against, so fall
         # back to the ref and accept that a rebuild may be missed. Saying so
         # here is better than pretending the snapshot is fixed.
@@ -79,7 +93,7 @@ class IndexedRepoCodeDesignContext:
 
     async def _read_sources(self) -> dict[str, str]:
         paths = sorted(
-            {path for paths in (await self._graph.module_paths()).values() for path in paths}
+            {path for paths in (await self._graph.module_paths(self._project)).values() for path in paths}
         )
         sources: dict[str, str] = {}
         failures: list[str] = []
@@ -116,7 +130,7 @@ class IndexedRepoCodeDesignContext:
         over zero files answers every question with nothing, which looks
         exactly like a question with no good answer.
         """
-        provenance = await self._graph.index_provenance()
+        provenance = await self._graph.index_provenance(self._project)
         read = self._last_read
         requested = read.get("requested", 0)
         empty = self._index is not None and not len(self._index)

@@ -217,6 +217,7 @@ def build_code_design_context(
             source_control=source_control,
             repo=settings.target_repo or settings.code_index_repo or "",
             ref=settings.target_ref,
+            project=settings.active_project,
         )
 
     from app.adapters.code_design_context.stub_similarity import StubSimilarityCodeDesignContext

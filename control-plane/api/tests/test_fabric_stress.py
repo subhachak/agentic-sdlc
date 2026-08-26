@@ -211,34 +211,51 @@ async def test_the_release_phase_writes_into_the_run_s_own_project():
 # ── phases must not resolve scope late ────────────────────────────────────
 
 
-def test_no_phase_reads_the_graph_without_naming_a_project():
-    """The release bug was one instance, not the only one.
+# Graph reads that answer about one project. `ingest` is exempt: its
+# assertions carry scoped systems on the NodeSpecs themselves, and
+# `neighbours` takes a node id that is already project-qualified.
+SCOPED_READS = {
+    "counts", "criteria", "untested_criteria", "modules", "module_paths",
+    "module_catalogue", "module_dependents", "file_dependents",
+    "index_provenance", "trace", "blast_radius", "phase_edges", "purge_phase",
+    "retract",
+}
 
-    A phase that resolves scope from whatever is active when it runs writes
-    — or reads — the wrong client's graph. `ingest` is exempt: its
-    assertions carry scoped systems on the NodeSpecs themselves.
+
+def test_nothing_reads_the_graph_without_naming_a_project():
+    """The release bug was one instance, and checking one file found two more.
+
+    A caller that resolves scope from whatever is active — or from nothing —
+    answers about the default project's graph whichever engagement it
+    belongs to. The dashboard returned one client's release-readiness numbers
+    for another's run, and retrieval grounded the design agent in a different
+    client's codebase, silently and with full confidence.
+
+    Scans the whole app rather than one phase, which is how those two
+    survived the first pass.
     """
     import ast
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[1] / "app/agents/nodes.py").read_text()
-    tree = ast.parse(source)
-
+    app = Path(__file__).resolve().parents[1] / "app"
     unscoped = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if not isinstance(func, ast.Attribute):
-            continue
-        target = getattr(func.value, "id", "")
-        if target != "context_graph" or func.attr == "ingest":
-            continue
-        if not node.args and not node.keywords:
-            unscoped.append(f"{func.attr}() at line {node.lineno}")
+    for path in sorted(app.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr not in SCOPED_READS:
+                continue
+            base = node.func.value
+            name = getattr(base, "id", None) or getattr(base, "attr", None) or ""
+            if "graph" not in name.lower():
+                continue
+            if not node.args and not node.keywords:
+                rel = path.relative_to(app)
+                unscoped.append(f"{rel}:{node.lineno} {node.func.attr}()")
 
     assert unscoped == [], (
-        "these graph reads silently default the project: " + ", ".join(unscoped)
+        "these graph reads silently default the project — they answer about "
+        "whichever graph happens to be the default: " + ", ".join(unscoped)
     )
 
 

@@ -21,6 +21,13 @@ import inspect
 import pytest
 
 from app.core.context_graph import ContextGraphStore, SqlContextGraph
+from app.ports.context_graph import (
+    CriterionRef,
+    EdgeRef,
+    ModuleEntry,
+    ModuleSummary,
+    UntestedCriterion,
+)
 from tests.graph_doubles import InMemoryContextGraph
 
 # Methods the protocol declares. Anything a caller can reach through the
@@ -176,18 +183,25 @@ def _returned_keys(path: str, class_name: str) -> dict[str, set[str]]:
     return out
 
 
-# What each method's items must contain, whoever implements the port.
-#
-# Written down here because the port cannot say it: these methods return
-# `list[dict[str, Any]]`, so the shape lives in whatever the consumers
-# happen to read. `modules()` diverged exactly this way — production
-# returned `files` and the double returned `name`, so a consumer reading
-# m["files"] worked against the database and raised KeyError against the
-# double. The console's codebase view reads it three times.
+def _required(typed_dict) -> set[str]:
+    """The keys a TypedDict makes mandatory.
+
+    NotRequired members are optional by contract and an implementation that
+    omits one is still conformant, so they are excluded rather than demanded.
+    """
+    return set(getattr(typed_dict, "__required_keys__", typed_dict.__annotations__))
+
+
+# Derived from the port, not restated beside it. This was a hand-written
+# table, which meant the contract existed in two places that could drift —
+# the same failure it was written to catch. The port now declares the shapes
+# and this reads them.
 REQUIRED_KEYS = {
-    "modules": {"id", "files", "depends_on"},
-    "module_catalogue": {"id", "files", "depends_on", "dependents", "paths", "hubs"},
-    "criteria": {"id", "text"},
+    "modules": _required(ModuleSummary),
+    "module_catalogue": _required(ModuleEntry),
+    "criteria": _required(CriterionRef),
+    "untested_criteria": _required(UntestedCriterion),
+    "neighbours": _required(EdgeRef),
 }
 
 

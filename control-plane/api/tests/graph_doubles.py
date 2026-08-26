@@ -18,6 +18,7 @@ def _now():
     return datetime.now(timezone.utc)
 from app.graph.identity import node_id as make_node_id
 from app.graph.ontology import EdgeType, NodeType, validate_edge
+from app.graph.revision import is_stale
 from app.graph.projects import DEFAULT_PROJECT, project_of
 
 
@@ -156,7 +157,9 @@ class InMemoryContextGraph:
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]:
         return [e for e in self.live if node_id in (e["src_id"], e["dst_id"])]
 
-    async def untested_criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
+    async def untested_criteria(
+        self, project: str = DEFAULT_PROJECT, at_revision: str | None = None
+    ) -> list[dict[str, Any]]:
         passing = {
             n["id"] for n in self.nodes.values()
             if n["type"] == NodeType.TEST_RUN and n["projection"].get("status") == "passed"
@@ -165,12 +168,27 @@ class InMemoryContextGraph:
         for n in self.nodes.values():
             if n["type"] != NodeType.ACCEPTANCE_CRITERION:
                 continue
-            runs = self._forward(
-                EdgeType.EXERCISED_IN,
-                self._forward(EdgeType.IMPLEMENTED_BY, self._forward(EdgeType.VERIFIED_BY, {n["id"]})),
+            scripts = self._forward(
+                EdgeType.IMPLEMENTED_BY, self._forward(EdgeType.VERIFIED_BY, {n["id"]})
             )
-            if not (runs & passing):
-                out.append(n)
+            current = {
+                e["dst_id"] for e in self.live
+                if e["type"] == EdgeType.EXERCISED_IN
+                and e["src_id"] in scripts
+                and not is_stale(e.get("attributes"), at_revision)
+            }
+            if current & passing:
+                continue
+            # It returned the raw node before, where production returns
+            # {id, external_id, projection, reason} — a caller reading
+            # ["reason"] worked against the database and raised KeyError here.
+            everything = self._forward(EdgeType.EXERCISED_IN, scripts)
+            out.append({
+                "id": n["id"],
+                "external_id": n["external_id"],
+                "projection": n["projection"],
+                "reason": "stale" if everything & passing else "untested",
+            })
         return out
 
     async def trace(self, criterion_id: str, project: str = DEFAULT_PROJECT) -> dict[str, Any]:

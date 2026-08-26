@@ -3,6 +3,7 @@ import json
 import uuid
 from typing import Any
 
+from app.graph.projects import DEFAULT_PROJECT
 from fastapi import APIRouter, Form, HTTPException, Request
 from langgraph.types import Command
 from sqlalchemy import select
@@ -166,9 +167,14 @@ async def get_run_graph(request: Request, run_id: str) -> dict:
     from the audit log, which is the whole argument for the graph.
     """
     graph = request.app.state.context_graph
+    # Scoped to the run's own project. Unscoped, this answered about the
+    # default project's graph whichever engagement the run belonged to — so
+    # a second client's release-readiness question returned the first
+    # client's numbers.
+    project = getattr(request.app.state.settings, "active_project", DEFAULT_PROJECT)
     return {
-        "counts": await graph.counts(),
-        "untested_criteria": await graph.untested_criteria(),
+        "counts": await graph.counts(project),
+        "untested_criteria": await graph.untested_criteria(project),
     }
 
 

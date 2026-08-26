@@ -188,10 +188,10 @@ class _Graph:
         self._paths = paths
         self._sha = sha
 
-    async def module_paths(self):
+    async def module_paths(self, project="default"):
         return self._paths
 
-    async def index_provenance(self):
+    async def index_provenance(self, project="default"):
         return {"commit_sha": self._sha, "pinned": bool(self._sha)}
 
 
