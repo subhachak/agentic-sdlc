@@ -33,6 +33,12 @@ class DesignRequest(BaseModel):
     """
 
     run_id: str
+    # Which engagement, and which snapshot of it the catalogue came from.
+    # Absent, a proposal could not be replayed: "why did it name that
+    # module" is unanswerable once the graph moves, and an approval that
+    # cannot say what it approved is not evidence.
+    project: str = ""
+    graph_commit: str = ""
     requirement: str
     criteria: list[dict[str, Any]] = Field(default_factory=list)
     # Modules that actually exist, with their dependencies and hub files.
@@ -43,6 +49,10 @@ class DesignRequest(BaseModel):
     # Populated on a retry: why the previous attempt was refused. An agent
     # that cannot use it may ignore it; the attempt limit applies regardless.
     rejected_reasons: list[str] = Field(default_factory=list)
+    # Bumped when this shape changes. A client agent runs in its own
+    # process and release cycle, so a field that moved without a version to
+    # notice it is a field they misread in silence.
+    contract_version: int = 1
 
 
 class DesignProposal(BaseModel):
@@ -76,6 +86,19 @@ class DesignOutcome(BaseModel):
 
 
 class DesignAgent(Protocol):
+    contract_version: int
+
+    def capabilities(self) -> dict[str, Any]: ...
+    """What this agent can do, read before it is asked.
+
+    An agent that cannot use `rejected_reasons` will ignore a retry's
+    feedback and produce the same proposal again, burning the attempt limit
+    to no purpose — better to know that than to discover it three refusals
+    later. `dispatched` tells the phase whether to expect a receipt at all.
+
+    Keys: dispatched (bool), uses_feedback (bool), max_files (int).
+    """
+
     async def propose(self, request: DesignRequest) -> DesignOutcome: ...
 
     def read_result(self, payload: dict[str, Any]) -> DesignProposal: ...

@@ -48,6 +48,9 @@ class PipelineState(TypedDict, total=False):
     base_sha: str | None
     head_sha: str | None
     gate3_decision: GateDecision | None
-    build_result: dict[str, Any] | None
+    # What was deployed, not what built it. Renamed with the port: a
+    # release is about the artifact and where it reached, and "build_result"
+    # named the job.
+    deployment: dict[str, Any] | None
     status: str
     confidence_entries: Annotated[list[ConfidenceEntry], operator.add]

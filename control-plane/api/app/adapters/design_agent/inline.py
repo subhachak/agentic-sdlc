@@ -16,6 +16,16 @@ from app.ports.llm_provider import LLMProvider
 
 
 class InlineDesignAgent:
+    contract_version = 1
+
+    def capabilities(self) -> dict:
+        """In-process, answers in seconds, and reads its refusals.
+
+        Declared rather than assumed, so the phase can tell a retry that
+        will differ from one that will not.
+        """
+        return {"dispatched": False, "uses_feedback": True, "max_files": 15}
+
     def __init__(self, llm_provider: LLMProvider) -> None:
         self._llm = llm_provider
 

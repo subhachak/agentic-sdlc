@@ -73,11 +73,13 @@ def test_every_port_can_be_built_without_editing_core(protocol: str):
     """
     from app.adapters import registry
 
-    # RepositoryCatalogue is deliberately optional — an adapter that can index
-    # one repository it was pointed at is a good adapter, and requiring it to
-    # invent a catalogue would be a tax for a convenience.
-    if protocol == "RepositoryCatalogue":
-        pytest.skip("optional capability, discovered by duck-typing")
+    # Optional capabilities are discovered by duck-typing, not required.
+    # Read from the ports package rather than listed here, so adding one is
+    # a deliberate act recorded beside the port it describes.
+    from app.ports import OPTIONAL_CAPABILITIES
+
+    if protocol in OPTIONAL_CAPABILITIES:
+        pytest.skip(f"{protocol} is an optional capability")
 
     expected = "build_" + _snake(protocol)
     assert hasattr(registry, expected), (

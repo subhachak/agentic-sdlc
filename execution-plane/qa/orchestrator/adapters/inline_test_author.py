@@ -12,13 +12,41 @@ import json
 from typing import Any
 
 from orchestrator.llm import ask
-from orchestrator.ports import PlanRequest, SpecRequest
+from orchestrator.ports import (
+    AUTHOR_CONTRACT_VERSION,
+    AuthorOutcome,
+    PlanRequest,
+    SpecRequest,
+    ready,
+)
 from orchestrator.prompts import GEN_SYSTEM, PLAN_SYSTEM
 from orchestrator.schemas import GeneratedSpec, TestPlan
 
 
 class InlineTestAuthor:
-    def propose_plan(self, request: PlanRequest) -> list[dict[str, Any]]:
+    contract_version = AUTHOR_CONTRACT_VERSION
+
+    def capabilities(self) -> dict[str, Any]:
+        """In-process, Playwright, answers immediately.
+
+        Declared rather than inferred: the pipeline reads this before asking,
+        so a client author that cannot write specs takes the library-only
+        path deliberately instead of returning nothing and looking like a
+        change that needed no new tests.
+        """
+        return {
+            "runners": ["playwright"],
+            "can_author_specs": True,
+            "dispatched": False,
+            "max_scenarios": 12,
+        }
+
+    def read_result(self, payload: dict[str, Any]) -> AuthorOutcome:
+        # Never called: this author is synchronous, so nothing is ever
+        # pending for the reconciler to resume.
+        raise NotImplementedError("the inline author does not dispatch")
+
+    def propose_plan(self, request: PlanRequest) -> AuthorOutcome:
         criteria = request.get("criteria") or {}
         criteria_text = "\n".join(
             f"  {cid}: {meta['text']}" for cid, meta in criteria.items()
@@ -41,24 +69,15 @@ class InlineTestAuthor:
             user += _revision_prompt(request["rejected_reasons"])
 
         plan = ask(PLAN_SYSTEM, user, TestPlan)
-        return [scenario.model_dump() for scenario in plan.scenarios]
+        return ready(plan=[scenario.model_dump() for scenario in plan.scenarios])
 
-    def write_spec(self, request: SpecRequest) -> str:
-        return ask(
-            GEN_SYSTEM,
-            f"UI contract, by route:\n{request.get('ui_contract', '')}\n\n"
-            f"API contract:\n{request.get('api_contract', '')}\n\n"
-            f"Scenario: {json.dumps(request.get('scenario', {}))}",
-            GeneratedSpec,
-        ).code
-
-
-def _revision_prompt(reasons: list[str]) -> str:
-    return (
-        "\n\nYour previous proposal was rejected by the testability gate:\n"
-        + "\n".join(f"- {r}" for r in reasons)
-        + "\n\nRewrite the full set of scenarios. Every expected_outcome must name "
-        "something a Playwright assertion can observe: an exact row count, a "
-        "data-status attribute value, a specific visible string, an HTTP status. "
-        "Do not restate the same wording."
-    )
+    def write_spec(self, request: SpecRequest) -> AuthorOutcome:
+        return ready(
+            spec=ask(
+                GEN_SYSTEM,
+                f"UI contract, by route:\n{request.get('ui_contract', '')}\n\n"
+                f"API contract:\n{request.get('api_contract', '')}\n\n"
+                f"Scenario: {json.dumps(request.get('scenario', {}))}",
+                GeneratedSpec,
+            ).code
+        )

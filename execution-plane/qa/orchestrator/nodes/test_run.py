@@ -18,7 +18,9 @@ import json
 import subprocess
 from pathlib import Path
 
-from orchestrator import data_store
+from orchestrator.adapters.json_test_data import JsonFileTestData
+from orchestrator.adapters.playwright_runner import PlaywrightRunner
+from orchestrator.ports_execution import workers_for
 from orchestrator.paths import APP_ROOT, EVIDENCE_DIR, RESULTS_FILE
 from orchestrator.state import PipelineState
 from orchestrator.validate import mutates_shared_state
@@ -37,40 +39,57 @@ def _mutating_specs(state: PipelineState) -> dict[str, list[str]]:
     return out
 
 
+def build_test_data_provider():
+    """Which provider this deployment uses.
+
+    A factory rather than a literal, for the same reason every other port
+    has one: selecting a different implementation should be configuration,
+    not an edit to the node that consumes it.
+    """
+    return JsonFileTestData()
+
+
+def build_test_runner():
+    return PlaywrightRunner()
+
+
 def run(state: PipelineState) -> PipelineState:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
     mutating = _mutating_specs(state)
-    command = ["npx", "playwright", "test"]
-    if mutating:
-        # One worker. Slower, and the only honest option: these specs and
-        # their neighbours share a store, and nothing here can give them a
-        # private one without changing the application under test.
-        command += ["--workers=1"]
+    provider = build_test_data_provider()
+    runner = build_test_runner()
 
-    before = data_store.snapshot()
-    proc = subprocess.run(
-        command,
-        cwd=APP_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    after = data_store.snapshot()
+    # Parallelism is now a function of two declarations rather than a
+    # hardcoded `--workers=1`. A provider that can lease per scenario gets
+    # concurrency without anyone editing this node.
+    workers = workers_for(provider.isolation, runner.supports_parallel(), bool(mutating))
 
-    raw_results: dict = {}
-    if RESULTS_FILE.exists():
-        raw_results = json.loads(RESULTS_FILE.read_text())
-    else:
-        raw_results = {"error": "no results.json produced", "stdout": proc.stdout[-4000:], "stderr": proc.stderr[-4000:]}
+    lease = provider.acquire(scope=state.get("run_id") or "run", scenarios=state.get("scenarios") or [])
+    try:
+        raw_results = runner.execute(
+            specs=state.get("spec_files") or [],
+            workers=workers,
+            env=lease.env,
+            evidence_dir=str(EVIDENCE_DIR),
+        )
+    finally:
+        # Always, including when the runner raised. A teardown that only
+        # happens on the happy path is a teardown that does not happen on
+        # the day it matters.
+        attestation = provider.release(lease)
 
     return {
         **state,
-        "run_exit_code": proc.returncode,
+        "run_exit_code": raw_results.get("exit_code", 0) if "error" in raw_results else 0,
         "run_results_raw": raw_results,
-        "ran_serially": bool(mutating),
+        "ran_serially": workers == 1,
         "mutating_specs": mutating,
-        # Measured, not assumed. A store that changed during the run means one
-        # spec's data was visible to another, whatever the source analysis
-        # concluded.
-        "data_store_mutated": before != after,
+        # Claimed *and* checked. "We ran the restore code" and "the store is
+        # as it was" are different claims, and only the second is evidence.
+        "test_data_attestation": attestation.as_dict(),
+        # Kept for the gate, which reads it as "one spec's data was visible
+        # to another". Now derived from the provider's own verification
+        # rather than from a snapshot comparison in this node.
+        "data_store_mutated": not attestation.restored,
     }

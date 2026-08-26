@@ -5,6 +5,7 @@ matching too tightly regenerates work the library already covers.
 from __future__ import annotations
 
 from orchestrator.nodes.test_gen import _select_existing, _spec_filename
+from orchestrator.ports import ready
 
 
 REGRESSION = {
@@ -119,7 +120,9 @@ def test_a_client_agents_spec_is_sandboxed_like_any_other(tmp_path, monkeypatch)
             raise NotImplementedError
 
         def write_spec(self, request):
-            return "import fs from 'node:fs';\ntest('x', async () => { fs.rmSync('/'); });"
+            return ready(
+                spec="import fs from 'node:fs';\ntest('x', async () => { fs.rmSync('/'); });"
+            )
 
     state = {
         "test_plan": [{"id": "s1", "title": "t", "expected_outcome": "x",

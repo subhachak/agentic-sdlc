@@ -32,7 +32,7 @@ from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
 from app.core.dispatches import DispatchStore
 from app.core.gate_controller import GateController
 from app.core.reliability import with_retry_fallback
-from app.ports.build_deploy import BuildDeploy
+from app.ports.build_deploy import BuildDeploy, DeployRequest
 from app.ports.code_design_context import CodeDesignContext
 from app.ports.code_intelligence import CodeIntelligence
 from app.ports.llm_provider import LLMProvider
@@ -182,18 +182,24 @@ def build_nodes(
             for s in await code_design_context.retrieve_context(query, DESIGN_SNIPPETS)
         ]
 
-        catalogue = await context_graph.module_catalogue()
-        known_paths = await context_graph.module_paths()
-        file_dependents = await context_graph.file_dependents()
-        criteria = await context_graph.criteria()
+        project = state.get("project") or DEFAULT_PROJECT
+        catalogue = await context_graph.module_catalogue(project)
+        known_paths = await context_graph.module_paths(project)
+        file_dependents = await context_graph.file_dependents(project)
+        criteria = await context_graph.criteria(project)
         known_criteria = {c["id"] for c in criteria if c.get("id")}
         # How complete the graph behind those edges is. A design cannot be
         # meaningfully contained by a graph that dropped a fifth of the
         # codebase's imports, so the review is told and refuses.
-        graph_quality = await context_graph.index_provenance()
+        graph_quality = await context_graph.index_provenance(project)
 
         request = DesignRequest(
             run_id=state["run_id"],
+            project=project,
+            # The snapshot the catalogue came from. A proposal that cannot
+            # name it cannot be replayed, and "why did it choose that
+            # module" stops being answerable the moment the graph moves.
+            graph_commit=graph_quality.get("commit_sha") or "",
             requirement=requirement,
             criteria=criteria,
             catalogue=catalogue,
@@ -365,7 +371,7 @@ def build_nodes(
             build_prompt(
                 requirement=state.get("raw_input", {}).get("text", ""),
                 design=design,
-                criteria=await context_graph.criteria(),
+                criteria=await context_graph.criteria(state.get("project") or DEFAULT_PROJECT),
                 files=files,
                 allowed_modules=allowed,
             ),
@@ -379,7 +385,7 @@ def build_nodes(
             }
 
         edits = [e.model_dump() for e in proposal.edits]
-        known = await context_graph.module_paths()
+        known = await context_graph.module_paths(state.get("project") or DEFAULT_PROJECT)
         verdict = review_change(edits, allowed_modules=allowed, known_modules=known)
 
         if not verdict.allowed:
@@ -418,7 +424,7 @@ def build_nodes(
         task = build_task(
             requirement=(state.get("raw_input") or {}).get("text", ""),
             design=design,
-            criteria=await context_graph.criteria(),
+            criteria=await context_graph.criteria(state.get("project") or DEFAULT_PROJECT),
             run_id=run_id,
         )
 
@@ -485,7 +491,7 @@ def build_nodes(
             }
 
         edits = [{"path": e.path, "content": e.content} for e in written]
-        known = await context_graph.module_paths()
+        known = await context_graph.module_paths(state.get("project") or DEFAULT_PROJECT)
         verdict = review_change(edits, allowed_modules=allowed, known_modules=known)
 
         if not verdict.allowed:
@@ -649,13 +655,28 @@ def build_nodes(
         this criterion last ship" into a query.
         """
         implementation = state.get("implementation") or {}
-        result = await build_deploy.trigger_build(
-            state["run_id"],
-            {
-                "branch": implementation.get("branch", ""),
-                "files": implementation.get("files", []),
-            },
+        project = state.get("project") or DEFAULT_PROJECT
+        outcome = await build_deploy.deploy(
+            DeployRequest(
+                run_id=state["run_id"],
+                environment=target_environment,
+                revision=state.get("head_sha") or "",
+                branch=implementation.get("branch", ""),
+                project=project,
+            )
         )
+        if outcome.state == "failed" or outcome.deployment is None:
+            # A dispatched deployment parks the run rather than pretending
+            # to have finished. Not yet reachable — no adapter here
+            # dispatches — but branching on the state rather than on which
+            # adapter is configured is what stops the phase growing an arm
+            # per platform.
+            return {
+                "status": "release_failed",
+                "release": {"detail": outcome.detail or "deployment did not complete"},
+            }
+        deployment = outcome.deployment
+        result = deployment
 
         # Scoped, like every other writer. Unscoped, these nodes landed in
         # the default project's graph while the index had populated
@@ -663,13 +684,24 @@ def build_nodes(
         # that did not exist in the project being released, and traceability
         # from a release back to a file was broken for every non-default
         # engagement.
-        project = state.get("project") or DEFAULT_PROJECT
         code_system = scoped(CODE_SYSTEM, project)
         pipeline_system = scoped("pipeline", project)
 
         release_id = f"{state['run_id'][:8]}"
         release_node = NodeSpec("RELEASE", pipeline_system, release_id, {
-            "build_id": result.build_id, "branch": implementation.get("branch", "")
+            "build_id": deployment.artifact.build_id,
+            "branch": implementation.get("branch", ""),
+            # The artifact, not the job. "What is running in staging" is a
+            # question about a digest; a release that records only the build
+            # id describes the thing that made it.
+            "artifact": deployment.artifact.reference,
+            "artifact_digest": deployment.artifact.digest,
+            "revision": deployment.revision,
+            "deployment_id": deployment.deployment_id,
+            "deployment_url": deployment.url,
+            # None rather than False when the adapter cannot tell. A release
+            # gate reading False would be acting on a check nobody ran.
+            "healthy": deployment.healthy,
         })
         assertions = [
             Assertion(
@@ -711,7 +743,7 @@ def build_nodes(
                 graph_update = {"failed": str(exc)}
 
         return {
-            "build_result": result.model_dump(),
+            "deployment": deployment.model_dump(),
             "release": {"id": release_id, "environment": target_environment},
             "graph_update": graph_update,
             "status": "completed",

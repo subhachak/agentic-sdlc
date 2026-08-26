@@ -193,3 +193,37 @@ async def test_the_release_phase_writes_into_the_run_s_own_project():
     )
     # and nothing leaked into the default project
     assert await graph.phase_edges("release", DEFAULT_PROJECT) == set()
+
+
+# ── phases must not resolve scope late ────────────────────────────────────
+
+
+def test_no_phase_reads_the_graph_without_naming_a_project():
+    """The release bug was one instance, not the only one.
+
+    A phase that resolves scope from whatever is active when it runs writes
+    — or reads — the wrong client's graph. `ingest` is exempt: its
+    assertions carry scoped systems on the NodeSpecs themselves.
+    """
+    import ast
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app/agents/nodes.py").read_text()
+    tree = ast.parse(source)
+
+    unscoped = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute):
+            continue
+        target = getattr(func.value, "id", "")
+        if target != "context_graph" or func.attr == "ingest":
+            continue
+        if not node.args and not node.keywords:
+            unscoped.append(f"{func.attr}() at line {node.lineno}")
+
+    assert unscoped == [], (
+        "these graph reads silently default the project: " + ", ".join(unscoped)
+    )

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import pytest
 
+from orchestrator.ports import ready
+
 from orchestrator.nodes.test_plan import _is_testable, run
 
 
@@ -109,7 +111,7 @@ class _Agent:
 
     def propose_plan(self, request):
         self.requests.append(request)
-        return self.plans[min(len(self.requests) - 1, len(self.plans) - 1)]
+        return ready(plan=self.plans[min(len(self.requests) - 1, len(self.plans) - 1)])
 
     def write_spec(self, request):  # pragma: no cover - planning tests only
         raise NotImplementedError

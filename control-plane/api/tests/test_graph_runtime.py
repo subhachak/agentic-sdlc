@@ -14,7 +14,7 @@ from app.agents.state import PipelineConfig
 from app.core.audit import AuditLogger
 from app.core.gate_controller import GateController
 from app.ports.audit_sink import AuditEntry
-from app.ports.build_deploy import BuildResult
+from app.ports.build_deploy import Artifact, DeployOutcome, Deployment
 from app.ports.code_design_context import ContextSnippet
 from app.ports.requirements_source import RequirementsDoc
 from app.ports.test_management import TestCaseRecord
@@ -57,8 +57,21 @@ class StubTestManagement:
 
 
 class StubBuildDeploy:
-    async def trigger_build(self, run_id: str, payload: dict):
-        return BuildResult(success=True, build_id="build-1", message="ok")
+    async def deploy(self, request):
+        return DeployOutcome(
+            state="ready",
+            deployment=Deployment(
+                deployment_id="dep-1",
+                environment=request.environment,
+                artifact=Artifact(kind="none", reference=request.branch, build_id="build-1"),
+                revision=request.revision,
+                succeeded=True,
+                healthy=None,
+            ),
+        )
+
+    async def check(self, handle: str):
+        return DeployOutcome(state="failed", detail="nothing dispatched")
 
 
 class StubLLMProvider:
@@ -128,7 +141,12 @@ async def test_pipeline_pauses_at_three_gates_and_completes_on_approval():
     result = await graph.ainvoke(Command(resume={"approved": True}), config=thread)
     assert "__interrupt__" not in result
     assert result["status"] == "completed"
-    assert result["build_result"]["success"] is True
+    deployment = result["deployment"]
+    assert deployment["succeeded"] is True
+    # None, not False: the stub deployed nothing, so there was nothing to be
+    # healthy about, and a release gate reading False would be acting on a
+    # check nobody ran.
+    assert deployment["healthy"] is None
 
     # Exactly one before + one after per gate, despite each gate node
     # re-executing from its start on the resume pass (see GateController's

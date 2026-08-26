@@ -126,7 +126,22 @@ def run(state: PipelineState, author: TestAuthor | None = None) -> PipelineState
         attempt += 1
         # Whoever authors it, the gate is the same. An agent supplied by a
         # client proposes; deterministic code decides.
-        proposed = author.propose_plan({**request, "rejected_reasons": reasons})
+        outcome = author.propose_plan({**request, "rejected_reasons": reasons})
+        if outcome.get("state") == "pending":
+            # A dispatched author parks the run, the same way QA parks for
+            # CI. Not reachable with the shipped author, which is
+            # synchronous — branching on the state rather than on which
+            # author is configured is what stops this node growing an arm
+            # per client.
+            return {
+                **state,
+                "status": "awaiting_test_author",
+                "test_author_dispatch": {
+                    "provider": outcome.get("provider"),
+                    "handle": outcome.get("handle"),
+                },
+            }
+        proposed = outcome.get("plan") or []
 
         accepted, reasons = _evaluate(proposed, set(known), shape)
         if accepted and not reasons:

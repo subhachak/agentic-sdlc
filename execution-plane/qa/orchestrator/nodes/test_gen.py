@@ -152,13 +152,25 @@ def run(state: PipelineState, author: TestAuthor | None = None) -> PipelineState
             code = (LIBRARY_DIR / existing["file"]).read_text()
             mode, source_id = "selected", existing["id"]
         else:
-            code = author.write_spec(
+            written = author.write_spec(
                 {
                     "scenario": scenario,
                     "ui_contract": ui_contract(),
                     "api_contract": api_contract(),
                 }
             )
+            if written.get("state") == "pending":
+                # A dispatched author has not produced a spec yet. Recorded
+                # as a rejection rather than silently skipped: a scenario
+                # with no assignment fails the plan-vs-assignment count in
+                # the gate, which is the correct outcome until the resume
+                # path exists.
+                rejections.append(
+                    f"{scenario_id}: spec authoring was dispatched to "
+                    f"{written.get('provider')} and has not returned"
+                )
+                continue
+            code = written.get("spec") or ""
             mode, source_id = "generated", None
 
         # Fail closed. A spec that trips the validator is never written, so it
