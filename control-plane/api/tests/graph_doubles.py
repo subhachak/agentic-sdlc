@@ -204,11 +204,16 @@ class InMemoryContextGraph:
             ]
             out.append({
                 "id": node["external_id"],
-                "name": node["projection"].get("name", node["external_id"]),
+                # `files`, not `name`. Production returns a file count and
+                # sorts by it; this returned a display name and no count at
+                # all, so a consumer reading m["files"] worked against the
+                # database and raised KeyError against the double. The
+                # console's codebase view reads it three times.
+                "files": node["projection"].get("file_count", 0),
                 "depends_on": sorted(deps, key=lambda d: -d["weight"]),
             })
-        out.sort(key=lambda m: -len(m["depends_on"]))
-        return out
+        # Heaviest first, by file count — the order production returns.
+        return sorted(out, key=lambda m: -m["files"])
 
     async def module_paths(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]:
         visible = self._visible(project)

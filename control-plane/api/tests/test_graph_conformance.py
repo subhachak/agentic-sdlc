@@ -141,3 +141,76 @@ async def test_phase_edges_runs_against_a_real_database(tmp_path, monkeypatch):
 
     get_settings.cache_clear()
     get_engine.cache_clear()
+
+
+# ── shapes, not just signatures ───────────────────────────────────────────
+
+
+def _returned_keys(path: str, class_name: str) -> dict[str, set[str]]:
+    """Which string keys each method builds into a dict it returns.
+
+    Static rather than executed: running both implementations needs a
+    database and a populated graph, and the divergence being hunted is
+    visible without either. Approximate on purpose — it over-collects keys
+    from intermediate dicts — which is why the assertion below compares
+    against a stated expectation rather than demanding equality.
+    """
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(path).read_text())
+    out: dict[str, set[str]] = {}
+    for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == class_name]:
+        for fn in cls.body:
+            if not isinstance(fn, (ast.AsyncFunctionDef, ast.FunctionDef)):
+                continue
+            keys = {
+                k.value
+                for node in ast.walk(fn)
+                if isinstance(node, ast.Dict)
+                for k in node.keys
+                if isinstance(k, ast.Constant) and isinstance(k.value, str)
+            }
+            if keys:
+                out[fn.name] = keys
+    return out
+
+
+# What each method's items must contain, whoever implements the port.
+#
+# Written down here because the port cannot say it: these methods return
+# `list[dict[str, Any]]`, so the shape lives in whatever the consumers
+# happen to read. `modules()` diverged exactly this way — production
+# returned `files` and the double returned `name`, so a consumer reading
+# m["files"] worked against the database and raised KeyError against the
+# double. The console's codebase view reads it three times.
+REQUIRED_KEYS = {
+    "modules": {"id", "files", "depends_on"},
+    "module_catalogue": {"id", "files", "depends_on", "dependents", "paths", "hubs"},
+    "criteria": {"id", "text"},
+}
+
+
+@pytest.mark.parametrize("method,required", sorted(REQUIRED_KEYS.items()))
+@pytest.mark.parametrize(
+    "source,cls",
+    [
+        ("app/core/context_graph.py", "SqlContextGraph"),
+        ("tests/graph_doubles.py", "InMemoryContextGraph"),
+    ],
+    ids=["production", "double"],
+)
+def test_both_implementations_return_the_same_keys(source, cls, method, required):
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    produced = _returned_keys(str(root / source), cls)
+    if method not in produced:
+        pytest.skip(f"{cls} does not build {method}() inline")
+
+    missing = sorted(required - produced[method])
+    assert missing == [], (
+        f"{cls}.{method}() does not produce {missing}. Consumers read these keys, "
+        f"and the port's `list[dict[str, Any]]` cannot say so — which is why they "
+        f"are listed here until the port carries models."
+    )
