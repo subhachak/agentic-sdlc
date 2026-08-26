@@ -13,7 +13,36 @@ from __future__ import annotations
 
 import os
 
-from orchestrator import github_api
+from orchestrator.ports_publish import Destination
+
+
+def build_publisher():
+    """Which publisher this deployment uses.
+
+    A factory rather than a literal, so a client on GitLab or Azure DevOps
+    writes an adapter instead of editing this node. `silent` is chosen when
+    there is nowhere to post — a nightly run against a branch has no review
+    thread, and that is a legitimate run rather than a misconfiguration.
+    """
+    import os
+
+    if os.environ.get("QA_PUBLISHER", "github") == "silent":
+        from orchestrator.adapters.silent_publisher import SilentPublisher
+
+        return SilentPublisher()
+    from orchestrator.adapters.github_publisher import GitHubPublisher
+
+    return GitHubPublisher()
+
+
+def _destination(state: PipelineState) -> Destination:
+    return Destination(
+        repo=state.get("repo", ""),
+        # Empty rather than absent when there is no change request, so a
+        # publisher can tell "nowhere to post" from "not told where".
+        change_request_id=str(state.get("pr_number") or ""),
+        branch=state.get("head_ref", ""),
+    )
 from orchestrator.state import PipelineState
 
 
@@ -136,7 +165,7 @@ def _report_plan_rejected(state: PipelineState) -> PipelineState:
         f"No tests were run. Revise the scenarios (or the underlying acceptance "
         f"criteria) and re-trigger."
     )
-    url = github_api.post_pr_comment(state["repo"], state["pr_number"], body)
+    url = build_publisher().publish_verdict(_destination(state), body)
     return {**state, "pr_comment_url": url, "defects_created": []}
 
 
@@ -151,12 +180,14 @@ def _report_pass(state: PipelineState) -> PipelineState:
         f"**Evidence:** {_evidence_block(state)}\n\n"
         f"All planned scenarios and required regressions ran and passed."
     )
-    url = github_api.post_pr_comment(state["repo"], state["pr_number"], body)
+    url = build_publisher().publish_verdict(_destination(state), body)
     return {**state, "pr_comment_url": url, "defects_created": []}
 
 
 def _report_fail(state: PipelineState) -> PipelineState:
-    repo, pr_number = state["repo"], state["pr_number"]
+    repo, pr_number = state.get("repo", ""), state.get("pr_number") or ""
+    publisher = build_publisher()
+    destination = _destination(state)
     evidence_block = _evidence_block(state)
 
     defect_urls = []
@@ -169,14 +200,14 @@ def _report_fail(state: PipelineState) -> PipelineState:
             f"**Evidence:** {evidence_block}\n\n"
             f"**Gate reasons:**\n{_bullets(state.get('gate_reasons', []))}"
         )
-        defect_urls.append(
-            github_api.create_or_update_issue(
-                repo,
-                title=f"[Auto QA] {title}",
-                body=issue_body,
-                labels=["agentic-qa", "defect"],
-            )
+        filed = publisher.raise_defect(
+            destination,
+            title=f"[Auto QA] {title}",
+            body=issue_body,
+            labels=["agentic-qa", "defect"],
         )
+        if filed:
+            defect_urls.append(filed)
 
     summary_body = (
         f"## Agentic QA — FAILED\n\n"
@@ -187,8 +218,16 @@ def _report_fail(state: PipelineState) -> PipelineState:
         f"**Evidence:** {evidence_block}\n\n"
         f"**Defects filed:**\n{_bullets(defect_urls)}"
     )
-    url = github_api.post_pr_comment(repo, pr_number, summary_body)
-    return {**state, "pr_comment_url": url, "defects_created": defect_urls}
+    url = publisher.publish_verdict(destination, summary_body)
+    # Recorded, not inferred. A publisher that cannot raise defects leaves
+    # this empty, and a reader must be able to tell that from "nothing
+    # failed" — so the capability travels with the result.
+    return {
+        **state,
+        "pr_comment_url": url,
+        "defects_created": defect_urls,
+        "defects_filed_anywhere": bool(publisher.capabilities().get("raises_defects")),
+    }
 
 
 def run(state: PipelineState) -> PipelineState:

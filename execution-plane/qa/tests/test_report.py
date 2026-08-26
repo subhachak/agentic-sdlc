@@ -11,16 +11,30 @@ from orchestrator.nodes import report
 
 @pytest.fixture
 def calls(monkeypatch):
-    """Capture GitHub writes instead of making them."""
+    """Capture what is published, through the port rather than around it.
+
+    This used to patch `report.github_api` directly, which tested that one
+    vendor's functions were called. Substituting a publisher tests the thing
+    that actually has to hold: whatever the destination, the same verdict and
+    the same defects are handed to it.
+    """
     recorded = {"comments": [], "issues": []}
-    monkeypatch.setattr(
-        report.github_api, "post_pr_comment",
-        lambda repo, pr, body: recorded["comments"].append(body) or "https://gh/comment/1",
-    )
-    monkeypatch.setattr(
-        report.github_api, "create_or_update_issue",
-        lambda repo, title, body, labels: recorded["issues"].append(title) or f"https://gh/issue/{len(recorded['issues'])}",
-    )
+
+    class Recording:
+        contract_version = 1
+
+        def capabilities(self):
+            return {"name": "recording", "comments": True, "raises_defects": True}
+
+        def publish_verdict(self, destination, body):
+            recorded["comments"].append(body)
+            return "https://gh/comment/1"
+
+        def raise_defect(self, destination, title, body, labels):
+            recorded["issues"].append(title)
+            return f"https://gh/issue/{len(recorded['issues'])}"
+
+    monkeypatch.setattr(report, "build_publisher", Recording)
     return recorded
 
 
@@ -105,3 +119,27 @@ def test_unassigned_scenarios_are_visible_in_the_plan_table(calls):
     })
 
     assert "not assigned" in calls["comments"][0]
+
+
+def test_a_run_with_no_change_request_still_reports(monkeypatch):
+    """A nightly regression against a branch has no pull request. The
+    pipeline used to refuse to start; now it runs and simply posts nowhere,
+    which is the honest outcome — there is no thread to post to."""
+    from orchestrator.adapters.silent_publisher import SilentPublisher
+    from orchestrator.ports_publish import Destination
+
+    publisher = SilentPublisher()
+    assert publisher.publish_verdict(Destination(repo="acme/demo"), "body") == ""
+    assert publisher.capabilities()["raises_defects"] is False
+
+
+def test_the_github_publisher_declines_to_comment_with_no_pull_request():
+    """Nowhere to comment is not a failure of the QA run, so it returns an
+    empty url rather than raising."""
+    from orchestrator.adapters.github_publisher import GitHubPublisher
+    from orchestrator.ports_publish import Destination
+
+    out = GitHubPublisher().publish_verdict(
+        Destination(repo="acme/demo", change_request_id=""), "body"
+    )
+    assert out == ""

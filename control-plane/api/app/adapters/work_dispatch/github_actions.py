@@ -50,6 +50,72 @@ class GitHubActionsWorkDispatch:
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
+    # What the workflow's inputs block must accept for a dispatch to mean
+    # anything. Checked rather than assumed: workflow_dispatch cannot decline
+    # a run for inputs it does not declare — it starts, ignores them, checks
+    # out its own ref and reports a verdict on the default branch, which
+    # reads exactly like a pass for a change it never saw.
+    REQUIRED_INPUTS = frozenset(
+        {"control_run_id", "correlation_id", "base_sha", "head_sha"}
+    )
+
+    async def check_access(self) -> dict[str, Any]:
+        """Verify the workflow is installed and speaks the current contract.
+
+        The workflow file is this platform's third deployment artifact — it
+        lives in the client's repository, not here — and nothing verified it
+        existed before dispatching. A missing or renamed file means the POST
+        404s; a file whose inputs have drifted means the POST succeeds and QA
+        silently tests the wrong thing. The second is much worse, and only
+        this check can see it.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+                response = await client.get(
+                    f"{_API}/repos/{self._repo}/actions/workflows/{self._workflow}",
+                    headers=self._headers,
+                )
+                if response.status_code == 404:
+                    return {
+                        "ok": False,
+                        "detail": (
+                            f"{self._workflow} is not installed in {self._repo}. The QA "
+                            f"workflow is part of this platform and has to live in the "
+                            f"repository being tested."
+                        ),
+                    }
+                response.raise_for_status()
+                meta = response.json()
+
+                content = await client.get(
+                    f"{_API}/repos/{self._repo}/contents/{meta.get('path', '')}",
+                    headers={**self._headers, "Accept": "application/vnd.github.raw"},
+                )
+        except httpx.HTTPError as exc:
+            return {"ok": False, "detail": f"could not reach GitHub: {exc}"}
+
+        if content.status_code != 200:
+            return {
+                "ok": True,
+                "detail": f"{self._workflow} exists; its inputs could not be read to verify",
+            }
+
+        # Parsed as text rather than YAML: adding a parser to check four key
+        # names is a dependency a client has to approve, and a name either
+        # appears in the inputs block or it does not.
+        body = content.text
+        missing = sorted(i for i in self.REQUIRED_INPUTS if f"{i}:" not in body)
+        if missing:
+            return {
+                "ok": False,
+                "detail": (
+                    f"{self._workflow} does not declare {', '.join(missing)}. A dispatch "
+                    f"would start and ignore them, then report on its own ref — which "
+                    f"reads as a pass for a change it never saw."
+                ),
+            }
+        return {"ok": True, "detail": f"{self._workflow} is installed and accepts the contract"}
+
     async def trigger(
         self, run_id: str, phase: str, correlation_id: str, inputs: dict[str, Any]
     ) -> DispatchHandle:

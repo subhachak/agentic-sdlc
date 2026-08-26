@@ -109,7 +109,15 @@ def _invoke(args, diff_text: str) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True, help="owner/name")
-    parser.add_argument("--pr-number", required=True, type=int)
+    # Optional. A nightly regression against a branch has no pull request,
+    # and requiring one forbade a legitimate run — the pipeline would refuse
+    # to start rather than run and simply post nowhere.
+    parser.add_argument(
+        "--pr-number",
+        type=int,
+        default=0,
+        help="the change request to report against, when there is one",
+    )
     parser.add_argument("--base-sha")
     parser.add_argument("--head-sha")
     parser.add_argument("--phase", choices=("run", "report", "all"), default="all")
