@@ -101,7 +101,16 @@ def page_route_for(path: str) -> str | None:
     segments = path.split("/")[:-1]
     if "app" not in segments:
         return None
-    index = len(segments) - 1 - segments[::-1].index("app")
+    # The *first* `app` segment is the router root. Taking the last one
+    # breaks the moment a route is itself named `app`: in Fronei,
+    # apps/web/app/app/page.tsx serves /app, and reading from the last
+    # match made it serve / — colliding with the real root page, so a
+    # request to /app was credited to the file serving / and the workbench
+    # route was attributable to nothing.
+    #
+    # Safe in the other direction because the check is exact: `apps` is not
+    # `app`, so a repository rooted at apps/web is unaffected.
+    index = segments.index("app")
     return normalise_route("/" + "/".join(segments[index + 1:]))
 
 

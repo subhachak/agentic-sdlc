@@ -3,12 +3,15 @@
   "project": "default",
   "routes": {
     "/": [
-      "apps/web/app/app/page.tsx",
       "apps/web/app/layout.tsx",
       "apps/web/app/page.tsx"
     ],
     "/admin": [
       "apps/web/app/admin/page.tsx",
+      "apps/web/app/layout.tsx"
+    ],
+    "/app": [
+      "apps/web/app/app/page.tsx",
       "apps/web/app/layout.tsx"
     ],
     "/blog": [
@@ -57,7 +60,7 @@
     "repo": "subhachak/fronei",
     "commit_sha": "2f8bdf17b98ff520df88bb8beb2e398664fcd2a2",
     "indexer_version": "2.0.0",
-    "indexed_at": "2026-08-26T22:10:00.910074+00:00",
+    "indexed_at": "2026-08-26T23:43:22.359252+00:00",
     "pinned": true,
     "internal_capture_rate": 0.9881,
     "most_missed": [

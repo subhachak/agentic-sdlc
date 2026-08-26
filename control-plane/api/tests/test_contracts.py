@@ -217,3 +217,33 @@ def test_a_layout_does_not_count_as_serving_an_api_route():
     ])
 
     assert mapping["/api/claims"] == ["demo-app/app/api/claims/route.ts"]
+
+
+def test_a_route_named_app_is_not_mistaken_for_the_router_root():
+    """`apps/web/app/app/page.tsx` serves /app, not /.
+
+    The router root was found by scanning backwards for a segment named
+    `app`, so a route that is itself called `app` shadowed it — the file
+    serving /app resolved to / and collided with the real root page. A
+    request to /app was then credited to the wrong file, and the route the
+    workbench lives on was attributable to nothing at all.
+
+    Found by pointing the platform at a real repository; demo-app has no
+    route named `app`, so nothing here could have shown it.
+    """
+    from app.core.routing import page_route_for
+
+    assert page_route_for("apps/web/app/app/page.tsx") == "/app"
+    assert page_route_for("apps/web/app/page.tsx") == "/"
+    # And the two no longer claim the same URL.
+    assert page_route_for("apps/web/app/app/page.tsx") != page_route_for(
+        "apps/web/app/page.tsx"
+    )
+
+
+def test_a_repository_rooted_at_apps_is_unaffected():
+    """The match is exact, so `apps` is never taken for `app`."""
+    from app.core.routing import page_route_for
+
+    assert page_route_for("apps/web/app/admin/page.tsx") == "/admin"
+    assert page_route_for("demo-app/app/claims/page.tsx") == "/claims"
