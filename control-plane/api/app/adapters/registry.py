@@ -41,6 +41,7 @@ class Adapters:
     # None when the platform writes the change itself.
     implementation_dispatch: WorkDispatch | None
     implementation_agent: Any
+    qa_agent: Any
 
 
 def _require_directory(path: str | None, selection: str, setting: str) -> None:
@@ -283,6 +284,24 @@ def build_audit_sink(settings: Settings) -> AuditSink:
     return SqliteAuditSink()
 
 
+def build_qa_agent(settings: Settings) -> Any:
+    """Who proves the change works.
+
+    `local` and `local-pipeline` keep everything inside this platform's
+    boundary; `github-actions` hands the contract to the client's CI. All
+    three park on the dispatch seam, because a QA run takes minutes and a
+    phase coroutine that blocked on it would lose the run on a restart.
+    """
+    if settings.work_dispatch_adapter in ("local", "local-pipeline"):
+        from app.adapters.qa_agent.local import LocalQAAgent
+
+        return LocalQAAgent(provider=settings.work_dispatch_adapter)
+
+    from app.adapters.qa_agent.dispatched import DispatchedQAAgent
+
+    return DispatchedQAAgent(provider=settings.work_dispatch_adapter)
+
+
 def build_implementation_agent(settings: Settings) -> Any:
     """Who writes the change.
 
@@ -351,6 +370,7 @@ def build_adapters(settings: Settings, graph: Any = None) -> Adapters:
         source_control=source_control,
         implementation_dispatch=build_implementation_dispatch(settings),
         implementation_agent=build_implementation_agent(settings),
+        qa_agent=build_qa_agent(settings),
         requirements_source=build_requirements_source(settings),
         code_design_context=build_code_design_context(settings, graph, source_control),
         test_management=build_test_management(settings),

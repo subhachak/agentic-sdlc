@@ -19,6 +19,7 @@ from app.ports.design_agent import (
     DesignProposal,
     DesignRequest,
 )
+from app.ports.qa_agent import QARequest
 from app.ports.implementation_agent import (
     ImplementationRequest,
     ImplementationResult,
@@ -100,6 +101,7 @@ def build_nodes(
     # rather than forking the phase.
     design_agent: DesignAgent | None = None,
     implementation_agent_port: Any = None,
+    qa_agent: Any = None,
     design_dispatch: WorkDispatch | None = None,
     dispatch_timeout_seconds: int = 1800,
     dispatch_provider: str = "local",
@@ -114,6 +116,19 @@ def build_nodes(
         from app.adapters.design_agent.inline import InlineDesignAgent
 
         design_agent = InlineDesignAgent(llm_provider)
+
+    if qa_agent is None:
+        # Follows the configured execution target, matching the registry.
+        # A default that ignored it would read a payload the configured
+        # provider never produces.
+        if dispatch_provider in ("local", "local-pipeline"):
+            from app.adapters.qa_agent.local import LocalQAAgent
+
+            qa_agent = LocalQAAgent(provider=dispatch_provider)
+        else:
+            from app.adapters.qa_agent.dispatched import DispatchedQAAgent
+
+            qa_agent = DispatchedQAAgent(provider=dispatch_provider)
 
     if implementation_agent_port is None:
         # Follows the configured agent, not a fixed default. The two arms
@@ -643,6 +658,28 @@ def build_nodes(
 
         # None means a row already exists, i.e. this is the resume pass and
         # the job is already running. Triggering here would start a second.
+        project = state.get("project") or DEFAULT_PROJECT
+        qa_outcome = await qa_agent.execute(
+            QARequest(
+                run_id=run_id,
+                project=project,
+                base_sha=state.get("base_sha", ""),
+                head_sha=head_sha,
+                branch=(state.get("implementation") or {}).get("branch", ""),
+                repo=target_repo,
+                # The changed set, not the blast radius. The provider widens
+                # it, because how far a change reaches is a property of the
+                # codebase being tested.
+                changed_paths=state.get("changed_paths", []),
+                criteria=await context_graph.criteria(project),
+            )
+        )
+        if qa_outcome.state == "failed":
+            return {
+                "qa_result": {"state": "failed", "detail": qa_outcome.detail},
+                "status": "qa_failed",
+            }
+
         claimed = await dispatch_store.claim(
             run_id, "qa", dispatch_provider, dispatch_timeout_seconds
         )
@@ -652,14 +689,7 @@ def build_nodes(
                     run_id,
                     "qa",
                     claimed.correlation_id,
-                    {
-                        "base_sha": state.get("base_sha", ""),
-                        "head_sha": head_sha,
-                        # What the implementation phase actually touched. The QA
-                        # pipeline widens this to the blast radius itself.
-                        "changed_paths": state.get("changed_paths", []),
-                        "branch": (state.get("implementation") or {}).get("branch", ""),
-                    },
+                    qa_outcome.dispatch_inputs,
                 )
                 await dispatch_store.attach_external(
                     claimed.id, handle.external_id, handle.external_url
@@ -676,17 +706,33 @@ def build_nodes(
 
         outcome = result.get("state", "failed")
 
-        # The QA phase already knows which criterion each scenario covers and
-        # which script ran it. Those are the graph's edges, so they are written
-        # here rather than by any separate ingestion job — and they carry the
-        # run that asserted them.
-        payload = result.get("payload") or {}
+        # Interpreted by the provider's adapter rather than by untyped key
+        # reads here. read_result is the reconciler-safe half of the port: a
+        # QA run outlives the request that started it.
+        proven = qa_agent.read_result(result.get("payload") or {})
+
+        # Which criterion each scenario covers and which script ran it are
+        # graph edges, so they are written here rather than by any separate
+        # ingestion job — and they carry the run that asserted them.
         edges_written = await context_graph.ingest(
-            run_id, "qa", _assertions_from(payload)
+            run_id, "qa", _assertions_from({"assertions": proven.assertions})
         )
 
+        # "Everything I ran passed" and "everything that needed running ran"
+        # are different claims. A provider that cannot report coverage leaves
+        # the second one unevaluated, and that is recorded rather than read
+        # as full coverage.
+        reports_coverage = bool(qa_agent.capabilities().get("reports_coverage"))
+
         return {
-            "qa_result": result,
+            "qa_result": {
+                **result,
+                "passed": proven.passed,
+                "evidence_ref": proven.evidence_ref,
+                "covered_criteria": proven.covered_criteria,
+                "uncovered_criteria": proven.uncovered_criteria,
+                "coverage_evaluated": reports_coverage,
+            },
             "graph_edges_written": edges_written,
             "status": "awaiting_gate_3" if outcome == "succeeded" else f"qa_{outcome}",
         }
