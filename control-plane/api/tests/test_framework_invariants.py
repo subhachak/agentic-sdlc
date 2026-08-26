@@ -281,3 +281,51 @@ def test_no_setting_reads_a_name_the_ci_runner_owns():
         + "; ".join(offenders)
         + ". Give them a validation_alias outside the GITHUB_* namespace."
     )
+
+
+def test_no_port_is_declared_and_never_used():
+    """A Protocol nothing references is a seam that does not exist.
+
+    DataShape sat in the execution plane's ports module unused: written,
+    superseded by a method on the provider, and left behind. It then showed
+    up in a generated port count as though it were a real seam — which is
+    how an architecture diagram acquires an edge the codebase does not have.
+
+    Scans the execution plane too. The factory invariant above only reads
+    app/ports, so nothing was checking the other half of the platform.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    modules = list((root / "control-plane/api/app/ports").glob("*.py")) + list(
+        (root / "execution-plane/qa/orchestrator").glob("ports*.py")
+    )
+
+    declared: dict[str, Path] = {}
+    for path in modules:
+        for node in _module_source(path).body:
+            if isinstance(node, ast.ClassDef) and any(
+                isinstance(b, ast.Name) and b.id == "Protocol" for b in node.bases
+            ):
+                declared[node.name] = path
+
+    assert declared, "found no ports to check"
+
+    searchable = [
+        p
+        for p in list((root / "control-plane/api/app").rglob("*.py"))
+        + list((root / "execution-plane/qa/orchestrator").rglob("*.py"))
+    ]
+    corpus = "\n".join(p.read_text() for p in searchable)
+
+    unused = sorted(
+        name
+        for name, path in declared.items()
+        # One mention is its own declaration; a real port is referenced.
+        if corpus.count(name) <= 1
+    )
+    assert unused == [], (
+        f"these ports are declared and never referenced: {unused}. "
+        f"Use them, or delete them — an unused Protocol is counted as a seam "
+        f"by anything that enumerates the ports."
+    )

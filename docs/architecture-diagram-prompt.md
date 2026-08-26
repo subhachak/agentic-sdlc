@@ -1,92 +1,105 @@
 # Prompt: agentic SDLC framework — polygonal ports-and-adapters diagram
 
-Copy everything below the line into ChatGPT, Gemini or Claude.
+Generated from the codebase, not from memory: the port list below is
+extracted from `class X(Protocol)` and every name is verified to exist.
+Copy everything below the horizontal rule into ChatGPT, Gemini or Claude.
 
 ---
 
-You are a principal enterprise architect producing a reference diagram for an
-executive and architecture-review audience. Produce **one** diagram. Accuracy
-of structure matters more than decoration.
+You are a principal enterprise architect producing a reference diagram for
+an executive and architecture-review audience. Produce **one** diagram.
+Structural accuracy matters more than decoration.
 
 ## What the system is
 
 A governed agentic software delivery platform. AI agents propose and perform
 delivery work; deterministic code decides what is admissible; people approve
-at gate boundaries. It is built as ports and adapters (hexagonal
-architecture), and the point of the diagram is that **every integration is a
-replaceable seam, while the semantic core is fixed**.
+at gate boundaries. It is built as ports and adapters, and the point of the
+diagram is that **every integration is a replaceable seam while the semantic
+core is fixed**.
 
 ## Overall geometry
 
-Draw a **regular 16-sided polygon (hexadecagon)**, viewed flat-on, centred
-on the canvas. Landscape, roughly 1600×1600 or 16:10 with the polygon
-centred.
+Draw a **regular 17-sided polygon (heptadecagon)**, flat-on, centred.
+Square canvas, roughly 1800×1800.
 
-There are four zones, from outside in:
+Five zones, outside in:
 
-1. **Outside the polygon** — client-provided implementations, floating free.
-2. **On each edge** — one port. The edge *is* the port.
-3. **Inner ring, just inside the edges** — the SDLC cycle, running clockwise.
-4. **Middle band** — the deterministic decision components.
-5. **Centre** — the context graph and ontology.
+1. **Outside the polygon** — client-provided implementations, floating free
+2. **On each edge** — one port; the edge *is* the port
+3. **Inner ring** — the SDLC cycle, clockwise
+4. **Middle band** — the deterministic decision components
+5. **Centre** — the context graph and ontology
 
-Give each of the 16 edges a distinct segment. Label the port name **on the
-edge itself**, oriented so it reads without rotating the page more than 90°.
+Label each port **on its edge**, oriented so no label needs the page rotated
+more than 90°.
 
-## Zone 1 + 2 — the 16 ports, and what sits outside each
+## Zones 1 + 2 — the 17 ports
 
-For each edge, write the port name on the edge, and place 2–4 example
-client-provided implementations outside it as small chips. Use exactly these:
+Port name on the edge; 2–4 example implementations as small chips outside it.
 
-| # | Port (on the edge) | Outside the edge |
+**Control plane — 14 edges**
+
+| # | Port | Outside the edge |
 |---|---|---|
 | 1 | RequirementsSource | Jira · Azure DevOps · Confluence · CSV |
-| 2 | CodeIntelligence | GitHub AST indexer · local checkout · language server |
-| 3 | CodeDesignContext | BM25 repo index · vector store · Confluence |
-| 4 | ContextGraphStore | SQLite · PostgreSQL · Neo4j · hosted graph |
-| 5 | EntityResolver | per-system id mapping |
+| 2 | EntityResolver | per-system identifier mapping |
+| 3 | CodeIntelligence | GitHub AST indexer · local checkout · language server |
+| 4 | CodeDesignContext | BM25 repo index · vector store · Confluence |
+| 5 | ContextGraphStore | SQLite · PostgreSQL · Neo4j · hosted graph |
 | 6 | LLMProvider | Claude · client-hosted model · mock |
-| 7 | DesignAgent | in-process agent · client's cloud agent |
-| 8 | SourceControl | GitHub · GitLab · Bitbucket · local working copy |
-| 9 | ImplementationAgent | in-process agent · GitHub Copilot cloud agent · client's coding agent |
-| 10 | WorkDispatch | GitHub Actions · Jenkins · Azure Pipelines |
-| 11 | TestManagement | JSON file · Xray · TestRail · qTest |
-| 12 | AuditSink | SQLite · client SIEM · WORM store |
+| 7 | DesignAgent | in-process agent · client's design agent |
+| 8 | ImplementationAgent | in-process agent · GitHub Copilot cloud agent |
+| 9 | QAAgent | local pipeline · client's QA automation |
+| 10 | SourceControl | GitHub · GitLab · Bitbucket · local working copy |
+| 11 | WorkDispatch | GitHub Actions · Jenkins · Azure Pipelines |
+| 12 | TestManagement | JSON file · Xray · TestRail · qTest |
 | 13 | BuildDeploy | no-op recorder · Jenkins · Argo CD · Octopus |
-| 14 | TestAuthor | in-process author · client's test agent |
-| 15 | TestDataProvider | JSON store · database lease · fixture service |
-| 16 | TestRunner | Playwright · Cypress · pytest |
+| 14 | AuditSink | SQLite · client SIEM · WORM store |
 
-**Two agent seams, drawn identically.** `DesignAgent` (7) and
-`ImplementationAgent` (9) are the two places a client substitutes their own
-agent, and they are modelled the same way — a typed request in, either an
-answer or a receipt out. Give those two edges the same visual treatment as
-each other so the symmetry is visible.
+**Execution plane — 3 edges**
 
-**One arrow worth drawing.** `ImplementationAgent` and `TestAuthor`, when a
-client's agent is dispatched rather than in-process, delegate the waiting to
-`WorkDispatch` — reserve a row, park, reconcile. Draw a thin curved arrow
-*inside* the polygon from each of those two edges to the `WorkDispatch`
-edge, labelled "delegates dispatch". This is the only permitted edge-to-edge
-line, and it makes the point that the platform has one waiting mechanism
-rather than one per integration.
+| # | Port | Outside the edge |
+|---|---|---|
+| 15 | TestAuthor | in-process author · client's test agent |
+| 16 | TestDataProvider | JSON store · database lease · fixture service |
+| 17 | TestRunner | Playwright · Cypress · pytest |
 
-Mark ports 14, 15 and 16 (TestAuthor, TestDataProvider, TestRunner) as belonging to the **execution plane** — give their
-three edges a subtly different edge treatment (for example a doubled line)
-and add a small legend entry saying "execution plane — runs inside the
-client's boundary". The other thirteen are control plane.
+Give edges 15–17 a doubled line, and one legend entry: *"execution plane —
+runs inside the client's boundary"*. The other fourteen are control plane.
 
-Two ports carry an **optional capability**, drawn as a small hollow tab on
-the edge rather than a separate side:
+### Three optional capabilities
 
-- on CodeIntelligence: `RepositoryCatalogue` (optional)
-- on BuildDeploy: `RollbackCapable` (optional)
-- on ImplementationAgent: `AccessCheckable` (optional)
+Small hollow tabs on their edge, not sides of their own:
 
-## Zone 3 — the SDLC cycle, on the inner ring
+- CodeIntelligence → `RepositoryCatalogue`
+- ImplementationAgent → `AccessCheckable`
+- BuildDeploy → `RollbackCapable`
 
-Just inside the polygon edges, draw a **clockwise cycle** of eight stages as
-a ring of connected arrows. Starting at the top and moving clockwise:
+### Three structural facts to draw
+
+**The three agent seams are identical.** `DesignAgent` (7),
+`ImplementationAgent` (8) and `QAAgent` (9) are the three places a client
+substitutes their own agent, and all three are modelled the same way: a
+typed request in, either an answer or a receipt out. Place them adjacent and
+give them matching treatment so the symmetry is visible.
+
+**They delegate their waiting.** When a client's agent is dispatched rather
+than in-process, all three hand the waiting to `WorkDispatch` (11). Draw a
+thin curved arrow *inside* the polygon from each of 7, 8 and 9 to 11,
+labelled once as "delegates dispatch". These are the only permitted
+edge-to-edge lines. The point: one waiting mechanism, not one per
+integration.
+
+**QAAgent is the plane boundary.** When QA is dispatched, the thing at the
+far end is the execution plane — which is where edges 15–17 live. Draw a
+faint band or arc linking edge 9 to edges 15–17, labelled "the QA provider
+owns script selection, test data and execution". Do not draw 15–17 as
+subordinate boxes; they remain full edges of the polygon.
+
+## Zone 3 — the SDLC cycle
+
+Just inside the edges, a clockwise ring of eight stages. From the top:
 
 1. Requirements intake
 2. Requirements synthesis
@@ -97,22 +110,18 @@ a ring of connected arrows. Starting at the top and moving clockwise:
 7. QA execution
 8. **Gate 3 — human approval** → Release
 
-Draw the three gates visually distinct from the five phases — for example as
-a narrow bar or a diamond across the ring — and label the gate band once:
-"a person authorises every consequential transition".
+Draw the three gates distinctly from the five phases — a narrow bar or
+diamond across the ring — and label the gate band once: *"a person
+authorises every consequential transition"*. Close the cycle with a return
+arrow from Release to Requirements intake.
 
-Draw a return arrow from Release back to Requirements intake to close the
-cycle.
+## Zone 4 — the deterministic core
 
-## Zone 4 — the deterministic core, in the middle band
-
-Between the SDLC ring and the centre, place these components as labelled
-blocks. These are the parts that *decide*, and none of them is replaceable:
+Between the SDLC ring and the centre. These decide, and none is replaceable:
 
 - **Impact Engine** — one canonical assessment: paths, confidence, test
   obligations, blind spots
-- **Design review** — containment: a change may only touch what the design
-  named
+- **Design review** — containment: a change may touch only what the design named
 - **Change review** — what the agent actually did, checked against it
 - **Release gate** — required regressions must have run and passed
 - **Coverage & evidence** — a criterion is verified only by an observed run
@@ -121,13 +130,13 @@ blocks. These are the parts that *decide*, and none of them is replaceable:
 - **Reconciler** — pulls results for work running elsewhere
 - **Audit trail** — every decision, with its inputs
 
-Make **Impact Engine** visually the largest of these and place it adjacent to
-the centre — it is the component every phase consumes.
+Make **Impact Engine** the largest and place it adjacent to the centre — it
+is what every phase consumes.
 
 ## Zone 5 — the centre
 
-A distinct inner circle or smaller polygon, clearly the anchor of the whole
-figure. Title it **Context Graph & Ontology**. Inside it, in smaller text:
+A distinct inner circle, clearly the anchor. Title: **Context Graph &
+Ontology**. Inside, smaller:
 
 - **Ontology** — 15 node types, 18 edge types, validated signatures
 - **Identity** — deterministic: `uuid5(type | system | external_id)`
@@ -135,48 +144,46 @@ figure. Title it **Context Graph & Ontology**. Inside it, in smaller text:
 - **Provenance** — every assertion carries how it was derived
 - **Truth classes** — authoritative · derived · observed · inferred
 
-Add one short line under the centre, in the figure: *"an LLM inference must
-never be indistinguishable from a compiler-derived fact."*
+One line beneath the centre, inside the figure: *"an LLM inference must never
+be indistinguishable from a compiler-derived fact."*
 
 ## Visual language
 
-- Professional, restrained, enterprise-architecture register. Not a
-  marketing graphic, not neon, no gradients-as-decoration, no 3D, no
-  drop-shadow clutter, no emoji, no clip-art icons.
+- Professional, restrained, enterprise-architecture register. Not marketing.
+  No neon, no gradients as decoration, no 3D, no drop-shadow clutter, no
+  emoji, no clip-art icons.
 - One accent hue for the centre and the Impact Engine. Neutral greys and a
-  single cool tone for everything else. Semantic colour only for the three
-  human gates.
-- Typography: one clean grotesque. Port names on edges in small caps or
-  letter-spaced uppercase; component labels sentence case.
-- Every label must be legible at 100% zoom. If a label does not fit, shorten
-  the label — never shrink it below roughly 11px at the drawn scale.
-- Clear whitespace between the four zones so the concentric structure reads
-  instantly.
+  single cool tone elsewhere. Semantic colour only for the three human gates.
+- One clean grotesque throughout. Port names letter-spaced uppercase;
+  component labels sentence case.
+- Every label legible at 100%. If a label will not fit, shorten the label —
+  never take it below ~11px at the drawn scale.
+- Clear whitespace between zones so the concentric structure reads instantly.
 
 ## Rules — these are what usually go wrong
 
-1. **Do not put adapters inside the polygon.** The boundary is the port; the
-   implementations are outside it. That is the entire claim of the diagram.
-2. **Do not draw arrows crossing the middle.** Nothing goes from an edge
-   straight to the centre. Reads and writes go through the deterministic
-   core.
-3. **Do not make the SDLC cycle the outermost ring.** The ports are the
-   outer boundary; the lifecycle runs inside them.
-4. **Do not invent ports, phases or components.** Use exactly the labels
-   above. If something will not fit, drop an *example implementation*, never
-   a port.
-5. **Do not add a "database" or "cloud" icon.** Storage is one port among
-   sixteen and must not look like the foundation.
-6. **Keep all sixteen edges equal.** No edge is more important than another
-   — that equality is the pluggability argument.
-7. Do not add a title block, logo, or footer.
+1. **Adapters never go inside the polygon.** The boundary is the port; the
+   implementations sit outside it. That is the entire claim of the diagram.
+2. **Nothing crosses the middle.** No arrow runs from an edge to the centre.
+   Reads and writes go through the deterministic core.
+3. **The SDLC cycle is not the outer ring.** Ports are the outer boundary;
+   the lifecycle runs inside them.
+4. **Invent nothing.** Use exactly the labels above. If something will not
+   fit, drop an *example implementation* — never a port. A diagram with 15
+   edges claiming 17 seams is worse than no diagram.
+5. **No database or cloud icon.** Storage is one port among seventeen and
+   must not look like the foundation.
+6. **All seventeen edges are equal.** That equality is the pluggability
+   argument.
+7. Only the four permitted internal lines exist: three "delegates dispatch"
+   arrows, and the QA-to-execution-plane band.
+8. No title block, logo or footer.
 
 ## Output
 
-Produce the diagram as **SVG**, hand-authored, self-contained, no external
-assets or fonts, viewBox set, so it scales cleanly for print and slides. Use
-`currentColor` or explicit hex — no CSS variables. Return the SVG in a single
-code block, then list in plain text anything you had to shorten or omit.
+Hand-authored **SVG**: self-contained, no external assets or fonts,
+`viewBox` set, explicit hex colours (no CSS variables), so it scales for
+print and slides. Return it in one code block, then list in plain text
+anything you shortened or omitted.
 
-If you cannot produce SVG, produce it as a high-resolution image and state
-that limitation first.
+If you cannot produce SVG, produce a high-resolution image and say so first.

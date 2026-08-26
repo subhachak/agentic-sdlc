@@ -43,18 +43,6 @@ EXECUTION_CONTRACT_VERSION = 1
 Isolation = Literal["none", "run", "scenario"]
 
 
-class DataShape(Protocol):
-    """What data can exist, so a plan cannot ask for what nothing provides.
-
-    The testability gate reads this. A scenario naming an entity or field the
-    provider cannot supply is refused before anyone writes a spec, which is
-    the difference between a plan that fails at authoring time and one that
-    fails at run time with a missing row.
-    """
-
-    def entities(self) -> dict[str, set[str]]: ...
-
-
 class Lease:
     """One scenario's or one run's claim on test data.
 
@@ -107,7 +95,12 @@ class TestDataProvider(Protocol):
     isolation: Isolation
 
     def shape(self) -> dict[str, set[str]]: ...
-    """Entities and fields a scenario may reference."""
+    """Entities and fields a scenario may reference.
+
+    The testability gate reads this. A scenario naming an entity or field
+    the provider cannot supply is refused before anyone writes a spec, which
+    is the difference between a plan that fails at authoring time and one
+    that fails at run time with a missing row."""
 
     def acquire(self, *, scope: str, scenarios: list[dict[str, Any]]) -> Lease: ...
     """Claim data for a run, or for one scenario when isolation allows it.
