@@ -258,7 +258,7 @@ do_logs() {
 
 # Where to look for keys already configured on this machine.
 SIBLING_ROOT="${SIBLING_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-WANTED_KEYS=(ANTHROPIC_API_KEY GITHUB_TOKEN)
+WANTED_KEYS=(ANTHROPIC_API_KEY GITHUB_TOKEN JIRA_BASE_URL JIRA_EMAIL JIRA_API_TOKEN)
 
 # Values are moved from file to file and never printed. Everything this
 # command reports is a key *name* and which project it came from.
@@ -359,6 +359,14 @@ do_keys() {
       if [[ -n "$(read_key_from "$SCRIPT_DIR/.env" ANTHROPIC_API_KEY)" ]]; then
         upsert_env LLM_PROVIDER_ADAPTER claude
         echo "  LLM_PROVIDER_ADAPTER set to claude"
+      fi
+
+      # Same for Jira: all three are needed, and the adapter refuses to
+      # build without them, so switching the source over on a partial set
+      # would leave a deployment that will not start.
+      if [[ -n "$(read_key_from "$SCRIPT_DIR/.env" JIRA_BASE_URL)"          && -n "$(read_key_from "$SCRIPT_DIR/.env" JIRA_EMAIL)"          && -n "$(read_key_from "$SCRIPT_DIR/.env" JIRA_API_TOKEN)" ]]; then
+        upsert_env REQUIREMENTS_SOURCE_ADAPTER jira
+        echo "  REQUIREMENTS_SOURCE_ADAPTER set to jira"
       fi
 
       if (( push_github )); then

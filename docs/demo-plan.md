@@ -17,7 +17,25 @@ BuildDeploy therefore does three things, not one:
 
     deploy()    merge the approved PR, return a receipt
     check()     find the deployment that merge produced, report health
-    rollback()  re-promote the previous Vercel deployment
+    rollback()  revert the merge commit and push
+
+Rollback is a git revert, not a hosting-platform call. If a merge deploys,
+a revert deploys too — the same trigger, backwards. That is worth choosing
+deliberately rather than falling into:
+
+  it needs no Vercel or Railway token, so the platform holds one fewer
+  credential and one fewer API surface can change under it;
+  one mechanism covers the UI and the API, where re-promoting a Vercel
+  deployment would leave Railway on the reverted-away code;
+  the repository and the running system stay in agreement, where a
+  platform-level rollback silently makes main a lie;
+  and it goes back through the same pipeline — CI, checks, the lot — so
+  the way back is as governed as the way in.
+
+The cost is honest: minutes rather than seconds, because it rebuilds. And
+if the *build* is what broke, the revert has to build too. For a demo, and
+for an audience being shown a governed pipeline, that trade is the right
+way round.
 
 ## Rollback, proven first
 
@@ -26,24 +44,18 @@ change goes anywhere near production.** Deploy something trivial by hand,
 roll it back, confirm the live site reverted. If that is not clean, the demo
 stops at Gate 3 and records the decision instead of deploying.
 
-Three layers, cheapest first:
+Two layers:
 
 | | Mechanism | Time | Restores |
 |---|---|---|---|
-| 1 | Re-promote previous Vercel deployment | seconds | the live UI |
-| 2 | `git revert` the merge, push | minutes | the repo, and both hosts |
-| 3 | Retract the release assertions | instant | the graph |
+| 1 | `git revert` the merge, push | minutes | the repo, and both hosts |
+| 2 | Retract the release assertions | instant | the graph |
 
-Layer 1 is what you want between demo runs. Layer 2 is the reset. Layer 3
-works because `retract` supersedes rather than deletes, so rolling back a
-run leaves the history that it happened.
+Layer 2 works because `retract` supersedes rather than deletes, so rolling
+back a run leaves the history that it happened rather than erasing it.
 
-One wrinkle to decide when we get there: a merge redeploys **both** hosts. A
-change confined to `apps/web` only alters the UI, but Railway rebuilds an
-identical API anyway. Layer 1 covers the UI; layer 2 covers both.
-
-`./run.sh rollback` wraps layers 1 and 2 — one command under demo pressure,
-not three API calls from memory.
+`./run.sh rollback` wraps both — one command under demo pressure, not a
+revert plus an API call from memory.
 
 ---
 
@@ -51,10 +63,10 @@ not three API calls from memory.
 
 ### Phase 0 — prove the ground (no platform involved)
 
-- [ ] Confirm the Vercel deployments API and rollback work with a token you supply
-- [ ] Manual deploy → manual rollback → verify the live site reverted
+- [ ] Merge a trivial change to main by hand; confirm Vercel and Railway both deploy
+- [ ] `git revert` it and push; confirm both redeploy and the live site reverts
+- [ ] Time it — that number is how long a bad demo run takes to undo
 - [ ] `./run.sh rollback`
-- [ ] Decide: does rollback need to cover Railway too, or is UI-only enough
 
 **Exit:** rollback demonstrably works, without an agent in the loop.
 
@@ -116,7 +128,7 @@ that once the provider says so.
 
 - [ ] `deploy()` merges the approved PR via the GitHub API
 - [ ] `check()` finds the Vercel deployment for that commit, reports health
-- [ ] `rollback()` re-promotes the previous deployment
+- [ ] `rollback()` reverts the merge commit and pushes
 - [ ] Wire `RollbackCapable` — already declared as an optional capability
 
 **Exit:** Gate 3 approval merges, the deploy is observed, and rollback is one
@@ -163,5 +175,6 @@ Stated so nobody discovers it live:
   uses the in-process agents.
 - **`TestManagement` writes to a JSON file**, not Xray or TestRail.
 - **Evidence is a CI run URL**, not a signed artifact.
-- **Rollback covers the UI fast and both hosts slowly.** There is no
-  single-call rollback of a Railway deploy in the plan yet.
+- **Rollback takes as long as a deploy**, because it is one. There is no
+  instant re-promote; the trade was taken deliberately so the repository and
+  the running system never disagree.
