@@ -52,8 +52,8 @@ def check(path: pathlib.Path, expected: list[str], label: str) -> None:
                 )
 
 
-check(pathlib.Path("framework-17.svg"), ports.required(), "17-gon")
-check(pathlib.Path("framework-8.svg"), [n for n, _ in ports.FAMILIES], "octagon")
+check(pathlib.Path("framework-18.svg"), ports.required(), "18-gon")
+check(pathlib.Path("framework-9.svg"), [n for n, _ in ports.FAMILIES], "nonagon")
 
 if FAILURES:
     print("\n".join(f"  {f}" for f in FAILURES))

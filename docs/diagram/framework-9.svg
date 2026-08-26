@@ -1,39 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 1800" width="1800" height="1800" font-family="Inter, ui-sans-serif, system-ui, sans-serif" role="img" aria-label="Agentic SDLC framework — port families">
 <rect width="1800" height="1800" fill="#ffffff"/>
-<polygon points="666.6,336.4 1133.4,336.4 1463.6,666.6 1463.6,1133.4 1133.4,1463.6 666.6,1463.6 336.4,1133.4 336.4,666.6" fill="#f4f7f6" stroke="#c7d3ce" stroke-width="2"/>
+<polygon points="691.4,326.8 1108.6,326.8 1428.3,595.0 1500.7,1005.9 1292.1,1367.3 900.0,1510.0 507.9,1367.3 299.3,1005.9 371.7,595.0" fill="#f4f7f6" stroke="#c7d3ce" stroke-width="2"/>
 <circle cx="900.0" cy="900.0" r="505" fill="#eaf0ee" stroke="#c7d3ce"/>
 <circle cx="900.0" cy="900.0" r="415" fill="#ffffff" stroke="#c7d3ce"/>
-<line x1="666.6" y1="336.4" x2="1133.4" y2="336.4" stroke="#41544e" stroke-width="2.5"/>
-<g transform="translate(900.0,352.4) rotate(0.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Intake</text></g>
-<text x="900.0" y="298.4" text-anchor="middle" font-size="13" fill="#6f827c">RequirementsSource</text>
-<text x="900.0" y="314.4" text-anchor="middle" font-size="13" fill="#6f827c">· EntityResolver</text>
-<line x1="1133.4" y1="336.4" x2="1463.6" y2="666.6" stroke="#41544e" stroke-width="2.5"/>
-<g transform="translate(1287.2,512.8) rotate(45.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Code context</text></g>
-<text x="1319.7" y="464.3" text-anchor="start" font-size="13" fill="#6f827c">CodeIntelligence ·</text>
-<text x="1319.7" y="480.3" text-anchor="start" font-size="13" fill="#6f827c">CodeDesignContext</text>
-<text x="1319.7" y="496.3" text-anchor="start" font-size="13" fill="#6f827c">· ContextGraphStore</text>
-<line x1="1463.6" y1="666.6" x2="1463.6" y2="1133.4" stroke="#41544e" stroke-width="2.5"/>
-<g transform="translate(1447.6,900.0) rotate(90.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Models</text></g>
-<text x="1493.6" y="900.0" text-anchor="start" font-size="13" fill="#6f827c">LLMProvider</text>
-<line x1="1463.6" y1="1133.4" x2="1133.4" y2="1463.6" stroke="#41544e" stroke-width="2.5"/>
-<g transform="translate(1287.2,1287.2) rotate(-45.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Agents</text></g>
-<text x="1319.7" y="1311.7" text-anchor="start" font-size="13" fill="#6f827c">DesignAgent · ImplementationAgent</text>
-<text x="1319.7" y="1327.7" text-anchor="start" font-size="13" fill="#6f827c">· QAAgent</text>
-<line x1="1133.4" y1="1463.6" x2="666.6" y2="1463.6" stroke="#8fa8bd" stroke-width="6"/>
-<line x1="1133.4" y1="1463.6" x2="666.6" y2="1463.6" stroke="#ffffff" stroke-width="2"/>
-<g transform="translate(900.0,1447.6) rotate(0.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Test execution</text></g>
-<text x="900.0" y="1485.6" text-anchor="middle" font-size="13" fill="#6f827c">TestAuthor · TestDataProvider</text>
-<text x="900.0" y="1501.6" text-anchor="middle" font-size="13" fill="#6f827c">· TestRunner</text>
-<line x1="666.6" y1="1463.6" x2="336.4" y2="1133.4" stroke="#41544e" stroke-width="2.5"/>
-<g transform="translate(512.8,1287.2) rotate(45.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Remote work</text></g>
-<text x="480.3" y="1319.7" text-anchor="end" font-size="13" fill="#6f827c">WorkDispatch</text>
-<line x1="336.4" y1="1133.4" x2="336.4" y2="666.6" stroke="#41544e" stroke-width="2.5"/>
-<g transform="translate(352.4,900.0) rotate(90.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Delivery</text></g>
-<text x="306.4" y="892.0" text-anchor="end" font-size="13" fill="#6f827c">SourceControl · BuildDeploy</text>
-<text x="306.4" y="908.0" text-anchor="end" font-size="13" fill="#6f827c">· TestManagement</text>
-<line x1="336.4" y1="666.6" x2="666.6" y2="336.4" stroke="#41544e" stroke-width="2.5"/>
-<g transform="translate(512.8,512.8) rotate(-45.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Evidence</text></g>
-<text x="480.3" y="480.3" text-anchor="end" font-size="13" fill="#6f827c">AuditSink</text>
+<line x1="691.4" y1="326.8" x2="1108.6" y2="326.8" stroke="#41544e" stroke-width="2.5"/>
+<g transform="translate(900.0,342.8) rotate(0.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Intake</text></g>
+<text x="900.0" y="288.8" text-anchor="middle" font-size="13" fill="#6f827c">RequirementsSource</text>
+<text x="900.0" y="304.8" text-anchor="middle" font-size="13" fill="#6f827c">· EntityResolver</text>
+<line x1="1108.6" y1="326.8" x2="1428.3" y2="595.0" stroke="#41544e" stroke-width="2.5"/>
+<g transform="translate(1258.2,473.2) rotate(40.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Code context</text></g>
+<text x="1287.7" y="421.9" text-anchor="start" font-size="13" fill="#6f827c">CodeIntelligence ·</text>
+<text x="1287.7" y="437.9" text-anchor="start" font-size="13" fill="#6f827c">CodeDesignContext</text>
+<text x="1287.7" y="453.9" text-anchor="start" font-size="13" fill="#6f827c">· ContextGraphStore</text>
+<line x1="1428.3" y1="595.0" x2="1500.7" y2="1005.9" stroke="#41544e" stroke-width="2.5"/>
+<g transform="translate(1448.7,803.2) rotate(80.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Models</text></g>
+<text x="1494.0" y="795.3" text-anchor="start" font-size="13" fill="#6f827c">LLMProvider</text>
+<line x1="1500.7" y1="1005.9" x2="1292.1" y2="1367.3" stroke="#41544e" stroke-width="2.5"/>
+<g transform="translate(1382.6,1178.6) rotate(-60.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Agents</text></g>
+<text x="1422.4" y="1193.6" text-anchor="start" font-size="13" fill="#6f827c">DesignAgent · ImplementationAgent</text>
+<text x="1422.4" y="1209.6" text-anchor="start" font-size="13" fill="#6f827c">· QAAgent</text>
+<line x1="1292.1" y1="1367.3" x2="900.0" y2="1510.0" stroke="#8fa8bd" stroke-width="6"/>
+<line x1="1292.1" y1="1367.3" x2="900.0" y2="1510.0" stroke="#ffffff" stroke-width="2"/>
+<g transform="translate(1090.6,1423.6) rotate(-20.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Test execution</text></g>
+<text x="1106.3" y="1458.8" text-anchor="start" font-size="13" fill="#6f827c">TestAuthor · TestDataProvider</text>
+<text x="1106.3" y="1474.8" text-anchor="start" font-size="13" fill="#6f827c">· TestRunner</text>
+<line x1="900.0" y1="1510.0" x2="507.9" y2="1367.3" stroke="#41544e" stroke-width="2.5"/>
+<g transform="translate(709.4,1423.6) rotate(20.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Reporting</text></g>
+<text x="693.7" y="1466.8" text-anchor="end" font-size="13" fill="#6f827c">ResultPublisher</text>
+<line x1="507.9" y1="1367.3" x2="299.3" y2="1005.9" stroke="#41544e" stroke-width="2.5"/>
+<g transform="translate(417.4,1178.6) rotate(60.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Remote work</text></g>
+<text x="377.6" y="1201.6" text-anchor="end" font-size="13" fill="#6f827c">WorkDispatch</text>
+<line x1="299.3" y1="1005.9" x2="371.7" y2="595.0" stroke="#41544e" stroke-width="2.5"/>
+<g transform="translate(351.3,803.2) rotate(-80.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Delivery</text></g>
+<text x="306.0" y="787.3" text-anchor="end" font-size="13" fill="#6f827c">SourceControl · BuildDeploy</text>
+<text x="306.0" y="803.3" text-anchor="end" font-size="13" fill="#6f827c">· TestManagement</text>
+<line x1="371.7" y1="595.0" x2="691.4" y2="326.8" stroke="#41544e" stroke-width="2.5"/>
+<g transform="translate(541.8,473.2) rotate(-40.0)"><text text-anchor="middle" font-size="22" font-weight="600" letter-spacing="0.4" fill="#12211d">Evidence</text></g>
+<text x="512.3" y="437.9" text-anchor="end" font-size="13" fill="#6f827c">AuditSink</text>
 <g transform="translate(900.0,440.0) rotate(0.0)"><text text-anchor="middle" y="4" font-size="23" font-weight="500" fill="#12211d">Requirements intake</text></g>
 <g transform="translate(1195.7,547.6) rotate(40.0)"><text text-anchor="middle" y="4" font-size="23" font-weight="500" fill="#12211d">Requirements synthesis</text></g>
 <g transform="translate(1353.0,820.1) rotate(-10.0)"><rect x="-45" y="-45" width="90" height="90" fill="#f3e7d5" stroke="#9a5a12" stroke-width="1.5"/></g>

@@ -27,6 +27,7 @@ CHIPS = {
     "TestAuthor": "in-process author · client's test agent",
     "TestDataProvider": "JSON store · database lease · fixture service",
     "TestRunner": "Playwright · Cypress · pytest",
+    "ResultPublisher": "GitHub PR comment · GitLab note · ADO thread · silent",
 }
 
 # Optional capabilities, drawn as a tab on their owner's edge.
@@ -43,12 +44,12 @@ ORDER = [
     "RequirementsSource", "EntityResolver", "CodeIntelligence",
     "CodeDesignContext", "ContextGraphStore", "LLMProvider",
     "DesignAgent", "ImplementationAgent", "QAAgent",
-    "TestAuthor", "TestDataProvider", "TestRunner",
+    "TestAuthor", "TestDataProvider", "TestRunner", "ResultPublisher",
     "WorkDispatch", "SourceControl", "TestManagement",
     "BuildDeploy", "AuditSink",
 ]
 
-EXECUTION_PLANE = {"TestAuthor", "TestDataProvider", "TestRunner"}
+EXECUTION_PLANE = {"TestAuthor", "TestDataProvider", "TestRunner", "ResultPublisher"}
 
 
 def discovered() -> dict[str, str]:
@@ -91,6 +92,7 @@ FAMILIES = [
     ("Models", ["LLMProvider"]),
     ("Agents", ["DesignAgent", "ImplementationAgent", "QAAgent"]),
     ("Test execution", ["TestAuthor", "TestDataProvider", "TestRunner"]),
+    ("Reporting", ["ResultPublisher"]),
     ("Remote work", ["WorkDispatch"]),
     ("Delivery", ["SourceControl", "BuildDeploy", "TestManagement"]),
     ("Evidence", ["AuditSink"]),
