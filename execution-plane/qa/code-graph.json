@@ -1,82 +1,608 @@
 {
-  "export_version": 2,
+  "export_version": 3,
   "project": "default",
   "routes": {
     "/": [
-      "demo-app/app/layout.tsx",
-      "demo-app/app/page.tsx"
+      "apps/web/app/app/page.tsx",
+      "apps/web/app/layout.tsx",
+      "apps/web/app/page.tsx"
     ],
-    "/api/claims": [
-      "demo-app/app/api/claims/route.ts"
+    "/admin": [
+      "apps/web/app/admin/page.tsx",
+      "apps/web/app/layout.tsx"
     ],
-    "/claims": [
-      "demo-app/app/claims/page.tsx",
-      "demo-app/app/layout.tsx"
+    "/blog": [
+      "apps/web/app/blog/layout.tsx",
+      "apps/web/app/blog/page.tsx",
+      "apps/web/app/layout.tsx"
+    ],
+    "/blog/*": [
+      "apps/web/app/blog/[slug]/page.tsx",
+      "apps/web/app/blog/layout.tsx",
+      "apps/web/app/layout.tsx"
+    ],
+    "/blog/rss.xml": [
+      "apps/web/app/blog/rss.xml/route.ts"
+    ],
+    "/blog/tag/*": [
+      "apps/web/app/blog/layout.tsx",
+      "apps/web/app/blog/tag/[tag]/page.tsx",
+      "apps/web/app/layout.tsx"
+    ],
+    "/sign-in/*": [
+      "apps/web/app/layout.tsx",
+      "apps/web/app/sign-in/[[...sign-in]]/page.tsx"
+    ],
+    "/sign-up/*": [
+      "apps/web/app/layout.tsx",
+      "apps/web/app/sign-up/[[...sign-up]]/page.tsx"
     ]
   },
   "generated": true,
-  "scope": "demo-app",
+  "scope": "apps/web",
+  "impact": {
+    "engine_version": "1.0.0",
+    "policy": {
+      "version": "default/1",
+      "max_depth": 2,
+      "min_confidence": 0.4,
+      "edges": [
+        "CALLS_ENDPOINT",
+        "IMPORTS"
+      ],
+      "include_tests": true
+    }
+  },
   "provenance": {
-    "repo": "subhachak/agentic-sdlc",
-    "commit_sha": "c6f0df2e934ffa1f51a5807cacc4fb2e7c508b20",
+    "repo": "subhachak/fronei",
+    "commit_sha": "2f8bdf17b98ff520df88bb8beb2e398664fcd2a2",
     "indexer_version": "2.0.0",
-    "indexed_at": "2026-08-24T18:26:14.284430+00:00",
+    "indexed_at": "2026-08-26T22:10:00.910074+00:00",
     "pinned": true,
-    "internal_capture_rate": 0.9915,
+    "internal_capture_rate": 0.9881,
     "most_missed": [
       [
-        "./.next/dev/types/root-params.d.ts",
+        "alembic.config",
+        3
+      ],
+      [
+        "alembic.script",
+        3
+      ],
+      [
+        "alembic.runtime.migration",
         1
       ],
       [
-        "./.next/dev/types/routes.d.ts",
+        "app.services.agent_runtime.circuit_breaker",
         1
       ],
       [
-        "./globals.css",
+        "./agent-theme.css",
         1
       ]
-    ]
+    ],
+    "units": [
+      "apps/api",
+      "apps/api/pptx_render",
+      "apps/web"
+    ],
+    "identity_version": 2
   },
   "modules": [
     {
-      "id": "demo-app",
+      "id": "apps/web",
       "paths": [
-        "demo-app/next-env.d.ts",
-        "demo-app/next.config.js",
-        "demo-app/playwright.config.ts"
+        "apps/web/next-env.d.ts",
+        "apps/web/next.config.js",
+        "apps/web/playwright.config.ts",
+        "apps/web/playwright.live.config.ts",
+        "apps/web/postcss.config.js",
+        "apps/web/proxy.ts",
+        "apps/web/tailwind.config.js",
+        "apps/web/vitest.config.ts"
       ]
     },
     {
-      "id": "demo-app/app",
+      "id": "apps/web/app",
       "paths": [
-        "demo-app/app/layout.tsx",
-        "demo-app/app/page.tsx"
+        "apps/web/app/layout.tsx",
+        "apps/web/app/page.test.tsx",
+        "apps/web/app/page.tsx",
+        "apps/web/app/robots.ts",
+        "apps/web/app/sitemap.ts",
+        "apps/web/app/types.ts"
       ]
     },
     {
-      "id": "demo-app/app/api/claims",
+      "id": "apps/web/app/admin",
       "paths": [
-        "demo-app/app/api/claims/route.ts"
+        "apps/web/app/admin/components/AdminShell.tsx",
+        "apps/web/app/admin/components/ApprovalsTab.tsx",
+        "apps/web/app/admin/components/BlogTab.tsx",
+        "apps/web/app/admin/components/EvalHarnessTab.tsx",
+        "apps/web/app/admin/components/EvalsCasesTab.tsx",
+        "apps/web/app/admin/components/EvalsRunsTab.tsx",
+        "apps/web/app/admin/components/EvalsTab.tsx",
+        "apps/web/app/admin/components/JobsTab.tsx",
+        "apps/web/app/admin/components/ModelPolicyTab.tsx",
+        "apps/web/app/admin/components/OverviewTab.tsx",
+        "apps/web/app/admin/components/PostDiff.tsx",
+        "apps/web/app/admin/components/SystemTab.tsx",
+        "apps/web/app/admin/components/UsageTab.tsx",
+        "apps/web/app/admin/components/UsersTab.tsx",
+        "apps/web/app/admin/hooks/useAdmin.ts",
+        "apps/web/app/admin/page.tsx",
+        "apps/web/app/admin/types.ts"
       ]
     },
     {
-      "id": "demo-app/app/claims",
+      "id": "apps/web/app/app",
       "paths": [
-        "demo-app/app/claims/page.tsx"
+        "apps/web/app/app/page.test.tsx",
+        "apps/web/app/app/page.tsx"
+      ]
+    },
+    {
+      "id": "apps/web/app/blog",
+      "paths": [
+        "apps/web/app/blog/DraftPreviewGate.tsx",
+        "apps/web/app/blog/PostCard.tsx",
+        "apps/web/app/blog/PostView.tsx",
+        "apps/web/app/blog/[slug]/page.tsx",
+        "apps/web/app/blog/layout.tsx",
+        "apps/web/app/blog/page.tsx",
+        "apps/web/app/blog/rss.xml/route.ts",
+        "apps/web/app/blog/tag/[tag]/page.tsx"
+      ]
+    },
+    {
+      "id": "apps/web/app/components",
+      "paths": [
+        "apps/web/app/components/AccountMenu.tsx",
+        "apps/web/app/components/AgentShell.tsx",
+        "apps/web/app/components/Composer.tsx",
+        "apps/web/app/components/ContextPanel.tsx",
+        "apps/web/app/components/FactsPanel.tsx",
+        "apps/web/app/components/InlineDeleteConfirm.tsx",
+        "apps/web/app/components/LibraryPanel.tsx",
+        "apps/web/app/components/MarkdownResult.tsx",
+        "apps/web/app/components/PausedApprovalCard.tsx",
+        "apps/web/app/components/ProfileView.tsx",
+        "apps/web/app/components/ResearchPlanCard.tsx",
+        "apps/web/app/components/Timeline.tsx",
+        "apps/web/app/components/marketing/AuthCta.tsx",
+        "apps/web/app/components/marketing/CitationDemo.tsx",
+        "apps/web/app/components/marketing/CtaFooter.tsx",
+        "apps/web/app/components/marketing/DomainsGrid.tsx",
+        "apps/web/app/components/marketing/FlagshipWorkflow.tsx",
+        "apps/web/app/components/marketing/Hero.tsx",
+        "apps/web/app/components/marketing/HowItWorks.tsx",
+        "apps/web/app/components/marketing/MarketingNav.tsx",
+        "apps/web/app/components/marketing/SecurityGovernance.tsx",
+        "apps/web/app/components/marketing/WhatItCatches.tsx",
+        "apps/web/app/components/ui/Button.tsx",
+        "apps/web/app/components/ui/Card.tsx",
+        "apps/web/app/components/ui/CopyButton.tsx",
+        "apps/web/app/components/ui/Field.tsx",
+        "apps/web/app/components/ui/MessageActions.tsx",
+        "apps/web/app/components/ui/Modal.tsx",
+        "apps/web/app/components/ui/Sheet.tsx"
+      ]
+    },
+    {
+      "id": "apps/web/app/hooks",
+      "paths": [
+        "apps/web/app/hooks/useAgent.ts",
+        "apps/web/app/hooks/useAttachment.ts",
+        "apps/web/app/hooks/useFacts.ts",
+        "apps/web/app/hooks/useProfile.ts",
+        "apps/web/app/hooks/useProfileSettings.ts",
+        "apps/web/app/hooks/useTemplates.ts",
+        "apps/web/app/hooks/useTheme.ts",
+        "apps/web/app/hooks/useTurnRunner.test.tsx",
+        "apps/web/app/hooks/useTurnRunner.ts",
+        "apps/web/app/hooks/useWorkspaces.test.tsx",
+        "apps/web/app/hooks/useWorkspaces.ts"
+      ]
+    },
+    {
+      "id": "apps/web/app/lib",
+      "paths": [
+        "apps/web/app/lib/api.ts",
+        "apps/web/app/lib/auth.ts",
+        "apps/web/app/lib/blog.ts",
+        "apps/web/app/lib/brand.ts",
+        "apps/web/app/lib/cn.ts",
+        "apps/web/app/lib/commentary.test.ts",
+        "apps/web/app/lib/commentary.ts",
+        "apps/web/app/lib/e2e.ts",
+        "apps/web/app/lib/format.test.ts",
+        "apps/web/app/lib/format.ts",
+        "apps/web/app/lib/mappers.ts",
+        "apps/web/app/lib/sse.test.ts",
+        "apps/web/app/lib/sse.ts"
+      ]
+    },
+    {
+      "id": "apps/web/app/sign-in",
+      "paths": [
+        "apps/web/app/sign-in/[[...sign-in]]/page.tsx"
+      ]
+    },
+    {
+      "id": "apps/web/app/sign-up",
+      "paths": [
+        "apps/web/app/sign-up/[[...sign-up]]/page.tsx"
+      ]
+    },
+    {
+      "id": "apps/web/e2e",
+      "paths": [
+        "apps/web/e2e/admin.spec.ts",
+        "apps/web/e2e/agent.spec.ts",
+        "apps/web/e2e/api-mocks.ts"
+      ]
+    },
+    {
+      "id": "apps/web/e2e-live",
+      "paths": [
+        "apps/web/e2e-live/manual-real-eval.spec.ts",
+        "apps/web/e2e-live/smoke-live.spec.ts"
+      ]
+    },
+    {
+      "id": "apps/web/scripts",
+      "paths": [
+        "apps/web/scripts/check-e2e-guard.ts",
+        "apps/web/scripts/gen-icons.mjs",
+        "apps/web/scripts/save-live-auth-from-cdp.ts"
       ]
     }
   ],
   "depends_on": [
     {
-      "from": "demo-app/app/claims",
-      "to": "demo-app/app/api/claims",
+      "from": "apps/web",
+      "to": "apps/web/app/lib",
+      "weight": 1
+    },
+    {
+      "from": "apps/web/app",
+      "to": "apps/web/app/components",
+      "weight": 9
+    },
+    {
+      "from": "apps/web/app",
+      "to": "apps/web/app/lib",
+      "weight": 3
+    },
+    {
+      "from": "apps/web/app/admin",
+      "to": "apps/web/app/components",
+      "weight": 1
+    },
+    {
+      "from": "apps/web/app/admin",
+      "to": "apps/web/app/hooks",
+      "weight": 1
+    },
+    {
+      "from": "apps/web/app/admin",
+      "to": "apps/web/app/lib",
+      "weight": 19
+    },
+    {
+      "from": "apps/web/app/app",
+      "to": "apps/web/app/components",
+      "weight": 1
+    },
+    {
+      "from": "apps/web/app/blog",
+      "to": "apps/web/app/components",
+      "weight": 3
+    },
+    {
+      "from": "apps/web/app/blog",
+      "to": "apps/web/app/lib",
+      "weight": 6
+    },
+    {
+      "from": "apps/web/app/components",
+      "to": "apps/web/app/admin",
+      "weight": 1
+    },
+    {
+      "from": "apps/web/app/components",
+      "to": "apps/web/app/hooks",
+      "weight": 4
+    },
+    {
+      "from": "apps/web/app/components",
+      "to": "apps/web/app/lib",
+      "weight": 21
+    },
+    {
+      "from": "apps/web/app/hooks",
+      "to": "apps/web/app/lib",
+      "weight": 15
+    },
+    {
+      "from": "apps/web/app/lib",
+      "to": "apps/web/app/blog",
       "weight": 1
     }
   ],
   "file_dependents": {
-    "demo-app/app/api/claims/route.ts": [
-      "demo-app/app/claims/page.tsx"
+    "apps/web/app/admin/components/AdminShell.tsx": [
+      "apps/web/app/admin/page.tsx",
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/admin/components/ApprovalsTab.tsx": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/components/BlogTab.tsx": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/components/EvalHarnessTab.tsx": [
+      "apps/web/app/admin/components/EvalsTab.tsx"
+    ],
+    "apps/web/app/admin/components/EvalsTab.tsx": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/components/JobsTab.tsx": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/components/ModelPolicyTab.tsx": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/components/OverviewTab.tsx": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/components/PostDiff.tsx": [
+      "apps/web/app/admin/components/BlogTab.tsx"
+    ],
+    "apps/web/app/admin/components/SystemTab.tsx": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/components/UsageTab.tsx": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/components/UsersTab.tsx": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/hooks/useAdmin.ts": [
+      "apps/web/app/admin/components/AdminShell.tsx"
+    ],
+    "apps/web/app/admin/types.ts": [
+      "apps/web/app/admin/components/EvalsRunsTab.tsx"
+    ],
+    "apps/web/app/blog/DraftPreviewGate.tsx": [
+      "apps/web/app/blog/[slug]/page.tsx"
+    ],
+    "apps/web/app/blog/PostCard.tsx": [
+      "apps/web/app/blog/page.tsx",
+      "apps/web/app/blog/tag/[tag]/page.tsx"
+    ],
+    "apps/web/app/blog/PostView.tsx": [
+      "apps/web/app/blog/DraftPreviewGate.tsx",
+      "apps/web/app/blog/[slug]/page.tsx"
+    ],
+    "apps/web/app/blog/rss.xml/route.ts": [
+      "apps/web/app/lib/blog.ts"
+    ],
+    "apps/web/app/components/AccountMenu.tsx": [
+      "apps/web/app/components/LibraryPanel.tsx"
+    ],
+    "apps/web/app/components/AgentShell.tsx": [
+      "apps/web/app/app/page.tsx"
+    ],
+    "apps/web/app/components/Composer.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/components/ContextPanel.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/components/FactsPanel.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/components/InlineDeleteConfirm.tsx": [
+      "apps/web/app/components/LibraryPanel.tsx"
+    ],
+    "apps/web/app/components/LibraryPanel.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/components/MarkdownResult.tsx": [
+      "apps/web/app/admin/components/BlogTab.tsx",
+      "apps/web/app/blog/PostView.tsx",
+      "apps/web/app/components/Timeline.tsx"
+    ],
+    "apps/web/app/components/PausedApprovalCard.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/components/ProfileView.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/components/ResearchPlanCard.tsx": [
+      "apps/web/app/components/Timeline.tsx"
+    ],
+    "apps/web/app/components/Timeline.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/components/marketing/AuthCta.tsx": [
+      "apps/web/app/components/marketing/CtaFooter.tsx",
+      "apps/web/app/components/marketing/Hero.tsx",
+      "apps/web/app/components/marketing/MarketingNav.tsx"
+    ],
+    "apps/web/app/components/marketing/CitationDemo.tsx": [
+      "apps/web/app/page.tsx"
+    ],
+    "apps/web/app/components/marketing/CtaFooter.tsx": [
+      "apps/web/app/blog/layout.tsx",
+      "apps/web/app/page.tsx"
+    ],
+    "apps/web/app/components/marketing/DomainsGrid.tsx": [
+      "apps/web/app/page.tsx"
+    ],
+    "apps/web/app/components/marketing/FlagshipWorkflow.tsx": [
+      "apps/web/app/page.tsx"
+    ],
+    "apps/web/app/components/marketing/Hero.tsx": [
+      "apps/web/app/page.tsx"
+    ],
+    "apps/web/app/components/marketing/HowItWorks.tsx": [
+      "apps/web/app/page.tsx"
+    ],
+    "apps/web/app/components/marketing/MarketingNav.tsx": [
+      "apps/web/app/blog/layout.tsx",
+      "apps/web/app/page.tsx"
+    ],
+    "apps/web/app/components/marketing/SecurityGovernance.tsx": [
+      "apps/web/app/page.tsx"
+    ],
+    "apps/web/app/components/marketing/WhatItCatches.tsx": [
+      "apps/web/app/page.tsx"
+    ],
+    "apps/web/app/components/ui/Button.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/components/ui/Card.tsx": [
+      "apps/web/app/components/AgentShell.tsx",
+      "apps/web/app/components/ProfileView.tsx"
+    ],
+    "apps/web/app/components/ui/CopyButton.tsx": [
+      "apps/web/app/components/AgentShell.tsx",
+      "apps/web/app/components/ContextPanel.tsx",
+      "apps/web/app/components/Timeline.tsx"
+    ],
+    "apps/web/app/components/ui/Field.tsx": [
+      "apps/web/app/components/Composer.tsx",
+      "apps/web/app/components/LibraryPanel.tsx",
+      "apps/web/app/components/ProfileView.tsx"
+    ],
+    "apps/web/app/components/ui/MessageActions.tsx": [
+      "apps/web/app/components/Timeline.tsx"
+    ],
+    "apps/web/app/components/ui/Modal.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/components/ui/Sheet.tsx": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/hooks/useAgent.ts": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/hooks/useAttachment.ts": [
+      "apps/web/app/hooks/useAgent.ts"
+    ],
+    "apps/web/app/hooks/useFacts.ts": [
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/hooks/useProfile.ts": [
+      "apps/web/app/components/ProfileView.tsx"
+    ],
+    "apps/web/app/hooks/useProfileSettings.ts": [
+      "apps/web/app/hooks/useAgent.ts"
+    ],
+    "apps/web/app/hooks/useTemplates.ts": [
+      "apps/web/app/hooks/useAgent.ts"
+    ],
+    "apps/web/app/hooks/useTheme.ts": [
+      "apps/web/app/admin/components/AdminShell.tsx",
+      "apps/web/app/components/AgentShell.tsx"
+    ],
+    "apps/web/app/hooks/useTurnRunner.ts": [
+      "apps/web/app/hooks/useAgent.ts"
+    ],
+    "apps/web/app/hooks/useWorkspaces.ts": [
+      "apps/web/app/hooks/useAgent.ts"
+    ],
+    "apps/web/app/lib/api.ts": [
+      "apps/web/app/admin/components/ApprovalsTab.tsx",
+      "apps/web/app/admin/components/BlogTab.tsx",
+      "apps/web/app/admin/components/EvalHarnessTab.tsx",
+      "apps/web/app/admin/components/EvalsCasesTab.tsx",
+      "apps/web/app/admin/components/EvalsRunsTab.tsx",
+      "apps/web/app/admin/components/JobsTab.tsx",
+      "apps/web/app/admin/components/ModelPolicyTab.tsx",
+      "apps/web/app/admin/components/OverviewTab.tsx",
+      "apps/web/app/admin/components/SystemTab.tsx",
+      "apps/web/app/admin/components/UsageTab.tsx",
+      "apps/web/app/admin/components/UsersTab.tsx",
+      "apps/web/app/admin/hooks/useAdmin.ts",
+      "apps/web/app/blog/DraftPreviewGate.tsx",
+      "apps/web/app/components/PausedApprovalCard.tsx",
+      "apps/web/app/hooks/useAgent.ts",
+      "apps/web/app/hooks/useAttachment.ts",
+      "apps/web/app/hooks/useFacts.ts",
+      "apps/web/app/hooks/useProfile.ts",
+      "apps/web/app/hooks/useProfileSettings.ts",
+      "apps/web/app/hooks/useTemplates.ts",
+      "apps/web/app/hooks/useTurnRunner.ts",
+      "apps/web/app/hooks/useWorkspaces.ts"
+    ],
+    "apps/web/app/lib/auth.ts": [
+      "apps/web/app/admin/hooks/useAdmin.ts",
+      "apps/web/app/blog/DraftPreviewGate.tsx",
+      "apps/web/app/components/marketing/AuthCta.tsx",
+      "apps/web/app/hooks/useAgent.ts",
+      "apps/web/app/hooks/useProfile.ts"
+    ],
+    "apps/web/app/lib/blog.ts": [
+      "apps/web/app/blog/[slug]/page.tsx",
+      "apps/web/app/blog/page.tsx",
+      "apps/web/app/blog/rss.xml/route.ts",
+      "apps/web/app/blog/tag/[tag]/page.tsx",
+      "apps/web/app/sitemap.ts"
+    ],
+    "apps/web/app/lib/brand.ts": [
+      "apps/web/app/components/AgentShell.tsx",
+      "apps/web/app/components/LibraryPanel.tsx",
+      "apps/web/app/components/marketing/MarketingNav.tsx",
+      "apps/web/app/layout.tsx"
+    ],
+    "apps/web/app/lib/cn.ts": [
+      "apps/web/app/components/marketing/AuthCta.tsx",
+      "apps/web/app/components/marketing/CitationDemo.tsx",
+      "apps/web/app/components/ui/Button.tsx",
+      "apps/web/app/components/ui/Card.tsx",
+      "apps/web/app/components/ui/CopyButton.tsx",
+      "apps/web/app/components/ui/Field.tsx",
+      "apps/web/app/components/ui/MessageActions.tsx",
+      "apps/web/app/components/ui/Sheet.tsx"
+    ],
+    "apps/web/app/lib/commentary.ts": [
+      "apps/web/app/components/AgentShell.tsx",
+      "apps/web/app/components/ContextPanel.tsx",
+      "apps/web/app/components/Timeline.tsx"
+    ],
+    "apps/web/app/lib/e2e.ts": [
+      "apps/web/app/components/AccountMenu.tsx",
+      "apps/web/app/layout.tsx",
+      "apps/web/app/lib/auth.ts",
+      "apps/web/proxy.ts"
+    ],
+    "apps/web/app/lib/format.ts": [
+      "apps/web/app/admin/components/ApprovalsTab.tsx",
+      "apps/web/app/admin/components/BlogTab.tsx",
+      "apps/web/app/admin/components/EvalHarnessTab.tsx",
+      "apps/web/app/admin/components/EvalsRunsTab.tsx",
+      "apps/web/app/admin/components/JobsTab.tsx",
+      "apps/web/app/admin/components/UsersTab.tsx",
+      "apps/web/app/components/AgentShell.tsx",
+      "apps/web/app/components/LibraryPanel.tsx",
+      "apps/web/app/components/ProfileView.tsx",
+      "apps/web/app/components/Timeline.tsx",
+      "apps/web/app/hooks/useAgent.ts",
+      "apps/web/app/hooks/useTurnRunner.ts",
+      "apps/web/app/hooks/useWorkspaces.ts",
+      "apps/web/app/lib/commentary.ts",
+      "apps/web/app/lib/mappers.ts"
+    ],
+    "apps/web/app/lib/mappers.ts": [
+      "apps/web/app/hooks/useWorkspaces.ts"
+    ],
+    "apps/web/app/lib/sse.ts": [
+      "apps/web/app/hooks/useTurnRunner.ts"
     ]
   }
 }

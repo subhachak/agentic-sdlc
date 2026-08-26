@@ -21,11 +21,21 @@ REPO_ROOT = QA_ROOT.parents[1]
 # and then tests whatever happens to be on disk — which is the old code.
 APP_ROOT = Path(os.environ.get("QA_APP_ROOT") or (REPO_ROOT / "demo-app"))
 
-LIBRARY_DIR = QA_ROOT / "test-scripts"
+# The regression library, and the criteria a plan may claim to cover.
+#
+# Overridable, like APP_ROOT above. These were fixed relative to the QA
+# plane, so the pipeline could be pointed at another application's *code*
+# and would still read demo-app's acceptance criteria and demo-app's
+# scripts — testing one app against another app's expectations, which is
+# worse than refusing.
+#
+# A client's regression suite is their own and lives in their repository;
+# a client's criteria come from their tracker. Neither belongs here.
+LIBRARY_DIR = Path(os.environ.get("QA_SCRIPT_LIBRARY") or (QA_ROOT / "test-scripts"))
 # The library's index. `covered_by` in the code graph is resolved against
 # it, so a module cannot claim coverage from a script that does not exist.
-MANIFEST_FILE = LIBRARY_DIR / "manifest.json"
-FEATURES_FILE = QA_ROOT / "features.yaml"
+MANIFEST_FILE = Path(os.environ.get("QA_SCRIPT_MANIFEST") or (LIBRARY_DIR / "manifest.json"))
+FEATURES_FILE = Path(os.environ.get("QA_FEATURES") or (QA_ROOT / "features.yaml"))
 # Seeded code-intelligence graph. Derived from the repository in production,
 # where the control plane writes it here on every sync.
 #
@@ -36,8 +46,18 @@ FEATURES_FILE = QA_ROOT / "features.yaml"
 # failure pointing at the cause.
 CODE_GRAPH_FILE = Path(os.environ.get("QA_CODE_GRAPH") or (QA_ROOT / "code-graph.json"))
 
-GENERATED_DIR = APP_ROOT / "generated-tests"
-DATA_STORE = APP_ROOT / "lib" / "data-store.json"
+# Where authored specs are written. Inside the app under test, because Node
+# resolves imports by walking up from the spec file — a spec outside it
+# cannot see the app's node_modules. Overridable for a repository whose
+# tests live somewhere other than a sibling of the source.
+GENERATED_DIR = Path(os.environ.get("QA_GENERATED_DIR") or (APP_ROOT / "generated-tests"))
+
+# The JSON store the shipped TestDataProvider reads. Overridable, and
+# meaningless for a provider that does not use one — an application whose
+# tests mock at the network boundary has no store to seed or restore, and
+# pointing this at a file that does not exist is the honest configuration
+# rather than an error.
+DATA_STORE = Path(os.environ.get("QA_DATA_STORE") or (APP_ROOT / "lib" / "data-store.json"))
 
 # Evidence belongs to the checkout that produced it. Deriving this from the
 # repository root instead meant a run against a branch wrote its results
