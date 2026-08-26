@@ -223,12 +223,33 @@ def build_code_design_context(
 
 
 def build_requirements_source(settings: Settings) -> RequirementsSource:
-    """Where work arrives from.
+    """Where work arrives from."""
+    if settings.requirements_source_adapter == "jira":
+        missing = [
+            name
+            for name, value in (
+                ("JIRA_BASE_URL", settings.jira_base_url),
+                ("JIRA_EMAIL", settings.jira_email),
+                ("JIRA_API_TOKEN", settings.jira_api_token),
+            )
+            if not value
+        ]
+        if missing:
+            # Refused at construction, which is what the console's preflight
+            # turns into "this needs a token" while someone is choosing,
+            # rather than a run failing at the intake phase.
+            raise ValueError(
+                "requirements_source_adapter=jira needs " + ", ".join(missing)
+            )
+        from app.adapters.requirements_source.jira import JiraRequirementsSource
 
-    One implementation today. The branch exists so a Jira or Azure DevOps
-    connector is a new arm here and a configuration value, not a change to
-    build_adapters and a fork of the platform.
-    """
+        return JiraRequirementsSource(
+            base_url=settings.jira_base_url or "",
+            email=settings.jira_email or "",
+            api_token=settings.jira_api_token or "",
+            default_query=settings.jira_query,
+        )
+
     from app.adapters.requirements_source.plain_text_csv import (
         PlainTextCSVRequirementsSource,
     )

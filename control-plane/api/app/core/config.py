@@ -45,7 +45,16 @@ class Settings(BaseSettings):
     # class build_adapters happened to import. A client bringing Jira for
     # requirements or ServiceNow for test cases had to edit that function,
     # which is the fork the ports exist to prevent.
-    requirements_source_adapter: Literal["csv"] = "csv"
+    requirements_source_adapter: Literal["csv", "jira"] = "csv"
+    # Jira Cloud. Read-only: the platform never writes to the client's
+    # tracker as a side effect of a run.
+    jira_base_url: str | None = None
+    jira_email: str | None = None
+    jira_api_token: str | None = None
+    # A JQL filter used when a run names no issue. The client's own query
+    # language, passed through rather than modelled — every tracker has one
+    # and no two agree.
+    jira_query: str = ""
     test_management_adapter: Literal["json-file"] = "json-file"
     build_deploy_adapter: Literal["noop"] = "noop"
     audit_sink_adapter: Literal["sqlite"] = "sqlite"

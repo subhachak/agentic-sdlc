@@ -43,6 +43,9 @@ CREDENTIALS = dict(
     github_token="ghp_test",
     github_repo="acme/thing",
     target_repo="acme/thing",
+    jira_base_url="https://acme.atlassian.net",
+    jira_email="bot@acme.example",
+    jira_api_token="jira-test",
 )
 
 SELECTORS = {
@@ -57,6 +60,7 @@ NEEDS_CREDENTIALS = {
     ("work_dispatch_adapter", "github-actions"),
     ("implementation_agent", "github-copilot"),
     ("source_control_adapter", "github"),
+    ("requirements_source_adapter", "jira"),
 }
 
 
