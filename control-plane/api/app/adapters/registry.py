@@ -40,6 +40,7 @@ class Adapters:
     source_control: SourceControl
     # None when the platform writes the change itself.
     implementation_dispatch: WorkDispatch | None
+    implementation_agent: Any
 
 
 def _require_directory(path: str | None, selection: str, setting: str) -> None:
@@ -282,6 +283,36 @@ def build_audit_sink(settings: Settings) -> AuditSink:
     return SqliteAuditSink()
 
 
+def build_implementation_agent(settings: Settings) -> Any:
+    """Who writes the change.
+
+    A typed façade over the dispatch seam rather than a second one: the
+    dispatched arm hands its inputs back to the phase, which owns the row.
+    `inline` writes in-process and is reviewed before anything is written
+    anywhere.
+    """
+    if settings.implementation_agent == "inline":
+        from app.adapters.implementation_agent.inline import InlineImplementationAgent
+        from app.agents.implementation import SYSTEM as IMPLEMENTATION_SYSTEM
+        from app.agents.implementation import Implementation, build_prompt
+
+        return InlineImplementationAgent(
+            llm_provider=build_llm_provider(settings),
+            system_prompt=IMPLEMENTATION_SYSTEM,
+            schema=Implementation,
+            build_prompt=build_prompt,
+        )
+
+    from app.adapters.implementation_agent.dispatched import (
+        DispatchedImplementationAgent,
+    )
+
+    return DispatchedImplementationAgent(
+        provider=settings.implementation_agent,
+        dispatch=build_implementation_dispatch(settings),
+    )
+
+
 def build_design_agent(settings: Settings) -> Any:
     """Who proposes the design.
 
@@ -319,6 +350,7 @@ def build_adapters(settings: Settings, graph: Any = None) -> Adapters:
         code_intelligence=build_code_intelligence(settings),
         source_control=source_control,
         implementation_dispatch=build_implementation_dispatch(settings),
+        implementation_agent=build_implementation_agent(settings),
         requirements_source=build_requirements_source(settings),
         code_design_context=build_code_design_context(settings, graph, source_control),
         test_management=build_test_management(settings),

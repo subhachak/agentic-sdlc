@@ -107,6 +107,18 @@ async def check_agent(request: Request) -> dict:
             "detail": "this platform writes the change itself; there is nothing to reach",
         }
 
+    # Through the port's declared capability rather than by probing the
+    # dispatch adapter. check_access used to be found with getattr on
+    # whatever WorkDispatch happened to be bound — a capability nothing
+    # declared, which is exactly the unwritten convention the optional
+    # capability list exists to replace.
+    agent = getattr(request.app.state.adapters, "implementation_agent", None)
+    if agent is not None and hasattr(agent, "check_access"):
+        try:
+            return {"agent": settings.implementation_agent, **await agent.check_access()}
+        except Exception as exc:  # noqa: BLE001 - the answer is that it did not work
+            return {"ok": False, "agent": settings.implementation_agent, "detail": str(exc)}
+
     dispatcher = request.app.state.adapters.implementation_dispatch
     if dispatcher is None:
         return {

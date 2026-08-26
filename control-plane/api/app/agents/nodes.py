@@ -19,8 +19,10 @@ from app.ports.design_agent import (
     DesignProposal,
     DesignRequest,
 )
-from app.agents.implementation import SYSTEM as IMPLEMENTATION_SYSTEM
-from app.agents.implementation import Implementation, build_prompt
+from app.ports.implementation_agent import (
+    ImplementationRequest,
+    ImplementationResult,
+)
 from app.core.change_review import review as review_change
 from app.core.design_review import MAX_FILES as MAX_DESIGN_FILES
 from app.core.seeding import refresh as refresh_index
@@ -97,6 +99,7 @@ def build_nodes(
     # Defaults to this platform's own agent. A client substitutes one here
     # rather than forking the phase.
     design_agent: DesignAgent | None = None,
+    implementation_agent_port: Any = None,
     design_dispatch: WorkDispatch | None = None,
     dispatch_timeout_seconds: int = 1800,
     dispatch_provider: str = "local",
@@ -111,6 +114,34 @@ def build_nodes(
         from app.adapters.design_agent.inline import InlineDesignAgent
 
         design_agent = InlineDesignAgent(llm_provider)
+
+    if implementation_agent_port is None:
+        # Follows the configured agent, not a fixed default. The two arms
+        # are different adapters: the inline one writes edits and is
+        # reviewed before anything exists, the dispatched one interprets a
+        # payload the reconciler brings back. Defaulting to inline while the
+        # phase runs the dispatched arm meant read_result raised.
+        if implementation_agent == "inline":
+            from app.adapters.implementation_agent.inline import (
+                InlineImplementationAgent,
+            )
+            from app.agents.implementation import SYSTEM as IMPLEMENTATION_SYSTEM
+            from app.agents.implementation import Implementation, build_prompt
+
+            implementation_agent_port = InlineImplementationAgent(
+                llm_provider=llm_provider,
+                system_prompt=IMPLEMENTATION_SYSTEM,
+                schema=Implementation,
+                build_prompt=build_prompt,
+            )
+        else:
+            from app.adapters.implementation_agent.dispatched import (
+                DispatchedImplementationAgent,
+            )
+
+            implementation_agent_port = DispatchedImplementationAgent(
+                provider=implementation_agent, dispatch=implementation_dispatch
+            )
 
     def business(name: str, fallback: dict[str, Any]):
         def decorator(fn: NodeFn) -> NodeFn:
@@ -366,17 +397,25 @@ def build_nodes(
             else {}
         )
 
-        proposal = await llm_provider.complete_json(
-            IMPLEMENTATION_SYSTEM,
-            build_prompt(
+        project = state.get("project") or DEFAULT_PROJECT
+        outcome = await implementation_agent_port.implement(
+            ImplementationRequest(
+                run_id=state["run_id"],
+                project=project,
                 requirement=state.get("raw_input", {}).get("text", ""),
-                design=design,
-                criteria=await context_graph.criteria(state.get("project") or DEFAULT_PROJECT),
-                files=files,
+                design_summary=design.get("summary", ""),
+                allowed_files=candidate_paths,
+                sources=files,
                 allowed_modules=allowed,
-            ),
-            Implementation,
+                criteria=await context_graph.criteria(project),
+                repo=target_repo,
+                base_ref=target_ref,
+            )
         )
+        # An inline agent never parks. Branching on the state rather than on
+        # which agent is configured is what stops this phase growing an arm
+        # per client.
+        proposal = outcome.result or ImplementationResult()
 
         if proposal.blocked:
             return {
@@ -384,7 +423,7 @@ def build_nodes(
                 "status": "implementation_blocked",
             }
 
-        edits = [e.model_dump() for e in proposal.edits]
+        edits = [{"path": e.path, "content": e.content} for e in proposal.edits]
         known = await context_graph.module_paths(state.get("project") or DEFAULT_PROJECT)
         verdict = review_change(edits, allowed_modules=allowed, known_modules=known)
 
@@ -421,11 +460,31 @@ def build_nodes(
         mechanism is what makes a two-hour agent run survive a restart.
         """
         run_id = state["run_id"]
+        project = state.get("project") or DEFAULT_PROJECT
         task = build_task(
             requirement=(state.get("raw_input") or {}).get("text", ""),
             design=design,
-            criteria=await context_graph.criteria(state.get("project") or DEFAULT_PROJECT),
+            criteria=await context_graph.criteria(project),
             run_id=run_id,
+        )
+
+        # Through the port. What the agent is given is now a typed request
+        # rather than three keys in a dict, and the inputs the dispatch is
+        # started with come from the adapter that knows the agent — not from
+        # this phase guessing at them.
+        outcome = await implementation_agent_port.implement(
+            ImplementationRequest(
+                run_id=run_id,
+                project=project,
+                requirement=(state.get("raw_input") or {}).get("text", ""),
+                brief=task,
+                design_summary=design.get("summary", ""),
+                allowed_files=allowed,
+                allowed_modules=allowed,
+                criteria=await context_graph.criteria(project),
+                repo=target_repo,
+                base_ref=target_ref,
+            )
         )
 
         claimed = await dispatch_store.claim(
@@ -437,7 +496,8 @@ def build_nodes(
                     run_id,
                     "implementation",
                     claimed.correlation_id,
-                    {"prompt": task, "base_ref": target_ref, "repo": target_repo},
+                    outcome.dispatch_inputs
+                    or {"prompt": task, "base_ref": target_ref, "repo": target_repo},
                 )
                 await dispatch_store.attach_external(
                     claimed.id, handle.external_id, handle.external_url
@@ -464,9 +524,13 @@ def build_nodes(
                 "status": "implementation_failed",
             }
 
-        payload = result.get("payload") or {}
-        head_ref = payload.get("head_ref") or ""
-        base_ref = payload.get("base_ref") or target_ref
+        # Interpreted by the adapter that knows the provider, rather than
+        # by untyped key reads here. read_result is the reconciler-safe half
+        # of the port: a two-hour agent run is resumed after a restart with
+        # nothing but this payload.
+        finished = implementation_agent_port.read_result(result.get("payload") or {})
+        head_ref = finished.head_ref
+        base_ref = finished.base_ref or target_ref
         if not head_ref:
             return {
                 "implementation": {
@@ -499,7 +563,7 @@ def build_nodes(
                 "implementation": {
                     "agent": implementation_agent,
                     "branch": head_ref,
-                    "url": payload.get("external_url"),
+                    "url": finished.url or None,
                     "files": [e["path"] for e in edits],
                     "rejected": verdict.reasons,
                     # Said explicitly because it is the difference between the
@@ -516,10 +580,10 @@ def build_nodes(
         change = ChangeRef(
             provider=implementation_agent,
             branch=head_ref,
-            commit=payload.get("head_sha"),
-            base_commit=payload.get("base_sha"),
-            url=payload.get("external_url"),
-            number=payload.get("pull_request_id"),
+            commit=finished.head_sha or None,
+            base_commit=finished.base_sha or None,
+            url=finished.url or None,
+            number=finished.pull_request_id or None,
             files=[e["path"] for e in edits],
         )
         return _accepted(state, design.get("summary", ""), change, verdict.modules)

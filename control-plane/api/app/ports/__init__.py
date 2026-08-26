@@ -9,4 +9,6 @@
 # perfectly good adapter: an indexer pointed at one repository has no
 # catalogue to list, and a deployment platform with no rollback primitive
 # would have to lie or raise if the method were mandatory.
-OPTIONAL_CAPABILITIES = frozenset({"RepositoryCatalogue", "RollbackCapable"})
+OPTIONAL_CAPABILITIES = frozenset(
+    {"RepositoryCatalogue", "RollbackCapable", "AccessCheckable"}
+)
