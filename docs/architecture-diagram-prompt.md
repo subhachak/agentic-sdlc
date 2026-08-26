@@ -1,194 +1,233 @@
-# Prompt: agentic SDLC framework — layered reference architecture
+# Prompt: agentic SDLC — governed delivery reference architecture
 
-Generated from the codebase; all 17 ports are present
-and each appears once. Copy everything below the horizontal rule.
+Generated from the codebase. All 17 ports appear
+exactly once, allocated to the side of the kernel they actually sit on.
+Copy everything below the horizontal rule.
 
 ---
 
 You are a principal enterprise architect producing the reference diagram for
-a governed agentic software delivery platform. The audience is executive
-leadership and an architecture review board. Produce **one** diagram.
-Structural accuracy matters more than decoration.
+a governed agentic software delivery platform, for executive leadership and
+an architecture review board. Produce **one** diagram, landscape, roughly
+2000×1150.
 
-## The single idea the diagram must carry
+## Title block
 
-Agents propose and perform delivery work. **Deterministic code decides what
-is admissible.** People authorise every consequential transition. Everything
-the platform touches on the outside is a replaceable seam; the part that
-decides is fixed and is not replaceable.
+Centred at the top:
 
-Read the figure top to bottom as four stacked bands:
+> **Agentic SDLC — Governed AI Software Delivery**
+> context before autonomy · deterministic authority · evidence before release
 
-> what happens → what decides → what it stands on → what it plugs into
+## Overall composition
 
-## Layout
+A **left-to-right flow of seven columns**, with two full-width bands beneath
+them. Every label horizontal. No circles, no polygons, no radial text.
 
-Landscape, roughly 1920×1200. Four full-width horizontal bands, stacked,
-with clear separation. No circles, no polygons, no radial text — every label
-horizontal.
+```
+enterprise      inbound      INBOUND    ┌──────────────┐   OUTBOUND    outbound     client
+systems    →    adapters  →  PORTS   →  │  PLATFORM    │ →  PORTS   →  adapters  →  targets
+of record       (BYO)                   │  (kernel)    │                (BYO)
+                                        └──────────────┘
+                     ── client execution trust boundary ──
+                     ── zero trust and platform controls ──
+```
 
----
-
-### Band 1 (top) — THE DELIVERY LIFECYCLE
-
-A single left-to-right flow of nine stages with arrows between them:
-
-Requirements intake → Requirements synthesis → **Gate 1** → Design → **Gate 2** → Implementation → QA execution → **Gate 3** → Release
-
-The three **Gate** stages are human approvals: draw them visually distinct
-from the six phases — a different shape (narrow vertical bar or diamond) and
-a separate colour. Label the band once, small: *"a person authorises every
-consequential transition"*.
-
-Add a thin return arrow from Release back to Requirements intake beneath the
-row, so the lifecycle reads as a cycle rather than a one-way pipe.
+The platform box is the visual centre of gravity: largest, most solid,
+clearly bounded. Everything to its left and right is replaceable; nothing
+inside it is.
 
 ---
 
-### Band 2 — THE DETERMINISTIC CORE
+## Column 1 — ENTERPRISE SYSTEMS OF RECORD
 
-A wide slab directly beneath the lifecycle, visually the most solid element
-on the page. Label it **"the deterministic core — not replaceable"**.
+Small tiles, the client's existing estate. The platform does not replace
+these:
 
-Inside it, nine components as a row or two rows of tiles:
+- Requirements · Jira
+- SCM and architecture repositories
+- Source code · build graphs
+- CMDB · catalogues · documents
+- Enterprise identity
+- Events · observability · ITSM
 
-- **Impact Engine** — one assessment: paths, confidence, test obligations, blind spots
-- **Design review** — a change may touch only what the design named
-- **Change review** — what the agent actually did, checked against it
-- **Release gate** — required regressions must have run and passed
-- **Coverage & evidence** — a criterion is verified only by an observed run
-- **Coherence checks** — configurations that build and cannot work
-- **Snapshot & export** — the versioned projection the execution plane reads
-- **Reconciler** — pulls results for work running elsewhere
-- **Audit trail** — every decision, with its inputs
+## Columns 2 + 3 — INBOUND ADAPTERS, AND THE PORTS THEY IMPLEMENT
 
-Make **Impact Engine** noticeably larger than the rest and place it first or
-centre. It is the one thing every phase consumes. Give it a short caption:
-*"one canonical assessment — every phase consumes the same one"*.
+Column 2 holds **BYO adapters** (label the column *"BYO source adapters —
+platform default, client-built or partner"*). Column 3 holds the
+**platform-owned port contracts** they implement. Draw an arrow from each
+adapter to its port.
 
-Draw short arrows from Band 1 down into this slab, showing that the
-lifecycle asks the core rather than deciding for itself.
+| Port (column 3) | Adapter (column 2) | Example implementations |
+|---|---|---|
+| `RequirementsSource` | Requirements adapter | Jira · Azure DevOps · Confluence · CSV |
+| `EntityResolver` | Identity adapter | per-system identifier mapping |
+| `CodeIntelligence` | Code intelligence adapter | GitHub AST indexer · local checkout · language server |
+| `CodeDesignContext` | Grounding adapter | BM25 repo index · vector store · Confluence |
+
+## Columns 5 + 6 — OUTBOUND PORTS, AND THE ADAPTERS BEHIND THEM
+
+Column 5 is the **platform-owned outbound port contracts**; column 6 the
+**BYO capability adapters**. Arrows run left to right, kernel → port →
+adapter → target.
+
+| Port (column 5) | Adapter (column 6) | Example implementations |
+|---|---|---|
+| `LLMProvider` | Model adapter | Claude · client-hosted model · mock |
+| `DesignAgent` | Design agent adapter | in-process agent · client's design agent |
+| `ImplementationAgent` | Implementation agent adapter | in-process agent · GitHub Copilot cloud agent |
+| `QAAgent` | QA agent adapter | local pipeline · client's QA automation |
+| `SourceControl` | SCM adapter | GitHub · GitLab · Bitbucket · local working copy |
+| `WorkDispatch` | Work dispatch adapter | GitHub Actions · Jenkins · Azure Pipelines |
+| `BuildDeploy` | Build + deploy adapter | no-op recorder · Jenkins · Argo CD · Octopus |
+| `TestManagement` | Test management adapter | JSON file · Xray · TestRail · qTest |
+| `AuditSink` | Evidence + audit adapter | SQLite · client SIEM · WORM store |
+
+Mark `DesignAgent`, `ImplementationAgent` and `QAAgent` as a visually
+grouped trio, with one caption: *"three agent seams, one contract — typed
+request in, answer or receipt out"*. Draw a short arrow from that group to
+`WorkDispatch` labelled *"delegates dispatch"* — when a client's agent runs
+elsewhere, all three use the same waiting mechanism rather than one each.
+
+## Column 7 — CLIENT / PROVIDER TARGETS
+
+- Commercial or local models
+- SCM repositories · branches · pull requests
+- Test frameworks
+- Data and environment services
+- GitHub Actions · Jenkins · Kubernetes
+- Artifact and release platforms
+- Client SIEM · audit stores
 
 ---
 
-### Band 3 — THE CONTEXT GRAPH AND ONTOLOGY
+## Column 4 — THE PLATFORM
 
-A distinct full-width band beneath the core, in the accent colour — this is
-the foundation everything above rests on. Title it **Context Graph &
-Ontology**.
+One large bounded box, labelled **PLATFORM-PROVIDED — kernel · ports ·
+contracts**. Inside it, four stacked lettered sections, then a band of
+invariants.
 
-Five compartments across it:
+**A. CONTROL AND GOVERNANCE**
+Console + API · Workflow orchestrator · **Gate controller** · Adapter
+registry · Reconciler
+*caption:* deterministic decisions · checkpoints · human authority ·
+resumability
 
-- **Ontology** — 15 node types · 18 edge types · validated signatures
-- **Identity** — uuid5(type | system | external_id)
-- **Scope** — every read and write names its project
-- **Provenance** — every assertion carries how it was derived
-- **Truth classes** — authoritative · derived · observed · inferred
+Give the gate controller a distinct warm colour — it is where human
+authority is enforced.
 
-Beneath the band, one italic line: *"an LLM inference must never be
-indistinguishable from a compiler-derived fact."*
+**B. DECISION INTELLIGENCE — one impact truth**
+Semantic ChangeSet → **Impact Engine** → Test obligations → Release
+readiness
+*caption:* revision pair · typed propagation · explained paths · confidence
+· blind spots
 
-The core in Band 2 should sit visually *on* this band, so the reader sees
-that the decisions rest on it.
+Make **Impact Engine** the largest element in the whole figure after the
+platform box itself. Caption it: *"one canonical assessment — design,
+implementation, QA and release consume the same one"*.
+
+**C. CONTEXT AND EVIDENCE FABRIC**
+Scope + identity · Ontology + semantics · Assertion ledger · Snapshot +
+export · Retrieval · Evidence + audit
+*caption:* deterministic identity · project-scoped · provenance on every
+assertion · truth classes
+
+Attach `ContextGraphStore` to this section as its **storage port** — drawn
+on the boundary of the platform box with its own adapter chip outside
+(*SQLite · PostgreSQL · Neo4j · hosted graph*). It is the one port that is
+infrastructure rather than a party the platform talks to, and drawing it
+here rather than in a side column is what says the storage engine is not the
+architecture.
+
+**D. EVALUATION AND GOVERNED PROMOTION**
+Accuracy harness · Coherence checks · **Human review** · Controlled
+promotion
+*caption:* measured, not asserted · agents never rewrite their own controls
+
+**CORE INVARIANTS** — a thin band across the bottom of the platform box:
+project scope on every read and write · immutable decisions ·
+deterministic authority · one impact assessment · evidence over assertion
 
 ---
 
-### Band 4 (bottom) — THE PORT BOUNDARY, AND WHAT PLUGS INTO IT
+## Band beneath — CLIENT EXECUTION TRUST BOUNDARY
 
-This is the most important band to get right.
+A separate wide box below the platform, outlined in a **warning colour with
+a dashed border**, labelled **CLIENT EXECUTION TRUST BOUNDARY — BYO
+execution adapters**.
 
-Draw **one continuous horizontal membrane** — a single long bar spanning the
-full width, clearly a boundary rather than a container. Label it once, at
-the left edge: **"ports — every integration is a replaceable seam"**.
+Inside it, left to right:
 
-Divide the membrane into 17 labelled cells, grouped and
-separated as below. Put the port name inside its cell.
+| Port | Adapter | Example implementations |
+|---|---|---|
+| `TestAuthor` | Test author adapter | in-process author · client's test agent |
+| `TestDataProvider` | Test data adapter | JSON store · database lease · fixture service |
+| `TestRunner` | Test runner adapter | Playwright · Cypress · pytest |
 
-Below the membrane, outside the platform, list each port's example
-implementations as small grey text. These are the client's systems — they
-sit **outside** the boundary and are swapped per engagement.
+Plus: work dispatch runner · ephemeral workspace · evidence collector.
 
-**Intake**
+Caption beneath: *"source code, credentials and test data remain
+client-side — the platform holds a revision pair and a result"*.
 
-- `RequirementsSource` — Jira · Azure DevOps · Confluence · CSV
-- `EntityResolver` — per-system identifier mapping
-**Codebase**
+Draw one arrow from the platform's `QAAgent` port down into this box,
+labelled *"authorised work order"*. This is the plane boundary: what happens
+inside that box — script selection, test data, execution — belongs to the
+client's provider.
 
-- `CodeIntelligence` — GitHub AST indexer · local checkout · language server
-- `CodeDesignContext` — BM25 repo index · vector store · Confluence
-- `ContextGraphStore` — SQLite · PostgreSQL · Neo4j · hosted graph
-**Agents**
+---
 
-- `LLMProvider` — Claude · client-hosted model · mock
-- `DesignAgent` — in-process agent · client's design agent
-- `ImplementationAgent` — in-process agent · GitHub Copilot cloud agent
-- `QAAgent` — local pipeline · client's QA automation
-**Test execution**
+## Bottom band — ZERO TRUST AND PLATFORM CONTROLS
 
-- `TestAuthor` — in-process author · client's test agent
-- `TestDataProvider` — JSON store · database lease · fixture service
-- `TestRunner` — Playwright · Cypress · pytest
-**Delivery**
+A full-width band across the very bottom:
 
-- `WorkDispatch` — GitHub Actions · Jenkins · Azure Pipelines
-- `SourceControl` — GitHub · GitLab · Bitbucket · local working copy
-- `BuildDeploy` — no-op recorder · Jenkins · Argo CD · Octopus
-**Evidence**
+OIDC · workload identity · short-lived secrets · RBAC / ABAC · separation of
+duties · egress allowlists · signed plugins / SBOM · telemetry · cost
+budgets
 
-- `TestManagement` — JSON file · Xray · TestRail · qTest
-- `AuditSink` — SQLite · client SIEM · WORM store
+---
 
-Mark the three **Test execution** cells as belonging to the *execution
-plane*, with a different cell treatment and one legend entry: *"execution
-plane — runs inside the client's boundary; the platform never sees the
-source"*. The other 14 are control plane.
+## Legend
 
-Three ports carry an **optional capability** — draw a small dashed tag on
-the cell, not a new cell:
+Top right, boxed:
 
-- `CodeIntelligence` → RepositoryCatalogue
-- `ImplementationAgent` → AccessCheckable
-- `BuildDeploy` → RollbackCapable
-
-**One relationship to draw inside the membrane.** `DesignAgent`,
-`ImplementationAgent` and `QAAgent` are modelled identically — a typed
-request in, either an answer or a receipt out. When a client's agent runs
-elsewhere, all three delegate the waiting to `WorkDispatch`. Draw three thin
-arrows from those cells to the `WorkDispatch` cell, labelled once
-*"delegates dispatch"*. The point: one waiting mechanism, not one per
-integration.
+- **Platform-provided boundary** — filled block
+- **Stable framework kernel** — dark block
+- **Platform port / contract** — outlined block
+- **BYO adapter / provider** — outlined block with a "BYO" tag
+- **External system** — plain block
+- **Policy / human authority** — warm block
 
 ---
 
 ## Visual language
 
 - Enterprise-architecture register: restrained, precise, printable. No neon,
-  no gradients as decoration, no 3D, no drop shadows, no emoji, no icons, no
-  clip art.
-- One accent hue, used for the Context Graph band and the Impact Engine
-  only. Neutral greys elsewhere. One separate warm tone for the three human
-  gates.
-- A single clean grotesque. Port names in the membrane semibold; client
-  implementations below it small and grey; band titles small caps.
-- Every label horizontal and legible at 100%. If a label does not fit,
-  shorten the label — never take it below ~12px at the drawn scale.
+  no gradients as decoration, no 3D, no drop shadows, no emoji, no clip art.
+- A dark navy or slate for the kernel; a light tint for the platform
+  boundary; white or grey for external systems; one warm accent used **only**
+  for human authority — the gate controller, human review, and the trust
+  boundary.
+- One clean grotesque throughout. Port names in monospace or semibold so
+  they read as contract names rather than prose.
+- Every label horizontal and legible at 100%; nothing below about 11px at
+  the drawn scale.
 
 ## Rules — what usually goes wrong
 
-1. **Every name appears exactly once.** Count them before you finish.
+1. **Every name appears exactly once.** Count them before finishing.
    Duplicated ports and repeated implementation lists are the commonest
    failure.
-2. **Invent nothing.** Use exactly the names given. Do not coin a plausible
-   port; do not attach one port's implementations to another's label.
-3. **Client implementations go below the membrane, never above it.** The
-   membrane is the boundary; what fills it is outside. That is the whole
-   claim.
-4. **The core and the graph are not seams.** Nothing in Bands 2 or 3 gets a
-   client implementation chip.
-5. **Bands must be visually distinct** and read in order top to bottom.
-6. **All 17 port cells are the same size.** That
-   equality is the pluggability argument — no cell is more important.
-7. No title block, logo, or footer.
+2. **Invent nothing.** Use exactly the port names given. Do not coin a
+   plausible one, and do not attach one port's implementations to another's
+   label.
+3. **Adapters are outside the platform box; ports are on its boundary.**
+   That relationship is the entire claim of the diagram.
+4. **Nothing in section A, B, C or D gets an adapter chip.** Those are not
+   seams — they are the part that cannot be replaced.
+5. **All port blocks are the same size.** No seam is more important than
+   another.
+6. The **flow direction is strictly left to right**; the only downward arrow
+   is from `QAAgent` into the execution trust boundary.
+7. No logo or footer.
 
 ## Output
 
