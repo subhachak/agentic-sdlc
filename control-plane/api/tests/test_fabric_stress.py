@@ -57,23 +57,22 @@ def test_a_path_that_escapes_the_repository_does_not_keep_its_escape():
 # ── identity: the delimiter is not escaped ────────────────────────────────
 
 
-def test_the_identity_delimiter_can_be_injected():
-    """`type|system|external_id` is joined without escaping, so a value
-    containing the delimiter can impersonate a different triple.
+def test_the_identity_delimiter_cannot_be_injected():
+    """A value containing the delimiter must not impersonate another triple.
 
     Reachable through any external id the platform does not control — a
     client work-item key, a document id, a path on a filesystem that permits
-    `|`. Left failing deliberately: fixing it changes every node id ever
-    written, which is a migration rather than a patch, and the fabric should
-    say out loud that it has this shape.
+    the character.
     """
-    collides = node_id("SOURCE_ARTIFACT", "code", "a|b") == node_id(
+    assert node_id("SOURCE_ARTIFACT", "code", "a|b") != node_id(
         "SOURCE_ARTIFACT", "code|a", "b"
     )
-    if collides:
-        pytest.xfail(
-            "identity joins on '|' without escaping; two different triples share an id"
-        )
+
+
+def test_escaping_the_escape_does_not_reopen_the_hole():
+    """The backslash is escaped first. Otherwise "a\\" + "b" and "a" +
+    "\\b" collide through the escape sequence itself."""
+    assert node_id("T", "a\\", "b") != node_id("T", "a", "\\b")
 
 
 # ── scoping: one project cannot be another ────────────────────────────────
@@ -136,15 +135,29 @@ def test_an_extension_edge_still_cannot_invent_a_node_type():
 # ── temporal: what the fabric cannot yet say ──────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason="node identity carries no revision, so evidence stays attached to a "
-    "file across a rewrite — CodeFile already collects sha256, unused for identity",
-    strict=True,
-)
-def test_a_rewritten_file_is_a_different_revision():
-    before = node_id("SOURCE_ARTIFACT", CODE, "app/pay.ts")  # at abc123
-    after = node_id("SOURCE_ARTIFACT", CODE, "app/pay.ts")   # rewritten at def456
-    assert before != after
+def test_a_file_keeps_its_identity_across_a_rewrite():
+    """Deliberately. Making every revision its own node multiplies the graph
+    by history and breaks every query that means "this file"."""
+    assert node_id("SOURCE_ARTIFACT", CODE, "app/pay.ts") == node_id(
+        "SOURCE_ARTIFACT", CODE, "app/pay.ts"
+    )
+
+
+def test_evidence_knows_which_revision_it_was_observed_against():
+    """Which is where the revision belongs: on the assertion, not the node.
+
+    Without it a TEST_RUN that passed against app/pay.ts at abc123 kept the
+    criterion marked verified after the file was rewritten — the graph could
+    not tell that the evidence was about something no longer there.
+    """
+    from app.graph.revision import is_stale, stamped
+
+    observed = stamped({}, "abc123")
+    assert is_stale(observed, "abc123") is False
+    assert is_stale(observed, "def456") is True
+    # Three answers, not two. An assertion that recorded no revision is
+    # unknowable, and reading that as fresh is the failure being prevented.
+    assert is_stale({}, "abc123") is None
 
 
 # ── the writer that did not scope ─────────────────────────────────────────
@@ -227,3 +240,26 @@ def test_no_phase_reads_the_graph_without_naming_a_project():
     assert unscoped == [], (
         "these graph reads silently default the project: " + ", ".join(unscoped)
     )
+
+
+def test_a_graph_built_under_an_older_id_scheme_is_refused_not_refreshed():
+    """Escaping the delimiter changed what node_id derives, so a graph
+    written before it holds ids nothing now computes. That is incompatible
+    rather than stale: refreshing would write new ids beside the old ones
+    and leave every cross-plane edge pointing at nothing."""
+    import asyncio
+
+    from app.core import hydration
+    from app.graph.identity import IDENTITY_VERSION
+
+    class OldGraph:
+        async def counts(self, project):
+            return {"nodes": {"MODULE": 4, "SOURCE_ARTIFACT": 20}, "edges": {"IMPORTS": 30}}
+
+        async def index_provenance(self, project):
+            return {"commit_sha": "abc123", "identity_version": IDENTITY_VERSION - 1}
+
+    status = asyncio.run(hydration.status(OldGraph(), None, None))
+    index_step = next(s for s in status["steps"] if s["id"] == hydration.STEP_INDEX)
+    assert index_step["ready"] is False
+    assert "Re-index" in index_step["detail"]

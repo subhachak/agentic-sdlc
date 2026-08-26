@@ -78,6 +78,7 @@ class InMemoryContextGraph:
             "internal_capture_rate": projection.get("internal_capture_rate"),
             "most_missed": projection.get("most_missed") or [],
             "units": projection.get("units") or [],
+            "identity_version": projection.get("identity_version") or 1,
         }
 
     def _visible(self, project: str) -> dict[str, dict]:

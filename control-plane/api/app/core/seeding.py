@@ -17,6 +17,7 @@ from typing import Any
 
 from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
 from app.core.source_kinds import is_test_path
+from app.graph.identity import IDENTITY_VERSION
 from app.graph.paths import canonical
 from app.graph.projects import DEFAULT_PROJECT, scoped
 from app.graph.projects import validate as validate_project
@@ -50,6 +51,11 @@ def assertions_from_index(
         # not stored as files, so if this is not carried here nothing can
         # work out what is separately testable after the fact.
         "units": prov.units,
+        # Which id scheme these nodes were minted under. Escaping the
+        # delimiter changed the derivation, so a graph written before it
+        # holds ids this build would not produce — and mixing the two in one
+        # store means cross-plane edges pointing at nothing.
+        "identity_version": IDENTITY_VERSION,
     }
     metadata = {f.path: f for f in index.files}
 

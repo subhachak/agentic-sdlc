@@ -21,6 +21,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.core.db import get_sessionmaker
 from app.graph.ontology import EdgeType, NodeType, validate_edge
+from app.graph.revision import is_stale
 from app.graph.projects import DEFAULT_PROJECT, sql_pattern
 from app.models.graph import GraphEdge, GraphNode
 from app.ports.entity_resolver import EntityResolver, NodeRef
@@ -317,6 +318,9 @@ class SqlContextGraph:
             "internal_capture_rate": projection.get("internal_capture_rate"),
             "most_missed": projection.get("most_missed") or [],
             "units": projection.get("units") or [],
+            # Absent on a graph written before ids were versioned, which is
+            # itself the answer: it predates the current scheme.
+            "identity_version": projection.get("identity_version") or 1,
         }
 
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]:
@@ -338,12 +342,24 @@ class SqlContextGraph:
                 for e in rows.scalars().all()
             ]
 
-    async def untested_criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
+    async def untested_criteria(
+        self, project: str = DEFAULT_PROJECT, at_revision: str | None = None
+    ) -> list[dict[str, Any]]:
         """Acceptance criteria with no scenario that reached a passing run.
 
         This is the query release readiness is gated on, and the reason the
         graph is foundational rather than an enhancement: it is not derivable
         from a run log.
+
+        `at_revision` is what stops evidence outliving what it was about.
+        Node identity is stable — a file rewritten at a new commit is the
+        same file — so without it a TEST_RUN that passed against the old
+        content kept the criterion marked verified after the behaviour it
+        verified had been removed. Given a revision, an EXERCISED_IN edge
+        observed at a different one no longer counts.
+
+        Omitted, the check does not run and every passing chain counts, which
+        is the previous behaviour and stated rather than silently assumed.
         """
         async with get_sessionmaker()() as session:
             criteria = (
@@ -377,16 +393,43 @@ class SqlContextGraph:
                 if n.projection.get("status") == "passed"
             }
 
+            def forward_current(edge_type: str, ids: set[str]) -> set[str]:
+                """Hop, skipping edges observed against a different revision.
+
+                Only applied where a revision was actually recorded. An edge
+                that never carried one is unknowable rather than stale, and
+                dropping it would turn missing provenance into a coverage
+                failure.
+                """
+                out: set[str] = set()
+                for e in by_type.get(edge_type, []):
+                    if e.src_id not in ids:
+                        continue
+                    if is_stale(e.attributes, at_revision):
+                        continue
+                    out.add(e.dst_id)
+                return out
+
             covered: set[str] = set()
+            stale: set[str] = set()
             for criterion in criteria:
                 scenarios = forward(EdgeType.VERIFIED_BY, {criterion.id})
                 scripts = forward(EdgeType.IMPLEMENTED_BY, scenarios)
-                runs = forward(EdgeType.EXERCISED_IN, scripts)
-                if runs & passing_runs:
+                if forward_current(EdgeType.EXERCISED_IN, scripts) & passing_runs:
                     covered.add(criterion.id)
+                elif forward(EdgeType.EXERCISED_IN, scripts) & passing_runs:
+                    # It passed, but against something that has since moved.
+                    # Reported separately: "never tested" and "tested, then
+                    # the code changed" are different release conversations.
+                    stale.add(criterion.id)
 
             return [
-                {"id": c.id, "external_id": c.external_id, "projection": c.projection}
+                {
+                    "id": c.id,
+                    "external_id": c.external_id,
+                    "projection": c.projection,
+                    "reason": "stale" if c.id in stale else "untested",
+                }
                 for c in criteria
                 if c.id not in covered
             ]

@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.graph.identity import IDENTITY_VERSION
 from app.graph.projects import DEFAULT_PROJECT
 
 # Order matters: each step depends on the one before it, so the console can
@@ -37,6 +38,10 @@ async def status(
     edges = counts.get("edges", {})
 
     indexed = bool(nodes.get("MODULE"))
+    # A graph minted under an older id scheme is not stale, it is
+    # incompatible: its node ids are not the ones this build derives, so
+    # every cross-plane edge would point at nothing. Re-index, not refresh.
+    stale_ids = indexed and provenance.get("identity_version", 1) != IDENTITY_VERSION
     steps = [
         {
             "id": STEP_INDEX,
@@ -47,8 +52,14 @@ async def status(
                 f"{edges.get('CALLS_ENDPOINT', 0)} HTTP edges"
                 if indexed
                 else "nothing indexed yet — every gate downstream refuses until this runs"
+            )
+            if not stale_ids
+            else (
+                f"indexed under id scheme v{provenance.get('identity_version', 1)}; this "
+                f"build derives v{IDENTITY_VERSION}. Re-index — the stored ids are not "
+                f"the ones anything now computes."
             ),
-            "ready": indexed,
+            "ready": indexed and not stale_ids,
             "blocked_by": None,
             "quality": _quality(provenance),
         }
