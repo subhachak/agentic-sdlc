@@ -24,7 +24,14 @@ from app.core.config import Settings
 
 # Everything local, nothing credentialed: the configuration a fresh install
 # has, and the one every option is varied against.
+# _env_file=None on every construction below. Without it these tests read
+# the developer's own .env, so the suite's outcome depends on whose machine
+# it runs on — adding real JIRA_ keys locally made "refused without
+# credentials" pass credentials it was supposed to be missing. The inverse
+# of the fresh-clone bug, in the same shape: a test that is not isolated
+# from the environment is testing the environment.
 BASELINE = dict(
+    _env_file=None,
     llm_provider_adapter="mock",
     work_dispatch_adapter="local",
     implementation_agent="inline",

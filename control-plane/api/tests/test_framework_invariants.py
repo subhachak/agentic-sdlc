@@ -329,3 +329,37 @@ def test_no_port_is_declared_and_never_used():
         f"Use them, or delete them — an unused Protocol is counted as a seam "
         f"by anything that enumerates the ports."
     )
+
+
+def test_no_test_builds_settings_from_the_developers_own_env():
+    """A suite that reads .env tests the machine it runs on.
+
+    Twice now: deriving the change target from a bare default made 16 tests
+    pass locally and fail on a clean checkout, and adding real JIRA_ keys
+    made "refused without credentials" pass with credentials it was supposed
+    to be missing. Opposite directions, same cause.
+    """
+    import ast
+    from pathlib import Path
+
+    tests = Path(__file__).resolve().parent
+    offenders = []
+    for path in sorted(tests.glob("test_*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if name != "Settings":
+                continue
+            supplied = {k.arg for k in node.keywords if k.arg}
+            starred = any(k.arg is None for k in node.keywords)
+            # A **dict may carry _env_file; those are checked by the dict
+            # itself being isolated, which is visible at its definition.
+            if "_env_file" not in supplied and not starred:
+                offenders.append(f"{path.name}:{node.lineno}")
+
+    assert offenders == [], (
+        "these construct Settings without _env_file=None, so they read the "
+        "developer's .env: " + ", ".join(offenders)
+    )

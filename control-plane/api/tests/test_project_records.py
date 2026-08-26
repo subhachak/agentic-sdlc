@@ -186,7 +186,7 @@ def test_the_default_project_cannot_be_archived_or_deleted(client):
 
 def test_a_project_that_answers_nothing_inherits_every_default():
     """A project naming only a repository must not null the rest."""
-    settings = Settings(target_ref="main", target_environment="staging")
+    settings = Settings(_env_file=None, target_ref="main", target_environment="staging")
     record = projects.ProjectRecord(
         id="team-a", name="", description="",
         engagement={"target_repo": "acme/widgets", "target_ref": "", "target_environment": None},
@@ -201,7 +201,7 @@ def test_a_project_that_answers_nothing_inherits_every_default():
 
 
 def test_no_project_leaves_settings_untouched():
-    settings = Settings(target_ref="release")
+    settings = Settings(_env_file=None, target_ref="release")
     assert projects.applied_to(settings, None).target_ref == "release"
 
 

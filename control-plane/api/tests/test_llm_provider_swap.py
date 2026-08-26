@@ -10,10 +10,10 @@ from app.core.config import Settings
 
 
 def test_llm_provider_adapter_swaps_purely_via_config():
-    mock_settings = Settings(llm_provider_adapter="mock")
+    mock_settings = Settings(_env_file=None, llm_provider_adapter="mock")
     assert isinstance(build_llm_provider(mock_settings), MockLLMProvider)
 
-    claude_settings = Settings(
+    claude_settings = Settings(_env_file=None, 
         llm_provider_adapter="claude",
         anthropic_api_key="sk-test-not-a-real-key",
         claude_model="claude-opus-5",

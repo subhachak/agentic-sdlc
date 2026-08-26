@@ -116,6 +116,21 @@ class JiraRequirementsSource:
                 return response.json()
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
+            if status == 410:
+                # /rest/api/3/search was withdrawn in favour of
+                # /rest/api/3/search/jql. Named rather than reported as a
+                # generic failure, because the fix is a code change here and
+                # nothing about the client's configuration.
+                raise RuntimeError(
+                    f"Jira has withdrawn {path}. This adapter needs updating to the "
+                    f"endpoint Atlassian replaced it with."
+                ) from exc
+            if status == 400:
+                # /search/jql refuses an unbounded query and says so
+                # precisely; passing that through beats a generic failure.
+                raise ValueError(
+                    f"Jira refused the query: {exc.response.text[:200]}"
+                ) from exc
             if status in (401, 403):
                 # PermissionError and ValueError rather than httpx types: a
                 # caller that had to catch httpx would be coupled to the fact
@@ -135,17 +150,33 @@ class JiraRequirementsSource:
     async def check_access(self) -> dict[str, Any]:
         """Verify the credentials before a run depends on them.
 
-        The same shape the work-dispatch adapters use, so the console can
-        offer one "check" affordance rather than one per integration.
+        Probes what this adapter actually does — read projects — rather than
+        `/rest/api/3/myself`, which needs a user-read scope a data-reading
+        token legitimately does not carry. Against a real scoped token that
+        check returned "Jira rejected the credentials" for a configuration
+        whose credentials were correct, which is worse than no check: it
+        sends someone re-minting tokens to fix a problem that is not there.
+
+        Reports the two states separately. Authenticated-but-sees-nothing is
+        a permissions or empty-site problem on the Jira side, and saying so
+        is the difference between a five-minute fix and an afternoon.
         """
         try:
-            me = await self._get("/rest/api/3/myself")
+            found = await self._get("/rest/api/3/project/search", {"maxResults": "1"})
         except (PermissionError, ValueError, RuntimeError) as exc:
             return {"ok": False, "detail": str(exc)}
-        return {
-            "ok": True,
-            "detail": f"authenticated as {me.get('displayName') or me.get('emailAddress') or 'unknown'}",
-        }
+
+        total = found.get("total", 0)
+        if not total:
+            return {
+                "ok": False,
+                "detail": (
+                    "authenticated, but this account can browse no projects. Grant it "
+                    "Browse Projects on the project holding the requirements, or create "
+                    "one — the credentials themselves are working."
+                ),
+            }
+        return {"ok": True, "detail": f"authenticated; {total} project(s) visible"}
 
     async def _issue(self, key: str) -> RequirementItem:
         body = await self._get(
@@ -155,8 +186,11 @@ class JiraRequirementsSource:
         return self._to_item(body, body.get("names") or {})
 
     async def _search(self, jql: str) -> list[RequirementItem]:
+        # /rest/api/3/search was withdrawn — it returns HTTP 410 with a
+        # pointer to this one. Found by calling a real Jira Cloud site;
+        # fixtures cannot tell you an endpoint no longer exists.
         body = await self._get(
-            "/rest/api/3/search",
+            "/rest/api/3/search/jql",
             {
                 "jql": jql,
                 "maxResults": str(MAX_RESULTS),

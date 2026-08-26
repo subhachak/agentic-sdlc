@@ -183,7 +183,7 @@ def test_safe_mode_has_no_external_dependency():
     from app.core.settings_store import check
     from app.main import SAFE_MODE
 
-    misconfigured = Settings(
+    misconfigured = Settings(_env_file=None, 
         anthropic_api_key=None, github_token=None, github_repo=None, target_repo=None,
         llm_provider_adapter="claude", source_control_adapter="github",
         work_dispatch_adapter="github-actions", implementation_agent="github-copilot",
@@ -196,7 +196,7 @@ def test_the_fallbacks_are_ordered_from_asked_for_to_always_works():
     from app.core.config import Settings
     from app.main import SAFE_MODE, _fallbacks
 
-    base = Settings(llm_provider_adapter="claude")
+    base = Settings(_env_file=None, llm_provider_adapter="claude")
     effective = base.model_copy(update={"target_environment": "prod"})
 
     rungs = list(_fallbacks(base, effective, None, has_overrides=True))
@@ -215,7 +215,7 @@ def test_a_deployment_with_no_overrides_still_gets_the_safe_rung():
     from app.core.config import Settings
     from app.main import _fallbacks
 
-    rungs = list(_fallbacks(Settings(), Settings(), None, has_overrides=False))
+    rungs = list(_fallbacks(Settings(_env_file=None), Settings(_env_file=None), None, has_overrides=False))
 
     assert len(rungs) == 2
     assert "every integration disabled" in rungs[-1][1]
@@ -236,13 +236,13 @@ async def test_startup_falls_back_and_says_why(tmp_path, monkeypatch):
     # anywhere, which is exactly what an emptied secret store looks like.
     monkeypatch.setattr(
         "app.core.config.get_settings",
-        lambda: Settings(
+        lambda: Settings(_env_file=None, 
             database_url=f"sqlite+aiosqlite:///{tmp_path / 'safe.db'}",
             llm_provider_adapter="claude",
             anthropic_api_key=None,
         ),
     )
-    monkeypatch.setattr("app.main.get_settings", lambda: Settings(
+    monkeypatch.setattr("app.main.get_settings", lambda: Settings(_env_file=None, 
         database_url=f"sqlite+aiosqlite:///{tmp_path / 'safe.db'}",
         llm_provider_adapter="claude",
         anthropic_api_key=None,

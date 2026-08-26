@@ -120,7 +120,7 @@ async def test_criteria_are_not_invented_when_the_source_has_none():
 
 @pytest.mark.asyncio
 async def test_a_jql_search_returns_every_matching_issue():
-    source = FakeJira({"/rest/api/3/search": {"names": ISSUE["names"], "issues": [ISSUE, ISSUE]}})
+    source = FakeJira({"/rest/api/3/search/jql": {"names": ISSUE["names"], "issues": [ISSUE, ISSUE]}})
     doc = await source.fetch(
         RequirementsInput(ref=RequirementRef(external_id="", query="project = ACME"))
     )
@@ -259,3 +259,56 @@ async def test_check_access_answers_rather_than_raising(monkeypatch):
     result = await source.check_access()
     assert result["ok"] is False
     assert "credentials" in result["detail"]
+
+
+# ── what fixtures could not have told me ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_check_access_probes_what_the_adapter_actually_does():
+    """It probed /rest/api/3/myself, which needs a user-read scope a
+    data-reading token legitimately does not carry. Against a real scoped
+    token it reported "Jira rejected the credentials" for a configuration
+    whose credentials were correct — a control that fails on a working
+    setup, which sends someone re-minting tokens to fix nothing."""
+    source = FakeJira({"/rest/api/3/project/search": {"total": 3}})
+    out = await source.check_access()
+    assert out["ok"] is True
+    assert source.requested == ["/rest/api/3/project/search"]
+
+
+@pytest.mark.asyncio
+async def test_authenticated_but_seeing_nothing_is_not_a_credential_failure():
+    """Two states, reported separately. The difference between a five-minute
+    permissions fix and an afternoon spent on the token."""
+    source = FakeJira({"/rest/api/3/project/search": {"total": 0}})
+    out = await source.check_access()
+    assert out["ok"] is False
+    assert "credentials themselves are working" in out["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_withdrawn_endpoint_says_the_adapter_needs_updating():
+    """/rest/api/3/search returns 410 on current Jira Cloud. A fixture
+    cannot tell you an endpoint has been removed — only calling it can."""
+    import httpx
+
+    real = httpx.AsyncClient
+
+    def handler(request):
+        return httpx.Response(410, json={"errorMessages": ["The requested API has been removed."]})
+
+    import app.adapters.requirements_source.jira as mod
+
+    class Gone(JiraRequirementsSource):
+        pass
+
+    source = Gone("https://acme.atlassian.net", "a@b.c", "t")
+    orig = mod.httpx.AsyncClient
+    mod.httpx.AsyncClient = lambda *a, **k: real(*a, **{**k, "transport": httpx.MockTransport(handler)})
+    try:
+        with pytest.raises(RuntimeError) as raised:
+            await source._get("/rest/api/3/search")
+        assert "withdrawn" in str(raised.value)
+    finally:
+        mod.httpx.AsyncClient = orig
