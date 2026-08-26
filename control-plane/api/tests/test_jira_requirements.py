@@ -312,3 +312,38 @@ async def test_a_withdrawn_endpoint_says_the_adapter_needs_updating():
         assert "withdrawn" in str(raised.value)
     finally:
         mod.httpx.AsyncClient = orig
+
+
+# ── starting a run from the system of record ──────────────────────────────
+
+
+def test_a_run_can_be_started_from_an_issue_key(monkeypatch, tmp_path):
+    """Pasting text and naming an issue are different acts.
+
+    Text is someone saying what they want. A key points at a record that
+    already has an id, a revision and criteria someone curated — which the
+    platform should read rather than ask a model to reconstruct from prose.
+    """
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'runs.db'}")
+    from fastapi.testclient import TestClient
+
+    from app.core.config import get_settings
+    from app.core.db import get_engine
+
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+    from app.main import app
+
+    with TestClient(app) as client:
+        created = client.post("/api/runs", data={"issue": "AGENTIC-1"})
+        assert created.status_code == 201
+
+        both = client.post("/api/runs", data={"text": "do the thing", "issue": "AGENTIC-1"})
+        assert both.status_code == 201
+
+        neither = client.post("/api/runs", data={})
+        assert neither.status_code == 422
+        assert "issue key" in neither.json()["detail"]
+
+    get_settings.cache_clear()
+    get_engine.cache_clear()

@@ -42,7 +42,28 @@ def _spawn(request: Request, run_id: str, graph_input: Any) -> None:
 
 
 @router.post("", status_code=201)
-async def create_run(request: Request, text: str = Form(...)) -> CreateRunResponse:
+async def create_run(
+    request: Request,
+    text: str = Form(""),
+    issue: str = Form(""),
+) -> CreateRunResponse:
+    """Start a run from a requirement, or from a key in the system of record.
+
+    Two ways in, because they are different acts. Pasting text is someone
+    saying what they want. Naming an issue is pointing at a record that
+    already exists, with an id, a revision and criteria someone curated —
+    and the platform should read those rather than ask a model to
+    reconstruct them from prose.
+
+    Exactly one is required. Given both, the text wins: someone who typed a
+    paragraph has said what they want more directly than a key does, and
+    silently preferring the issue would answer a question nobody asked.
+    """
+    if not text.strip() and not issue.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="give a requirement, or an issue key to fetch it from",
+        )
     run_id = str(uuid.uuid4())
     async with get_sessionmaker()() as session:
         # Stamped at creation rather than read back from whatever is active
@@ -65,7 +86,15 @@ async def create_run(request: Request, text: str = Form(...)) -> CreateRunRespon
         "config": PipelineConfig(
             auto_approve_gates=settings.auto_approve_gates, max_node_retries=settings.max_node_retries
         ),
-        "raw_input": {"text": text, "file_bytes": None, "filename": None},
+        # `ref` is what the requirements source resolves. Carried even when
+        # text was supplied, so the trail records which issue a run was
+        # started against whether or not its text came from there.
+        "raw_input": {
+            "text": text or None,
+            "file_bytes": None,
+            "filename": None,
+            "ref": {"external_id": issue.strip()} if issue.strip() else None,
+        },
     }
     _spawn(request, run_id, initial_state)
     return CreateRunResponse(run_id=run_id, status="pending")
