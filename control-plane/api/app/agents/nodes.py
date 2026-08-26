@@ -25,6 +25,9 @@ from app.core.change_review import review as review_change
 from app.core.design_review import MAX_FILES as MAX_DESIGN_FILES
 from app.core.seeding import refresh as refresh_index
 from app.core.design_review import review as review_design
+from app.core.seeding import CODE_SYSTEM
+from app.graph.paths import canonical as canonical_path
+from app.graph.projects import DEFAULT_PROJECT, scoped
 from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
 from app.core.dispatches import DispatchStore
 from app.core.gate_controller import GateController
@@ -654,15 +657,25 @@ def build_nodes(
             },
         )
 
+        # Scoped, like every other writer. Unscoped, these nodes landed in
+        # the default project's graph while the index had populated
+        # `code@<project>` — so the release's CONTAINS edges pointed at files
+        # that did not exist in the project being released, and traceability
+        # from a release back to a file was broken for every non-default
+        # engagement.
+        project = state.get("project") or DEFAULT_PROJECT
+        code_system = scoped(CODE_SYSTEM, project)
+        pipeline_system = scoped("pipeline", project)
+
         release_id = f"{state['run_id'][:8]}"
-        release_node = NodeSpec("RELEASE", "pipeline", release_id, {
+        release_node = NodeSpec("RELEASE", pipeline_system, release_id, {
             "build_id": result.build_id, "branch": implementation.get("branch", "")
         })
         assertions = [
             Assertion(
                 "CONTAINS",
                 release_node,
-                NodeSpec("SOURCE_ARTIFACT", "code", path, {}),
+                NodeSpec("SOURCE_ARTIFACT", code_system, canonical_path(path), {}),
             )
             for path in implementation.get("files", [])
         ]
@@ -670,7 +683,7 @@ def build_nodes(
             Assertion(
                 "DEPLOYED_TO",
                 release_node,
-                NodeSpec("ENVIRONMENT", "pipeline", target_environment, {}),
+                NodeSpec("ENVIRONMENT", pipeline_system, target_environment, {}),
             )
         )
         await context_graph.ingest(state["run_id"], "release", assertions)

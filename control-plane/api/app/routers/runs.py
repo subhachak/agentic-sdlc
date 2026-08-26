@@ -60,6 +60,7 @@ async def create_run(request: Request, text: str = Form(...)) -> CreateRunRespon
     settings = request.app.state.settings
     initial_state = {
         "run_id": run_id,
+        "project": settings.active_project,
         "config": PipelineConfig(
             auto_approve_gates=settings.auto_approve_gates, max_node_retries=settings.max_node_retries
         ),

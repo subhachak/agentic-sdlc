@@ -21,6 +21,16 @@ class GateDecision(BaseModel):
 
 class PipelineState(TypedDict, total=False):
     run_id: str
+    # Which engagement's graph this run writes into. Carried on the state
+    # rather than read from whatever is active when a phase happens to run:
+    # a run is a decision about one codebase, and a phase that resolves the
+    # project late would write a late-arriving assertion into whichever
+    # project someone had switched to.
+    #
+    # It was absent, so the release phase had nothing to scope with and
+    # hardcoded the default — writing its file nodes into a different
+    # project's graph from the one the index had populated.
+    project: str
     config: PipelineConfig
     raw_input: dict[str, Any]
     raw_requirements: dict[str, Any] | None

@@ -17,6 +17,7 @@ from typing import Any
 
 from app.core.context_graph import Assertion, ContextGraphStore, NodeSpec
 from app.core.source_kinds import is_test_path
+from app.graph.paths import canonical
 from app.graph.projects import DEFAULT_PROJECT, scoped
 from app.graph.projects import validate as validate_project
 from app.ports.code_intelligence import CodeIndex, CodeIntelligence
@@ -72,7 +73,11 @@ def assertions_from_index(
                 loc=meta.loc,
                 exports=meta.exports,
             )
-        return NodeSpec("SOURCE_ARTIFACT", system, path, projection)
+        # Canonicalised here too, so an indexed path and an agent-authored
+        # path for the same file mint the same node. The indexer's own output
+        # is already clean; this is what keeps it comparable with everything
+        # else that names a file.
+        return NodeSpec("SOURCE_ARTIFACT", system, canonical(path), projection)
 
     assertions: list[Assertion] = []
 
