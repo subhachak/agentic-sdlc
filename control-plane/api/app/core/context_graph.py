@@ -160,7 +160,14 @@ class SqlContextGraph:
         re-indexing one repository deleted the code-intelligence graph of
         every other — silently, because a deleted graph and an unseeded one
         look identical to everything downstream.
+
+        Supersedes rather than deletes, like retract. A full re-index is the
+        commonest way the graph moves, so deleting here would discard the
+        history of exactly the assertions most likely to have been reasoned
+        over — and an assessment that cannot be replayed against the edges it
+        used is an assessment nobody can audit.
         """
+        withdrawn_at = _now()
         async with get_sessionmaker()() as session:
             mine = {
                 n.id
@@ -177,7 +184,7 @@ class SqlContextGraph:
             ]
             touched = {e.src_id for e in edges} | {e.dst_id for e in edges}
             for edge in edges:
-                await session.delete(edge)
+                edge.superseded_at = withdrawn_at
             await session.flush()
 
             still_referenced: set[str] = set()
@@ -188,7 +195,11 @@ class SqlContextGraph:
                             or_(
                                 GraphEdge.src_id.in_(touched),
                                 GraphEdge.dst_id.in_(touched),
-                            )
+                            ),
+                            # A withdrawn edge is history, not a reference.
+                            # Counting it would keep every node alive forever
+                            # and turn "append-only" into "never cleans up".
+                            GraphEdge.superseded_at.is_(None),
                         )
                     )
                 ).all()
@@ -244,6 +255,18 @@ class SqlContextGraph:
         The narrow counterpart to purge_phase. An incremental update removes
         only the edges the new index no longer supports, so an edge another
         phase wrote — and a node that still carries one — survives untouched.
+
+        Withdrawn, not deleted. `superseded_at` was on the model from the
+        beginning and never assigned, so every query already filtered on it
+        and the append-only intent existed only as a column. Deleting made an
+        assessment unreproducible the moment the graph moved: "why did you
+        select this test for that change" is unanswerable once the edges it
+        reasoned over are gone, which is the first question a regulated
+        client asks.
+
+        Orphaned *nodes* are still deleted. A node carries no claim of its
+        own — it is a thing, not a statement about one — so keeping one
+        nothing references preserves no history and only grows the store.
         """
         if not edges:
             return {"edges": 0, "nodes": 0}
@@ -265,8 +288,9 @@ class SqlContextGraph:
                 if (edge.type, nodes.get(edge.src_id), nodes.get(edge.dst_id)) in edges
             ]
             touched = {e.src_id for e in doomed} | {e.dst_id for e in doomed}
+            withdrawn_at = _now()
             for edge in doomed:
-                await session.delete(edge)
+                edge.superseded_at = withdrawn_at
             await session.flush()
 
             still: set[str] = set()
@@ -277,7 +301,11 @@ class SqlContextGraph:
                             or_(
                                 GraphEdge.src_id.in_(touched),
                                 GraphEdge.dst_id.in_(touched),
-                            )
+                            ),
+                            # A withdrawn edge is history, not a reference.
+                            # Counting it would keep every node alive forever
+                            # and turn "append-only" into "never cleans up".
+                            GraphEdge.superseded_at.is_(None),
                         )
                     )
                 ).all()

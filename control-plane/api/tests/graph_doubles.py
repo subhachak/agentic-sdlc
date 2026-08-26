@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from datetime import datetime, timezone
+
 from app.core.context_graph import Assertion, NodeSpec
+
+
+def _now():
+    return datetime.now(timezone.utc)
 from app.graph.identity import node_id as make_node_id
 from app.graph.ontology import EdgeType, NodeType, validate_edge
 from app.graph.projects import DEFAULT_PROJECT, project_of
@@ -19,6 +25,17 @@ class InMemoryContextGraph:
     def __init__(self) -> None:
         self.nodes: dict[str, dict[str, Any]] = {}
         self.edges: list[dict[str, Any]] = []
+
+    @property
+    def live(self) -> list[dict[str, Any]]:
+        """Edges that have not been withdrawn.
+
+        Production supersedes rather than deletes, and every query there
+        filters on superseded_at. The double removed rows instead, so a test
+        could not distinguish "withdrawn" from "never asserted" — which is
+        precisely the history that makes an assessment replayable.
+        """
+        return [e for e in self.edges if e.get("superseded_at") is None]
 
     def _put(self, spec) -> str:
         nid = make_node_id(spec.type, spec.system, spec.external_id)
@@ -39,7 +56,7 @@ class InMemoryContextGraph:
     ) -> set[tuple[str, str, str]]:
         mine = self._mine(project)
         out = set()
-        for e in self.edges:
+        for e in self.live:
             if e.get("phase") != phase or not (e["src_id"] in mine or e["dst_id"] in mine):
                 continue
             src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
@@ -54,10 +71,11 @@ class InMemoryContextGraph:
             src, dst = self.nodes.get(e["src_id"]), self.nodes.get(e["dst_id"])
             return (e["type"], src and src["external_id"], dst and dst["external_id"])
 
-        doomed = [e for e in self.edges if e.get("phase") == phase and key(e) in edges]
+        doomed = [e for e in self.live if e.get("phase") == phase and key(e) in edges]
         touched = {e["src_id"] for e in doomed} | {e["dst_id"] for e in doomed}
-        self.edges = [e for e in self.edges if e not in doomed]
-        still = {e["src_id"] for e in self.edges} | {e["dst_id"] for e in self.edges}
+        for e in doomed:
+            e["superseded_at"] = _now()
+        still = {e["src_id"] for e in self.live} | {e["dst_id"] for e in self.live}
         orphans = touched - still
         for nid in orphans:
             self.nodes.pop(nid, None)
@@ -101,15 +119,17 @@ class InMemoryContextGraph:
     async def purge_phase(self, phase: str, project: str = DEFAULT_PROJECT) -> dict[str, int]:
         mine = self._mine(project)
         doomed = [
-            e for e in self.edges
+            e for e in self.live
             if e.get("phase") == phase and (e["src_id"] in mine or e["dst_id"] in mine)
         ]
         touched = {e["src_id"] for e in doomed} | {e["dst_id"] for e in doomed}
         # Only the doomed edges. Filtering by phase alone here is the bug this
         # whole change exists to fix, reproduced in the double.
         doomed_ids = {id(e) for e in doomed}
-        self.edges = [e for e in self.edges if id(e) not in doomed_ids]
-        still = {e["src_id"] for e in self.edges} | {e["dst_id"] for e in self.edges}
+        for e in self.live:
+            if id(e) in doomed_ids:
+                e["superseded_at"] = _now()
+        still = {e["src_id"] for e in self.live} | {e["dst_id"] for e in self.live}
         orphans = touched - still
         for nid in orphans:
             self.nodes.pop(nid, None)
@@ -121,7 +141,7 @@ class InMemoryContextGraph:
             validate_edge(a.edge, a.src.type, a.dst.type)
             src, dst = self._put(a.src), self._put(a.dst)
             key = (a.edge, src, dst, run_id)
-            if any((e["type"], e["src_id"], e["dst_id"], e["run_id"]) == key for e in self.edges):
+            if any((e["type"], e["src_id"], e["dst_id"], e["run_id"]) == key for e in self.live):
                 continue
             self.edges.append(
                 {"type": a.edge, "src_id": src, "dst_id": dst,
@@ -131,10 +151,10 @@ class InMemoryContextGraph:
         return written
 
     def _forward(self, edge_type: str, ids: set[str]) -> set[str]:
-        return {e["dst_id"] for e in self.edges if e["type"] == edge_type and e["src_id"] in ids}
+        return {e["dst_id"] for e in self.live if e["type"] == edge_type and e["src_id"] in ids}
 
     async def neighbours(self, node_id: str) -> list[dict[str, Any]]:
-        return [e for e in self.edges if node_id in (e["src_id"], e["dst_id"])]
+        return [e for e in self.live if node_id in (e["src_id"], e["dst_id"])]
 
     async def untested_criteria(self, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         passing = {
@@ -168,11 +188,11 @@ class InMemoryContextGraph:
 
     async def blast_radius(self, module_id: str, project: str = DEFAULT_PROJECT) -> list[dict[str, Any]]:
         dependents = {
-            e["src_id"] for e in self.edges
+            e["src_id"] for e in self.live
             if e["type"] == EdgeType.DEPENDS_ON and e["dst_id"] == module_id
         }
         targets = dependents | {module_id}
-        ids = {e["src_id"] for e in self.edges if e["type"] == EdgeType.COVERS and e["dst_id"] in targets}
+        ids = {e["src_id"] for e in self.live if e["type"] == EdgeType.COVERS and e["dst_id"] in targets}
         return [self.nodes[i] for i in sorted(ids) if i in self.nodes]
 
     async def counts(self, project: str = DEFAULT_PROJECT) -> dict[str, Any]:
@@ -181,7 +201,7 @@ class InMemoryContextGraph:
         edges: dict[str, int] = {}
         for n in visible.values():
             nodes[n["type"]] = nodes.get(n["type"], 0) + 1
-        for e in self.edges:
+        for e in self.live:
             if e["src_id"] in visible or e["dst_id"] in visible:
                 edges[e["type"]] = edges.get(e["type"], 0) + 1
         return {"nodes": nodes, "edges": edges}
@@ -198,7 +218,7 @@ class InMemoryContextGraph:
             deps = [
                 {"target": mods[e["dst_id"]]["external_id"],
                  "weight": (e.get("attributes") or {}).get("weight", 1)}
-                for e in self.edges
+                for e in self.live
                 if e["type"] == EdgeType.DEPENDS_ON
                 and e["src_id"] == nid
                 and e["dst_id"] in mods
@@ -219,7 +239,7 @@ class InMemoryContextGraph:
     async def module_paths(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]:
         visible = self._visible(project)
         out: dict[str, set[str]] = {}
-        for e in self.edges:
+        for e in self.live:
             if e["type"] != EdgeType.BELONGS_TO:
                 continue
             artifact, module = visible.get(e["src_id"]), visible.get(e["dst_id"])
@@ -238,7 +258,7 @@ class InMemoryContextGraph:
     async def module_dependents(self, project: str = DEFAULT_PROJECT) -> dict[str, set[str]]:
         visible = self._visible(project)
         out: dict[str, set[str]] = {}
-        for e in self.edges:
+        for e in self.live:
             if e["type"] != EdgeType.DEPENDS_ON:
                 continue
             src, dst = visible.get(e["src_id"]), visible.get(e["dst_id"])
@@ -266,7 +286,7 @@ class InMemoryContextGraph:
     ) -> dict[str, set[str]]:
         visible = self._visible(project)
         out: dict[str, set[str]] = {}
-        for e in self.edges:
+        for e in self.live:
             wanted = {EdgeType.IMPORTS}
             if include_contracts:
                 wanted.add(EdgeType.CALLS_ENDPOINT)

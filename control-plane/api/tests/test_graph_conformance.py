@@ -214,3 +214,77 @@ def test_both_implementations_return_the_same_keys(source, cls, method, required
         f"and the port's `list[dict[str, Any]]` cannot say so — which is why they "
         f"are listed here until the port carries models."
     )
+
+
+# ── withdrawal is history, not deletion ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_withdrawn_edge_is_kept_so_an_assessment_can_be_replayed(
+    tmp_path, monkeypatch
+):
+    """superseded_at was on the model from the beginning and never assigned.
+
+    Every query already filtered on it, so the append-only intent existed
+    only as a column while retract and purge_phase deleted rows. That made an
+    assessment unreproducible the moment the graph moved: "why did you select
+    this test for that change" is unanswerable once the edges it reasoned
+    over are gone.
+    """
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'hist.db'}")
+    from sqlalchemy import select
+
+    from app.adapters.entity_resolver.local import LocalEntityResolver
+    from app.core.config import get_settings
+    from app.core.context_graph import Assertion, NodeSpec
+    from app.core.db import get_engine, get_sessionmaker, init_db
+    from app.models.graph import GraphEdge
+
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+    await init_db()
+
+    graph = SqlContextGraph(LocalEntityResolver())
+    edge = Assertion(
+        edge="IMPORTS",
+        src=NodeSpec(type="SOURCE_ARTIFACT", system="code", external_id="a.ts"),
+        dst=NodeSpec(type="SOURCE_ARTIFACT", system="code", external_id="b.ts"),
+    )
+    await graph.ingest("run-1", "code-index", [edge])
+    assert await graph.phase_edges("code-index") == {("IMPORTS", "a.ts", "b.ts")}
+
+    await graph.retract("code-index", {("IMPORTS", "a.ts", "b.ts")})
+
+    # Gone from the live view...
+    assert await graph.phase_edges("code-index") == set()
+
+    # ...and still on disk, stamped with when it was withdrawn.
+    async with get_sessionmaker()() as session:
+        rows = (await session.execute(select(GraphEdge))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].superseded_at is not None
+
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+
+
+def test_the_double_withdraws_rather_than_deleting_too():
+    """It removed rows, so a test could not tell "withdrawn" from "never
+    asserted" — the exact history that makes a replay possible."""
+    import asyncio
+
+    from app.core.context_graph import Assertion, NodeSpec
+
+    graph = InMemoryContextGraph()
+    asyncio.run(graph.ingest("run-1", "code-index", [
+        Assertion(
+            edge="IMPORTS",
+            src=NodeSpec(type="SOURCE_ARTIFACT", system="code", external_id="a.ts"),
+            dst=NodeSpec(type="SOURCE_ARTIFACT", system="code", external_id="b.ts"),
+        )
+    ]))
+    asyncio.run(graph.retract("code-index", {("IMPORTS", "a.ts", "b.ts")}))
+
+    assert graph.live == []
+    assert len(graph.edges) == 1
+    assert graph.edges[0]["superseded_at"] is not None
