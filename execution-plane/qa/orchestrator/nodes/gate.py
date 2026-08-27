@@ -109,6 +109,56 @@ def _required_verdicts(state: PipelineState, leaves: list[dict]) -> tuple[list[s
     return sorted(set(never_ran)), sorted(set(failed))
 
 
+def _covered_modules(state: PipelineState, leaves: list[dict]) -> list[str]:
+    """Which modules this run actually exercised, and can prove it did.
+
+    The platform hands down a blast radius and reconciles it against this,
+    so what goes here has to be what happened rather than what was planned.
+    Two rules follow from that.
+
+    Only passing tests count. A spec that ran and failed demonstrates the
+    opposite of coverage, and counting it would let a broken change report
+    its blast radius as covered.
+
+    Observation beats declaration. `covers_modules` in a manifest is
+    somebody's assertion; the files a spec actually requested are the run's
+    own account. The manifest is the fallback for a run with no traces, and
+    the two are not interchangeable — which is why the graph edges written
+    from this carry `runtime-observed` or `declared` rather than neither.
+    """
+    from orchestrator.context import _load_manifest, modules_for_paths
+
+    passed_files = {
+        _basename(leaf["file"]) for leaf in leaves if leaf["status"] in _PASSING
+    }
+    failed_files = {
+        _basename(leaf["file"]) for leaf in leaves if leaf["status"] not in _PASSING
+    }
+    # A spec with any failing case proves nothing about the modules it
+    # touched, even if its other cases passed.
+    proven = passed_files - failed_files
+
+    observed = state.get("observed_coverage") or {}
+    modules: set[str] = set()
+    for name, entry in observed.items():
+        if _basename(name) in proven:
+            modules |= modules_for_paths(entry.get("files") or [])
+
+    # Fallback for an assignment that produced no trace: the manifest's
+    # claim, but only for a script that demonstrably passed.
+    manifest = {e.get("id"): e for e in _load_manifest()}
+    for assignment in state.get("test_assignments", []):
+        script_id = assignment.get("source_script_id")
+        spec = _basename(assignment.get("file_path", ""))
+        if spec not in proven or script_id not in manifest:
+            continue
+        if _basename(spec) in {_basename(n) for n in observed}:
+            continue
+        modules |= set(manifest[script_id].get("covers_modules") or [])
+
+    return sorted(modules)
+
+
 def run(state: PipelineState) -> PipelineState:
     reasons: list[str] = []
     raw = state.get("run_results_raw", {})
@@ -228,4 +278,16 @@ def run(state: PipelineState) -> PipelineState:
         "required_regressions_missing": never_ran,
         "coverage_gaps": sorted(uncovered),
         "graph_warnings": graph_notes,
+        # The accounting the control plane reconciles against the blast
+        # radius it handed down. Reported rather than compared here: this
+        # plane knows what it exercised, the platform knows what it obliged,
+        # and a provider that graded its own obligation would be marking its
+        # own homework.
+        #
+        # The two lists say different things. `covered` is a demonstration;
+        # `uncovered` is a disclosure — impacted modules this run knows it
+        # could not cover, which is a materially better answer than leaving
+        # them unmentioned and is scored as such.
+        "covered_modules": _covered_modules(state, leaves),
+        "uncovered_modules": sorted(uncovered),
     }
