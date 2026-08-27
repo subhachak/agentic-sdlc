@@ -92,12 +92,7 @@ class LocalPipelineWorkDispatch:
         """
         self._git("worktree", "add", "--detach", str(into), branch)
         app = into / self._app_subdir
-
-        # Dependencies are identical to the ones already installed; a symlink
-        # turns a two-minute install into nothing.
-        modules = self._root / self._app_subdir / "node_modules"
-        if modules.exists() and not (app / "node_modules").exists():
-            (app / "node_modules").symlink_to(modules)
+        self._provide_dependencies(app)
 
         # An empty command means the app starts itself — a Playwright config
         # with a `webServer` block does, and building ahead of it is minutes
@@ -111,6 +106,45 @@ class LocalPipelineWorkDispatch:
                     "the change does not build: " + (build.stdout or build.stderr)[-500:]
                 )
         return app
+
+    def _provide_dependencies(self, app: Path) -> None:
+        """node_modules in the worktree, without a fresh install.
+
+        This used to symlink the working copy's. Next.js refuses that:
+        Turbopack panics with "Symlink [project]/node_modules is invalid, it
+        points out of the filesystem root" and the web server never starts,
+        so every scenario fails for a reason that has nothing to do with the
+        change under test. It worked for the sample app and would have failed
+        on the first real one.
+
+        A copy-on-write clone is the same trick the symlink was reaching for
+        — 700MB in nine seconds on APFS, and no extra disk until something is
+        written. `--reflink=auto` is the Linux equivalent and degrades to a
+        real copy where the filesystem cannot. Falling all the way back to an
+        install is slow but correct, which is the right order for the last
+        resort.
+        """
+        target = app / "node_modules"
+        source = self._root / self._app_subdir / "node_modules"
+        if target.exists() or not source.exists():
+            return
+
+        for command in (
+            ["cp", "-Rc", str(source), str(target)],          # APFS clonefile
+            ["cp", "-R", "--reflink=auto", str(source), str(target)],  # GNU
+            ["cp", "-R", str(source), str(target)],
+        ):
+            if subprocess.run(command, capture_output=True).returncode == 0:
+                return
+
+        install = subprocess.run(
+            ["npm", "ci"], cwd=app, capture_output=True, text=True
+        )
+        if install.returncode != 0:
+            raise RuntimeError(
+                "could not provide node_modules for the checkout under test: "
+                + (install.stderr or install.stdout)[-500:]
+            )
 
     async def trigger(
         self, run_id: str, phase: str, correlation_id: str, inputs: dict[str, Any]

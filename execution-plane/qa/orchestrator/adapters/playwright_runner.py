@@ -38,6 +38,22 @@ class PlaywrightRunner:
         if workers:
             command.append(f"--workers={workers}")
 
+        # One project unless told otherwise. Fronei declares `chromium` and
+        # `mobile-chrome`, so an unqualified run executes every spec twice —
+        # doubling the time and grading authored scenarios against a mobile
+        # viewport nobody wrote them for. Their own CI pins `--project` for
+        # the same reason; the pipeline should not be less specific than the
+        # suite it is running.
+        project = os.environ.get("QA_PLAYWRIGHT_PROJECT", "")
+        if project:
+            command.append(f"--project={project}")
+
+        # The specs this run actually assigned. Without them Playwright
+        # collects whatever `testDir` holds, so the blast radius decided what
+        # was *reported* while the suite decided what was *run* — and the
+        # claim that scoping selected these tests was not true of execution.
+        command.extend(specs)
+
         proc = subprocess.run(
             command,
             cwd=APP_ROOT,

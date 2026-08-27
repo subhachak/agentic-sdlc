@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 
+from pathlib import Path
+
 import pytest
 
 from orchestrator.adapters.json_test_data import JsonFileTestData
@@ -241,3 +243,58 @@ def test_a_missing_mock_file_yields_no_entities_rather_than_raising(tmp_path):
     from orchestrator.adapters.route_mock_test_data import RouteMockTestData
 
     assert RouteMockTestData(tmp_path / "absent.ts").shape() == {}
+
+
+# ── the runner actually narrows what it runs ──────────────────────────────
+
+
+def _command(monkeypatch, *, specs, workers=1, project=""):
+    """The argv the runner would execute, without executing it."""
+    import orchestrator.adapters.playwright_runner as runner
+
+    captured = {}
+
+    class _Result:
+        returncode = 0
+        stdout = stderr = ""
+
+    monkeypatch.setattr(
+        runner.subprocess, "run",
+        lambda command, **kw: (captured.setdefault("argv", command), _Result())[1],
+    )
+    monkeypatch.setenv("QA_PLAYWRIGHT_PROJECT", project)
+    monkeypatch.setattr(runner, "RESULTS_FILE", Path("/nonexistent/results.json"))
+    runner.PlaywrightRunner().execute(
+        specs=specs, workers=workers, env={}, evidence_dir="/tmp"
+    )
+    return captured["argv"]
+
+
+def test_the_assigned_specs_reach_the_command_line(monkeypatch):
+    """They did not. The runner took `specs` and never used it, so Playwright
+    collected whatever testDir held: the blast radius decided what was
+    reported while the suite decided what was run, and "we selected these
+    tests because of the impact" was not true of execution."""
+    argv = _command(monkeypatch, specs=["e2e/generated/a.spec.ts", "e2e/b.spec.ts"])
+    assert argv[-2:] == ["e2e/generated/a.spec.ts", "e2e/b.spec.ts"]
+
+
+def test_one_project_unless_told_otherwise(monkeypatch):
+    """Fronei declares chromium and mobile-chrome. An unqualified run executes
+    every spec twice — twice the time, and authored scenarios graded against a
+    viewport nobody wrote them for."""
+    argv = _command(monkeypatch, specs=[], project="chromium")
+    assert "--project=chromium" in argv
+
+    unqualified = _command(monkeypatch, specs=[], project="")
+    assert not any(a.startswith("--project") for a in unqualified)
+
+
+def test_no_specs_means_the_suite_rather_than_nothing(monkeypatch):
+    """An empty assignment list is a run with nothing to say, not a run that
+    should silently execute every test in the repository — but Playwright's
+    own default is the suite, and overriding that here would hide the
+    difference between "nothing was assigned" and "everything ran"."""
+    argv = _command(monkeypatch, specs=[])
+    assert argv[:3] == ["npx", "playwright", "test"]
+    assert not [a for a in argv if a.endswith(".spec.ts")]
