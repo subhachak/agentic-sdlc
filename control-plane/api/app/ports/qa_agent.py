@@ -12,8 +12,15 @@ reuse, which to write, how to seed and tear down data, what runner to use.
 A client with a mature QA estate already answers all of those, and a port
 that dictated them would be asking them to throw that away.
 
-So the request says what changed and what must be proven; the result says
-what was actually observed. Everything between is the provider's.
+So the request says what changed, how far it reaches and what must be
+proven; the result says what was actually observed and what it settled for.
+Everything between is the provider's.
+
+Reach is handed down rather than asked for. The platform holds the
+dependency graph and the canonical impact engine; a client's QA system
+usually holds neither, and where it does, a second traversal is a second
+answer. What stays here is the reconciliation — obligation out, accounting
+back, deterministic code comparing them.
 
 Two shapes, as with implementation:
 
@@ -55,10 +62,34 @@ class QARequest(BaseModel):
     head_sha: str = ""
     branch: str = ""
     repo: str = ""
-    # What the implementation actually touched. Deliberately the *changed*
-    # set, not the blast radius — the provider widens it, because how far a
-    # change reaches is a property of the codebase the provider is testing.
+    # What the implementation actually touched.
     changed_paths: list[str] = Field(default_factory=list)
+    # How far that reaches, from the one engine that decides it.
+    #
+    # This used to be the provider's job to work out, on the reasoning that
+    # reach is a property of the codebase being tested. That was wrong twice.
+    # A client's QA system generally has no dependency graph to widen with,
+    # so it would have to guess or skip; and where it does have one, it
+    # answers a question the platform already answered differently — which
+    # is how the design gate and the QA plane came to run on two blast radii
+    # in the same run. Impact is computed once, in app/core/impact.py, and
+    # handed down.
+    #
+    # The full Assessment, not a bare list: `paths` explains why each entity
+    # is in scope, `blind_spots` and `unmapped` say what the graph could not
+    # see, and `policy` plus `engine_version` say under what rules. A
+    # provider that disagrees can say so against a specific hop.
+    impact: dict[str, Any] = Field(default_factory=dict)
+    # What must end up covered, rolled up to modules — the unit test
+    # manifests and coverage reports already speak in. Derived from the
+    # assessment's test obligations, so a relationship that propagates
+    # without obliging a test (a deployment edge, say) widens the impact set
+    # without demanding a scenario.
+    #
+    # An obligation, not an instruction. A provider may cover more, and may
+    # cover less — but the difference is reconciled against what it reports,
+    # so covering less is a disclosure rather than a silence.
+    required_coverage: list[str] = Field(default_factory=list)
     # What must end up proven. A provider may exercise more; it may not
     # silently exercise less, and the gate checks the difference.
     criteria: list[dict[str, Any]] = Field(default_factory=list)
@@ -95,6 +126,17 @@ class QAResult(BaseModel):
     # and only the second one is a release decision.
     covered_criteria: list[str] = Field(default_factory=list)
     uncovered_criteria: list[str] = Field(default_factory=list)
+    # The accounting against `required_coverage`. The platform hands down an
+    # obligation and deterministic code checks it back; a provider free to
+    # widen or narrow scope without reporting what it settled on would make
+    # the obligation advisory, and an advisory control is not one.
+    #
+    # Empty is not the same as "nothing was covered" — a provider whose
+    # capabilities say reports_coverage is false cannot answer this, and the
+    # phase records the coverage half of the gate as not evaluated rather
+    # than reading silence as a failure.
+    covered_modules: list[str] = Field(default_factory=list)
+    uncovered_modules: list[str] = Field(default_factory=list)
     detail: str = ""
 
 

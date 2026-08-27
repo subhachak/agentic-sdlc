@@ -51,12 +51,18 @@ class DispatchedQAAgent:
                 "head_sha": request.head_sha,
                 "branch": request.branch,
                 "repo": request.repo,
-                # The changed set, not the blast radius. Named here rather
-                # than left to a convention in the phase: a provider that
-                # mistook one for the other would scope its regression
-                # selection to exactly the files that were edited and miss
-                # everything downstream.
+                # The changed set. Distinct from the blast radius below, and
+                # named separately because a provider that mistook one for
+                # the other would scope regression to exactly the files that
+                # were edited and miss everything downstream.
                 "changed_paths": request.changed_paths,
+                # How far the platform judges that reaches, and what it
+                # obliges. Forwarded rather than recomputed: this adapter is
+                # the only thing standing between the canonical engine and a
+                # provider, and a provider left to derive its own reach would
+                # answer a question the run already settled.
+                "impact": request.impact,
+                "required_coverage": request.required_coverage,
                 "change_request_id": request.change_request_id,
                 "contract_version": request.contract_version,
             },
@@ -76,5 +82,10 @@ class DispatchedQAAgent:
             evidence_ref=str(payload.get("evidence_ref") or ""),
             covered_criteria=list(payload.get("covered_criteria") or []),
             uncovered_criteria=list(payload.get("uncovered_criteria") or []),
+            # The accounting against required_coverage. Absent stays absent:
+            # a provider that reported nothing has not reported zero, and
+            # the reconciliation distinguishes the two.
+            covered_modules=list(payload.get("covered_modules") or []),
+            uncovered_modules=list(payload.get("uncovered_modules") or []),
             detail=str(payload.get("detail") or ""),
         )

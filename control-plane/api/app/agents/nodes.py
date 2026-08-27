@@ -26,8 +26,11 @@ from app.ports.implementation_agent import (
 )
 from app.core.change_review import review as review_change
 from app.core.design_review import MAX_FILES as MAX_DESIGN_FILES
+from app.core.design_review import assess_change
 from app.core.seeding import refresh as refresh_index
 from app.core.design_review import review as review_design
+from app.core.impact import roll_up
+from app.core.qa_coverage import reconcile as reconcile_coverage
 from app.core.seeding import CODE_SYSTEM
 from app.graph.paths import canonical as canonical_path
 from app.graph.projects import DEFAULT_PROJECT, scoped
@@ -659,6 +662,28 @@ def build_nodes(
         # None means a row already exists, i.e. this is the resume pass and
         # the job is already running. Triggering here would start a second.
         project = state.get("project") or DEFAULT_PROJECT
+        changed_paths = state.get("changed_paths", [])
+
+        # How far the change reaches, decided here and handed down. The
+        # design gate ran the same engine over the same edges earlier in this
+        # run; a provider deriving its own would be the second answer to a
+        # question already settled.
+        module_paths = await context_graph.module_paths(project)
+        path_to_module = {
+            path: module for module, paths in module_paths.items() for path in paths
+        }
+        assessment = assess_change(
+            changed_paths,
+            await context_graph.file_dependents(project),
+            known=set(path_to_module),
+        )
+        # Rolled up to modules for the obligation, kept at file level in the
+        # assessment. `test_obligations` rather than `affected`: a
+        # relationship can propagate impact without obliging a scenario, and
+        # demanding coverage for a deployment edge would make the obligation
+        # something teams learn to ignore.
+        required_coverage = roll_up(assessment.test_obligations, path_to_module)
+
         qa_outcome = await qa_agent.execute(
             QARequest(
                 run_id=run_id,
@@ -667,10 +692,9 @@ def build_nodes(
                 head_sha=head_sha,
                 branch=(state.get("implementation") or {}).get("branch", ""),
                 repo=target_repo,
-                # The changed set, not the blast radius. The provider widens
-                # it, because how far a change reaches is a property of the
-                # codebase being tested.
-                changed_paths=state.get("changed_paths", []),
+                changed_paths=changed_paths,
+                impact=assessment.as_dict(),
+                required_coverage=required_coverage,
                 criteria=await context_graph.criteria(project),
             )
         )
@@ -724,6 +748,19 @@ def build_nodes(
         # as full coverage.
         reports_coverage = bool(qa_agent.capabilities().get("reports_coverage"))
 
+        # The half of the handover that does not move. A provider decides how
+        # to test and may decide to cover less than the blast radius obliged
+        # — but the difference is computed here, by ordinary code, so
+        # covering less is a disclosure rather than a silence. Without this
+        # the obligation is advice, and a provider returning passed=True ends
+        # the conversation.
+        coverage = reconcile_coverage(
+            required_coverage,
+            proven.covered_modules,
+            proven.uncovered_modules,
+            reports_coverage=reports_coverage,
+        )
+
         return {
             "qa_result": {
                 **result,
@@ -732,6 +769,14 @@ def build_nodes(
                 "covered_criteria": proven.covered_criteria,
                 "uncovered_criteria": proven.uncovered_criteria,
                 "coverage_evaluated": reports_coverage,
+                # What the change was judged to reach, and what QA settled
+                # for. Carried into gate 3 because "the tests passed" and
+                # "the tests covered what this change could break" are the
+                # two halves of a release decision, and only the first one
+                # is visible in a green tick.
+                "required_coverage": required_coverage,
+                "coverage_reconciliation": coverage.as_dict(),
+                "impact_engine_version": assessment.engine_version,
             },
             "graph_edges_written": edges_written,
             "status": "awaiting_gate_3" if outcome == "succeeded" else f"qa_{outcome}",
