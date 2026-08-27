@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from orchestrator.context import (
     library_script_ids,
-    blast_radius,
+    impacted_modules,
     build_assertions,
     modules_for_paths,
     criterion_ids,
@@ -33,17 +33,49 @@ def test_a_changed_file_maps_to_its_component():
     assert modules_for_paths(["demo-app/app/api/claims/route.ts"]) == {"demo-app/app/api/claims"}
 
 
-def test_blast_radius_includes_dependents_not_just_the_change():
+# The assessment a run is dispatched with. Reach is decided by the control
+# plane's impact engine; this plane applies it and does not re-derive it.
+CLAIMS_IMPACT = {
+    "engine_version": "1.0.0",
+    "affected": [
+        "demo-app/app/api/claims/route.ts",
+        "demo-app/app/claims/page.tsx",
+    ],
+}
+
+
+def test_reach_comes_from_the_assessment_not_from_a_local_walk():
     """The point of the graph: a change to the API can break the table and
-    the filter, neither of which the diff touched."""
-    assert blast_radius({"demo-app/app/api/claims"}) == {
+    the filter, neither of which the diff touched. What is new is where that
+    conclusion is reached — once, in the control plane, rather than here as
+    well with a traversal nothing reconciles."""
+    assert impacted_modules(
+        ["demo-app/app/api/claims/route.ts"], CLAIMS_IMPACT
+    ) == {
         "demo-app/app/api/claims",
         "demo-app/app/claims",
     }
 
 
+def test_without_an_assessment_it_narrows_rather_than_guesses():
+    """And the caller is told, because the narrow answer is the dangerous
+    one: fewer required regressions reads as a cleaner run, not a smaller."""
+    changed = ["demo-app/app/api/claims/route.ts"]
+    assert impacted_modules(changed, None) == {"demo-app/app/api/claims"}
+
+    scope = regression_candidates(changed)
+    assert any(
+        "no impact assessment was supplied" in w for w in scope["graph_warnings"]
+    )
+    # And the graph itself is not blamed for it: a run against a perfect
+    # graph with no assessment is still scoped to the edit alone.
+    assert not any("no impact assessment" in w for w in graph_warnings())
+
+
 def test_regression_scope_widens_beyond_the_diff():
-    scope = regression_candidates(["demo-app/app/api/claims/route.ts"])
+    scope = regression_candidates(
+        ["demo-app/app/api/claims/route.ts"], impact=CLAIMS_IMPACT
+    )
 
     assert scope["changed_components"] == ["demo-app/app/api/claims"]
     assert set(scope["impacted_components"]) == {
@@ -79,7 +111,9 @@ def test_a_module_with_no_script_is_reported_as_a_gap_not_as_covered(monkeypatch
         context, "_load_manifest",
         lambda: [{"id": "claims-list-renders", "covers_modules": ["demo-app/app/claims"]}],
     )
-    scope = context.regression_candidates(["demo-app/app/api/claims/route.ts"])
+    scope = context.regression_candidates(
+        ["demo-app/app/api/claims/route.ts"], impact=CLAIMS_IMPACT
+    )
 
     assert scope["required_scripts"] == ["claims-list-renders"]
     assert scope["uncovered_components"] == ["demo-app/app/api/claims"]

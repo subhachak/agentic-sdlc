@@ -108,6 +108,22 @@ def build_work_dispatch(settings: Settings) -> WorkDispatch:
             _Path(settings.target_working_copy),
             base_ref=settings.target_ref,
             secrets={"ANTHROPIC_API_KEY": settings.anthropic_api_key or ""},
+            # The execution plane is this platform's, wherever the app under
+            # test lives. Left to default before, which quietly required the
+            # orchestrator to sit inside the client's repository.
+            app_subdir=settings.target_app_subdir,
+            build_command=settings.target_build_command,
+            qa_env={
+                key: value
+                for key, value in (
+                    ("QA_SCRIPT_MANIFEST", settings.qa_script_manifest),
+                    ("QA_SCRIPT_LIBRARY", settings.qa_script_library),
+                    ("QA_GENERATED_DIR", settings.qa_generated_dir),
+                    ("QA_ROUTE_MOCKS", settings.qa_route_mocks),
+                    ("QA_FEATURES", settings.qa_features),
+                )
+                if value
+            },
         )
 
     from app.adapters.work_dispatch.local_stub import LocalStubWorkDispatch

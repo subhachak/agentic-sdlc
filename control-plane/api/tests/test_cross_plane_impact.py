@@ -7,9 +7,16 @@ QA never required a test for, while QA required app/blog the gate never
 named — so a change could pass a containment check and then be tested
 against a different set.
 
-One engine fixed the semantics. This is what stops them separating again:
-it runs the real execution-plane function, against the real export shape,
-and compares it with the control plane's assessment.
+One engine fixed the semantics, and then the execution plane stopped
+traversing at all: reach is decided once, by app/core/impact.py, and travels
+with the request. Two implementations that agree today agree for reasons
+neither of them states — measured across 46 real commits, the agreement held
+only because the graph carries one edge type and an IMPORTS path stays above
+the confidence floor for nine hops while the policy stops at two.
+
+So this file no longer compares two traversals. It checks the handover: that
+what the execution plane scopes against is what the control plane assessed,
+and that a plane given nothing says so instead of inventing a walk.
 """
 
 import json
@@ -90,10 +97,14 @@ def _control_plane_modules(graph: dict, changed: list[str]) -> list[str]:
     ],
 )
 def test_both_planes_reach_the_same_modules(qa_context, changed):
+    """Handed the assessment, the execution plane scopes to exactly what the
+    control plane assessed — no widening of its own, no narrowing."""
     context, graph = qa_context
 
-    direct = context.modules_for_paths(changed)
-    qa_modules = sorted(context.blast_radius(direct, changed))
+    file_dependents = {k: set(v) for k, v in graph["file_dependents"].items()}
+    assessment = assess_change(changed, file_dependents)
+
+    qa_modules = sorted(context.impacted_modules(changed, assessment.as_dict()))
     control_modules = sorted(_control_plane_modules(graph, changed))
 
     assert qa_modules == control_modules, (
@@ -110,16 +121,32 @@ def test_the_execution_plane_reads_the_exported_depth(qa_context):
     assert context.impact_policy()["engine_version"] == ENGINE_VERSION
 
 
-def test_without_file_edges_it_falls_back_and_is_coarser(qa_context, tmp_path, monkeypatch):
-    """An older export has no file edges. Falling back to the module rollup
-    is coarser, which is a worse answer and not a wrong one — the failure to
-    avoid is pretending."""
-    context, graph = qa_context
-    stripped = {**graph, "file_dependents": {}}
-    path = tmp_path / "old-graph.json"
-    path.write_text(json.dumps(stripped))
-    monkeypatch.setattr(context, "CODE_GRAPH_FILE", path)
-    context._load_code_graph.cache_clear() if hasattr(context._load_code_graph, "cache_clear") else None
+def test_with_no_assessment_it_narrows_and_says_so(qa_context):
+    """The one thing it must not do is guess.
 
-    direct = context.modules_for_paths(["app/lib/format.ts"])
-    assert context.blast_radius(direct, ["app/lib/format.ts"]) >= direct
+    A walk invented here is the duplicate that was just deleted, and it would
+    come back with nobody deciding to bring it back. So an unassessed run
+    scopes to the directly changed modules — and warns, loudly, because the
+    unsafe direction is the narrow one: fewer required regressions is a run
+    that passes more easily and looks cleaner rather than smaller.
+    """
+    context, _ = qa_context
+    changed = ["app/lib/format.ts"]
+
+    assert context.impacted_modules(changed, None) == context.modules_for_paths(changed)
+    assert context.impacted_modules(changed, {"affected": []}) == context.modules_for_paths(changed)
+
+    scope = context.regression_candidates(changed)
+    assert any(
+        "no impact assessment was supplied" in w for w in scope["graph_warnings"]
+    )
+
+
+def test_an_assessment_widens_beyond_the_changed_modules(qa_context):
+    """The counterpart: given one, scope is genuinely wider than the edit."""
+    context, graph = qa_context
+    changed = ["app/lib/format.ts"]
+    file_dependents = {k: set(v) for k, v in graph["file_dependents"].items()}
+
+    widened = context.impacted_modules(changed, assess_change(changed, file_dependents).as_dict())
+    assert widened > context.modules_for_paths(changed)

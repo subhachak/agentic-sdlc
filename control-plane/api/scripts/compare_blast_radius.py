@@ -1,21 +1,23 @@
 #!/usr/bin/env python
-"""Do the control plane and the execution plane agree on what a change reaches?
+"""Does the execution plane scope to what the control plane assessed?
 
-They have to. The design gate reasons about one blast radius and QA scopes
-regression against another, and a run whose two halves disagree about what a
-change touches is a run that cannot justify its own verdict.
+It used to answer that question for itself. The design gate reasoned about
+one blast radius and QA scoped regression against another, and a run whose
+two halves disagree about what a change touches cannot justify its own
+verdict.
 
-Today they agree on every commit measured — but incidentally, not
-structurally. The graph carries one edge type, and an IMPORTS path stays
-above the confidence floor until nine hops while the policy stops at two. So
-every distinction the canonical engine draws (edge semantics, direction,
-propagation by change kind, confidence decay) collapses to the flat walk the
-execution plane does. Populate CALLS_ENDPOINT, register anything `inferred`,
-or raise max_depth, and the two answers separate.
+Measured across every commit in this repository's own history and 46 of
+Fronei's, the two traversals agreed on all of them — but incidentally. The
+graph carries one edge type, and an IMPORTS path stays above the confidence
+floor for nine hops while the policy stops at two, so every distinction the
+canonical engine draws collapsed to the flat walk. That equivalence is what
+made the second traversal safe to delete rather than reconcile.
 
-This exists so that separation is a failing check rather than a discovery.
-Run it against a real exported graph and real commits — a disagreement that
-only appears on invented input is not one anybody will hit.
+What remains is a handover, and this checks the handover: given the control
+plane's assessment, the execution plane must scope to exactly it — no
+widening of its own, no narrowing. Run against a real exported graph and
+real commits, because a discrepancy that only appears on invented input is
+not one anybody will hit.
 """
 
 from __future__ import annotations
@@ -74,9 +76,7 @@ def main() -> int:
         control_modules = execution_plane.modules_for_paths(
             sorted(set(control.affected) | set(files))
         )
-        execution_modules = execution_plane.blast_radius(
-            execution_plane.modules_for_paths(files), files
-        )
+        execution_modules = execution_plane.impacted_modules(files, control.as_dict())
 
         row = {
             "commit": sha,
@@ -95,10 +95,9 @@ def main() -> int:
         "repo": graph["provenance"]["repo"],
         "scope": graph["scope"],
         "policy": policy,
-        # Why an agreement here is weaker evidence than it looks.
-        "edge_types_populated": sorted(
-            {"IMPORTS"} if dependents else set()
-        ),
+        # Which edge types actually carry data. An agreement reached with
+        # one populated type says less than it appears to.
+        "edge_types_populated": sorted({"IMPORTS"} if dependents else set()),
         "change_sets": len(rows),
         "disagreed": len(disagreed),
         "disagreements": disagreed,
@@ -115,8 +114,9 @@ def main() -> int:
 
     if disagreed:
         print(
-            "\nThe two planes no longer answer the same question. Consolidate on "
-            "app/core/impact.py rather than reconciling the outputs."
+            "\nThe execution plane is not scoping to the assessment it was handed. "
+            "Either it has grown a traversal of its own again, or the rollup from "
+            "files to modules differs between the planes."
         )
     return 1 if disagreed else 0
 

@@ -662,12 +662,40 @@ def build_nodes(
         # None means a row already exists, i.e. this is the resume pass and
         # the job is already running. Triggering here would start a second.
         project = state.get("project") or DEFAULT_PROJECT
-        changed_paths = state.get("changed_paths", [])
+        base_sha = state.get("base_sha", "")
 
-        # How far the change reaches, decided here and handed down. The
-        # design gate ran the same engine over the same edges earlier in this
-        # run; a provider deriving its own would be the second answer to a
-        # question already settled.
+        # What the repository says changed, not what the agent said it wrote.
+        #
+        # The blast radius is assessed once per phase, and each phase assesses
+        # it from the best evidence it has. Design had a prediction: the files
+        # a proposal named. Implementation had the actor's own account: the
+        # edit list it reported. This phase has both commits, so it can ask
+        # git — and between an agent's account and git's sit formatters,
+        # commit hooks, rewrites that changed nothing, and any edit the agent
+        # did not mention. Scoping regression from intent when effect is
+        # available is the weaker answer, and it is weak in the narrow
+        # direction: a path nobody reported is a path nothing re-tests.
+        changed_paths = state.get("changed_paths", [])
+        observed_from = "implementation-report"
+        if base_sha and head_sha:
+            try:
+                observed = await source_control.changed_paths(
+                    target_repo, base_sha, head_sha
+                )
+            except Exception as exc:  # noqa: BLE001 - the weaker set is still usable
+                # Reported, never silent. A phase that quietly fell back to the
+                # edit list would produce a narrower scope that looks like a
+                # smaller change rather than a less-informed one.
+                observed = []
+                observed_from = f"implementation-report (git comparison failed: {exc})"
+            if observed:
+                changed_paths = observed
+                observed_from = "revision-pair"
+
+        # How far that reaches, decided here and handed down. The design gate
+        # ran the same engine over the same edges earlier in this run; a
+        # provider deriving its own would be the second answer to a question
+        # already settled.
         module_paths = await context_graph.module_paths(project)
         path_to_module = {
             path: module for module, paths in module_paths.items() for path in paths
@@ -676,6 +704,17 @@ def build_nodes(
             changed_paths,
             await context_graph.file_dependents(project),
             known=set(path_to_module),
+            # Which rung of the ladder this assessment stands on. A design's
+            # impact is a prediction and this one is a measurement; recording
+            # them identically would make the two indistinguishable to
+            # anything reading the graph later, which is the difference
+            # between evidence and a guess with good posture.
+            snapshot={
+                "stage": "qa",
+                "changed_paths_from": observed_from,
+                "base_sha": base_sha,
+                "head_sha": head_sha,
+            },
         )
         # Rolled up to modules for the obligation, kept at file level in the
         # assessment. `test_obligations` rather than `affected`: a

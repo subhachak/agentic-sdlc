@@ -91,6 +91,21 @@ def _run_phase(args) -> dict:
     return state
 
 
+def _read_impact(path) -> dict:
+    """The blast radius this run was dispatched with.
+
+    Optional, and its absence is a real configuration rather than an error: a
+    developer running the pipeline by hand has no control plane to assess for
+    them. What that costs is stated in the run's own warnings rather than
+    guessed around.
+    """
+    if not path:
+        return {}
+    if not path.exists():
+        raise SystemExit(f"--impact {path} does not exist")
+    return json.loads(path.read_text())
+
+
 def _invoke(args, diff_text: str) -> dict:
     return build_graph().invoke(
         {
@@ -100,6 +115,7 @@ def _invoke(args, diff_text: str) -> dict:
             "head_sha": args.head_sha,
             "diff_text": diff_text,
             "changed_paths": get_changed_paths(args.base_sha, args.head_sha),
+            "impact": _read_impact(args.impact),
             "head_sha_for_graph": args.head_sha,
             "features_context": get_features(),
         }
@@ -120,6 +136,11 @@ def main() -> int:
     )
     parser.add_argument("--base-sha")
     parser.add_argument("--head-sha")
+    parser.add_argument(
+        "--impact",
+        type=Path,
+        help="the control plane's impact assessment for this change, as JSON",
+    )
     parser.add_argument("--phase", choices=("run", "report", "all"), default="all")
     parser.add_argument(
         "--state-file",

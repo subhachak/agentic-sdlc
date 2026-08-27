@@ -16,6 +16,8 @@ file was added.
 from __future__ import annotations
 
 import ast
+import importlib
+import inspect
 import re
 import subprocess
 import sys
@@ -363,3 +365,97 @@ def test_no_test_builds_settings_from_the_developers_own_env():
         "these construct Settings without _env_file=None, so they read the "
         "developer's .env: " + ", ".join(offenders)
     )
+
+
+# ── every adapter answers its whole port ──────────────────────────────────
+
+
+def _adapters_for(port_module: str):
+    """Concrete classes in the adapter package that mirrors a port module.
+
+    Matched by directory name rather than by declared inheritance, because
+    these are Protocols: an adapter that stopped satisfying one would not
+    announce it by failing to subclass anything.
+    """
+    package = APP / "adapters" / port_module
+    if not package.is_dir():
+        return []
+    found = []
+    for path in sorted(package.glob("*.py")):
+        if path.name.startswith("_"):
+            continue
+        module = importlib.import_module(f"app.adapters.{port_module}.{path.stem}")
+        for _, obj in inspect.getmembers(module, inspect.isclass):
+            if obj.__module__ == module.__name__:
+                found.append(obj)
+    return found
+
+
+def _protocol_in(port_module: str):
+    module = importlib.import_module(f"app.ports.{port_module}")
+    for _, obj in inspect.getmembers(module, inspect.isclass):
+        if getattr(obj, "_is_protocol", False) and obj.__module__ == module.__name__:
+            return obj
+    return None
+
+
+@pytest.mark.parametrize(
+    "port_module",
+    sorted(
+        p.stem
+        for p in (APP / "ports").glob("*.py")
+        if not p.stem.startswith("_")
+        and (APP / "adapters" / p.stem).is_dir()
+    ),
+)
+def test_every_adapter_implements_its_whole_port(port_module: str):
+    """A method added to a Protocol that an adapter never grew.
+
+    Protocols are structural, so nothing fails at import time — the gap
+    surfaces as an AttributeError on the day that adapter is configured,
+    which for a client-specific adapter is the day it is demonstrated. The
+    graph port had exactly this: `phase_edges()` took a signature its own
+    body contradicted and 392 tests passed, because no test ever built the
+    real implementation.
+
+    Parameter names are compared, not just arity: these are called with
+    keywords across the codebase, so a renamed parameter is a break that
+    positional-arity checking would wave through.
+    """
+    protocol = _protocol_in(port_module)
+    if protocol is None:
+        pytest.skip(f"no Protocol declared in app/ports/{port_module}.py")
+
+    expected = {
+        name: inspect.signature(getattr(protocol, name))
+        for name in dir(protocol)
+        if not name.startswith("_") and callable(getattr(protocol, name, None))
+    }
+    assert expected, f"{protocol.__name__} declares no methods"
+
+    for adapter in _adapters_for(port_module):
+        # Not everything in an adapter package implements the port — request
+        # models, helpers and base classes live there too. An adapter is
+        # something that answers at least one of the port's methods; a class
+        # answering none of them is not claiming to be one.
+        implemented = [n for n in expected if callable(getattr(adapter, n, None))]
+        if not implemented:
+            continue
+
+        missing = sorted(set(expected) - set(implemented))
+        assert not missing, (
+            f"{adapter.__module__}.{adapter.__name__} implements "
+            f"{len(implemented)}/{len(expected)} of {protocol.__name__} — "
+            f"missing {missing}. Configure it and the phase calling a missing "
+            f"method fails at run time, not here."
+        )
+
+        for name, want in expected.items():
+            got = inspect.signature(getattr(adapter, name))
+            want_params = [p for p in want.parameters if p != "self"]
+            got_params = [p for p in got.parameters if p != "self"]
+            assert got_params == want_params, (
+                f"{adapter.__name__}.{name}{got} does not match "
+                f"{protocol.__name__}.{name}{want} — these are called by "
+                f"keyword, so a renamed parameter is a break"
+            )

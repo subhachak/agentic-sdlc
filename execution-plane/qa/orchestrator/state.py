@@ -40,6 +40,10 @@ class PipelineState(TypedDict, total=False):
     change_summary: str
     affected_areas: list[str]
     changed_paths: list[str]
+    # The control plane's impact assessment for this change. Supplied by the
+    # dispatch; absent for a standalone run, which narrows scope to the
+    # changed modules and warns rather than guessing.
+    impact: dict[str, Any]
     regression_scope: dict[str, Any]
 
     # --- phase 2: test plan ---

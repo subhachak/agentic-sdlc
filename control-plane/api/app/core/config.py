@@ -112,6 +112,31 @@ class Settings(BaseSettings):
     target_repo: str | None = None
     target_ref: str = "main"
     target_working_copy: str = "."
+    # Where the app under test sits inside that working copy, and how to
+    # build it. Both had the demo app's layout baked in, so the local QA
+    # adapter could only ever run against this repository's own sample —
+    # pointing it at a client checkout looked configurable and was not.
+    #
+    # Empty build command is a real configuration, not a missing one: a
+    # Playwright config with a `webServer` block boots the app itself, and a
+    # separate build ahead of it is wasted minutes.
+    target_app_subdir: str = "demo-app"
+    target_build_command: str = "npm run build"
+    # Where the app under test keeps what the QA pipeline reads. All
+    # relative to the app root, all empty by default — an empty value means
+    # "use the pipeline's own default", which is the right answer for the
+    # sample app and the wrong one to hard-code for anybody else.
+    #
+    # These exist because the pipeline was pointed at a real application and
+    # found its specs under a testDir it did not know about: the generated
+    # specs were written somewhere Playwright never looked, every assigned
+    # test reported as never having run, and the gate failed for a reason no
+    # one would guess from the message.
+    qa_script_manifest: str = ""
+    qa_script_library: str = ""
+    qa_generated_dir: str = ""
+    qa_route_mocks: str = ""
+    qa_features: str = ""
     target_environment: str = "staging"
     reconciler_interval_seconds: float = 5.0
     local_dispatch_duration_seconds: float = 3.0

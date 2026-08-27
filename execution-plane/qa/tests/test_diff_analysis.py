@@ -28,13 +28,25 @@ def test_added_and_deleted_files_both_count():
     assert changed_paths_from_name_status(raw) == ["demo-app/gone.ts", "demo-app/new.ts"]
 
 
-def test_a_rename_is_scoped_to_the_new_path():
-    """The bug this exists to catch. `diff --git a/old b/new` names the
-    pre-rename path first, so the header parse scoped regression to a file
-    that no longer exists — and tested nothing."""
+def test_a_rename_is_scoped_to_both_of_its_paths():
+    """Two bugs, one after the other.
+
+    The header parse scoped a rename to `a/old` — `diff --git a/old b/new`
+    names the pre-rename path first — so regression targeted a file that no
+    longer existed. The fix took the new path only, which was right about
+    what can be executed and wrong about what can be scoped: the code graph
+    records a file's importers under the path it had at the base commit, so
+    the renamed-away path is the only key that finds them.
+
+    Both ends, therefore. The new path is where the code now is; the old one
+    is where everything that depends on it is still written down.
+    """
     raw = _records("R100", "demo-app/old-name.tsx", "demo-app/new-name.tsx")
 
-    assert changed_paths_from_name_status(raw) == ["demo-app/new-name.tsx"]
+    assert changed_paths_from_name_status(raw) == [
+        "demo-app/new-name.tsx",
+        "demo-app/old-name.tsx",
+    ]
 
 
 def test_a_copy_counts_both_source_and_destination():

@@ -29,11 +29,15 @@ _RENAME_OR_COPY = ("R", "C")
 def changed_paths_from_name_status(raw: str) -> list[str]:
     """Paths a change touches, from git's machine-readable status output.
 
-    Reads the *new* path for a rename — the old one no longer exists, so
-    scoping regression to it tests nothing — and both for a copy, since the
-    source is unchanged but the copy is new code. NUL separation means a path
-    containing a space or a quote survives intact, which the whitespace-split
-    header parse did not.
+    Reads both ends of a rename and a copy. The earlier version took only the
+    new path for a rename, reasoning that the old one no longer exists so
+    nothing can be tested against it — which confused running a test with
+    scoping one. Nothing runs against a path that is gone, but everything
+    that imported it is recorded in the graph under that path, because the
+    graph describes the base commit. Drop it and a rename reaches nobody.
+
+    NUL separation means a path containing a space or a quote survives
+    intact, which the whitespace-split header parse did not.
     """
     fields = [f for f in raw.split("\0") if f]
     paths: set[str] = set()
@@ -41,10 +45,14 @@ def changed_paths_from_name_status(raw: str) -> list[str]:
     while index < len(fields):
         status = fields[index]
         if status.startswith(_RENAME_OR_COPY) and index + 2 < len(fields):
-            old_path, new_path = fields[index + 1], fields[index + 2]
-            paths.add(new_path)
-            if status.startswith("C"):
-                paths.add(old_path)
+            # Both ends. Taking only the new path for a rename was wrong for
+            # the same reason it is wrong in the control plane's adapter: the
+            # code graph records a file's importers against the path it had
+            # at the base commit, so the renamed-away path is the only key
+            # that finds them. Dropping it turns a rename into a change that
+            # reached nothing.
+            paths.add(fields[index + 1])
+            paths.add(fields[index + 2])
             index += 3
             continue
         if index + 1 < len(fields):

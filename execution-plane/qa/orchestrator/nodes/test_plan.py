@@ -117,7 +117,13 @@ def run(state: PipelineState, author: TestAuthor | None = None) -> PipelineState
     # by the gate, so the request tells the agent to skip them and spend its
     # scenarios on the areas nothing covers.
     scope = regression_candidates(
-        state.get("changed_paths", []), head_sha=state.get("head_sha") or ""
+        state.get("changed_paths", []),
+        head_sha=state.get("head_sha") or "",
+        # Decided by the control plane's impact engine and carried in with
+        # the dispatch. This plane no longer works out reach for itself: it
+        # had the same edges and a different traversal, which is two answers
+        # to one question and no way for either to notice.
+        impact=state.get("impact") or {},
     )
 
     request = {

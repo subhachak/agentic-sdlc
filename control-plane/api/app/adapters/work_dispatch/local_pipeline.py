@@ -25,13 +25,41 @@ from typing import Any
 
 from app.ports.work_dispatch import DispatchHandle, DispatchResult
 
+# .../control-plane/api/app/adapters/work_dispatch/local_pipeline.py
+# -> the repository root, five levels up. Counted rather than guessed:
+# getting it wrong resolves to a directory that does not exist and the
+# failure surfaces as a missing interpreter, which blames the wrong thing.
+_PLATFORM_QA_ROOT = Path(__file__).resolve().parents[5] / "execution-plane" / "qa"
+
 
 class LocalPipelineWorkDispatch:
     def __init__(
-        self, repo_root: Path, base_ref: str = "main", secrets: dict[str, str] | None = None
+        self,
+        repo_root: Path,
+        base_ref: str = "main",
+        secrets: dict[str, str] | None = None,
+        *,
+        qa_root: Path | None = None,
+        app_subdir: str = "demo-app",
+        build_command: str = "npm run build",
+        qa_env: dict[str, str] | None = None,
     ) -> None:
         self._root = Path(repo_root)
         self._base = base_ref
+        # Two roots, because they are two different things. The execution
+        # plane is part of this platform; the application under test belongs
+        # to the client. Deriving the first from the second meant the
+        # orchestrator had to live inside the repository it was testing —
+        # true only while the platform was testing its own sample app, and
+        # false for every real checkout.
+        self._qa_root = Path(qa_root) if qa_root else _PLATFORM_QA_ROOT
+        self._app_subdir = app_subdir
+        self._build_command = build_command
+        # Where this application keeps the things the pipeline reads: its
+        # script manifest, its generated specs, its route mocks. Passed
+        # through rather than assumed, because assuming them is what tied the
+        # adapter to one layout.
+        self._qa_env = dict(qa_env or {})
         # The pipeline calls a model, and a subprocess does not inherit what
         # pydantic-settings read out of .env — that lands in Settings, not in
         # the environment. CI passes secrets to a job explicitly; so does this.
@@ -40,7 +68,7 @@ class LocalPipelineWorkDispatch:
 
     @property
     def _qa_dir(self) -> Path:
-        return self._root / "execution-plane" / "qa"
+        return self._qa_root
 
     @property
     def _python(self) -> Path:
@@ -63,21 +91,25 @@ class LocalPipelineWorkDispatch:
         disturbing what the person at this machine has checked out.
         """
         self._git("worktree", "add", "--detach", str(into), branch)
-        app = into / "demo-app"
+        app = into / self._app_subdir
 
         # Dependencies are identical to the ones already installed; a symlink
         # turns a two-minute install into nothing.
-        modules = self._root / "demo-app" / "node_modules"
+        modules = self._root / self._app_subdir / "node_modules"
         if modules.exists() and not (app / "node_modules").exists():
             (app / "node_modules").symlink_to(modules)
 
-        build = subprocess.run(
-            ["npm", "run", "build"], cwd=app, capture_output=True, text=True
-        )
-        if build.returncode != 0:
-            raise RuntimeError(
-                "the change does not build: " + (build.stdout or build.stderr)[-500:]
+        # An empty command means the app starts itself — a Playwright config
+        # with a `webServer` block does, and building ahead of it is minutes
+        # spent producing something nothing runs.
+        if self._build_command:
+            build = subprocess.run(
+                self._build_command.split(), cwd=app, capture_output=True, text=True
             )
+            if build.returncode != 0:
+                raise RuntimeError(
+                    "the change does not build: " + (build.stdout or build.stderr)[-500:]
+                )
         return app
 
     async def trigger(
@@ -94,18 +126,41 @@ class LocalPipelineWorkDispatch:
         state_file = workspace / "qa-state.json"
         app_root = self._checkout(head, workspace / "checkout")
 
+        command = [
+            str(self._python), "-m", "orchestrator.run",
+            "--phase", "run",
+            "--state-file", str(state_file),
+            "--repo", inputs.get("repo") or "local/working-copy",
+            "--pr-number", "0",
+            "--base-sha", inputs.get("base_sha") or self._base,
+            "--head-sha", head,
+        ]
+        # How far this change reaches, as the control plane assessed it. A
+        # file rather than an argument because an assessment carries its
+        # explanation — the hops, the blind spots, the policy — and a command
+        # line is the wrong place for it. Absent, the run scopes to the edit
+        # alone and says so rather than inventing a traversal.
+        if inputs.get("impact"):
+            impact_file = workspace / "impact.json"
+            impact_file.write_text(json.dumps(inputs["impact"], indent=2))
+            command += ["--impact", str(impact_file)]
+
         process = subprocess.Popen(
-            [
-                str(self._python), "-m", "orchestrator.run",
-                "--phase", "run",
-                "--state-file", str(state_file),
-                "--repo", "local/working-copy",
-                "--pr-number", "0",
-                "--base-sha", self._base,
-                "--head-sha", head,
-            ],
+            command,
             cwd=self._qa_dir,
-            env={**os.environ, **self._secrets, "QA_APP_ROOT": str(app_root)},
+            env={
+                **os.environ,
+                **self._secrets,
+                **{
+                    # Relative to the checkout under test, not to the working
+                    # copy: a run against a branch reads that branch's
+                    # manifest and mocks, or it is scoping one revision by
+                    # another revision's files.
+                    key: str(app_root / value) if not Path(value).is_absolute() else value
+                    for key, value in self._qa_env.items()
+                },
+                "QA_APP_ROOT": str(app_root),
+            },
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

@@ -50,6 +50,23 @@ class SourceControl(Protocol):
     proposed. Returns edits in the same shape `open_change` accepts, so the
     same deterministic review reads both."""
 
+    async def changed_paths(
+        self, repo: str, base_ref: str, head_ref: str
+    ) -> list[str]: ...
+    """Every path a revision pair touched, deletions included.
+
+    Distinct from `change_files`, which reads content and therefore skips
+    deletions — there is nothing at head to review. Impact cannot skip them:
+    removing a file is the change its dependents most have to survive, and a
+    blast radius computed without it is narrow in the one direction that
+    matters.
+
+    Distinct also from the file list an implementation agent reports. That
+    list is what the agent says it wrote; this is what the repository says
+    happened, and between them sit formatters, commit hooks, rewrites that
+    changed nothing, and any edit the agent failed to mention. The QA phase
+    scopes regression from effect, not from intent."""
+
     async def open_change(
         self,
         repo: str,

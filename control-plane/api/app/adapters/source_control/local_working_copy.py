@@ -87,6 +87,39 @@ class LocalWorkingCopy:
                 continue  # the file does not exist at that revision
         return out
 
+    async def changed_paths(self, repo: str, base_ref: str, head_ref: str) -> list[str]:
+        """What the repository says changed, deletions included.
+
+        Shares the `--name-status -z` parse with change_files and differs in
+        exactly two ways, both of which matter to a blast radius: a deleted
+        file is a change its dependents have to survive, and the source of a
+        copy is unchanged while the copy itself is new code.
+        """
+        if not (self._resolves(base_ref) and self._resolves(head_ref)):
+            return []
+
+        raw = self._git_raw("diff", "--name-status", "-z", f"{base_ref}...{head_ref}")
+        fields = [f for f in raw.split("\0") if f]
+
+        paths: set[str] = set()
+        index = 0
+        while index < len(fields):
+            status = fields[index]
+            if status.startswith(("R", "C")) and index + 2 < len(fields):
+                # Both ends, for a rename as well as a copy. The dependency
+                # graph was built at the base commit, so a renamed file's
+                # importers are recorded against the path that no longer
+                # exists — pass only the new path and the lookup finds
+                # nothing, which reads as a rename that broke nobody.
+                paths.add(fields[index + 1])
+                paths.add(fields[index + 2])
+                index += 3
+                continue
+            if index + 1 < len(fields):
+                paths.add(fields[index + 1])
+            index += 2
+        return sorted(paths)
+
     async def change_files(self, repo: str, base_ref: str, head_ref: str) -> list[FileEdit]:
         """What `head_ref` changed relative to `base_ref`.
 

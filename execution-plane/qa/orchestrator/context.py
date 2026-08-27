@@ -130,40 +130,49 @@ def impact_policy() -> dict[str, Any]:
     }
 
 
-def blast_radius(module_ids: set[str], changed_paths: list[str] | None = None) -> set[str]:
-    """Modules a change reaches, at the depth the control plane specified.
+def impacted_modules(
+    changed_paths: list[str], impact: dict[str, Any] | None = None
+) -> set[str]:
+    """Which modules this change reaches, from the assessment it was given.
 
-    Traversed over *files* and rolled up afterwards, matching the design
-    gate. Rolling up first and traversing after gives every file in a
-    directory the same blast radius — 13% of the codebase per change against
-    0.8% at file level, measured on one real repository.
+    This plane used to traverse for itself: a flat walk over file_dependents,
+    depth-capped by the exported policy. It agreed with the control plane on
+    every commit measured — but incidentally. The graph carries one edge type
+    and an IMPORTS path stays above the confidence floor until nine hops
+    while the policy stops at two, so every distinction the canonical engine
+    draws collapsed to the same answer. Populate CALLS_ENDPOINT, register
+    anything `inferred`, or raise max_depth, and the two separate — and the
+    run's design gate and its QA scope would then disagree about what the
+    change touches, which is not a disagreement either side could detect.
 
-    `changed_paths` is what makes the file-level walk possible. Without it —
-    an older caller, or a graph with no file edges — this falls back to the
-    module rollup, which is coarser and says so rather than pretending.
+    So the traversal is gone rather than kept in sync. Reach is decided once,
+    in the control plane's impact engine, and travels with the request.
+
+    Without an assessment this returns the directly changed modules and the
+    caller reports that scope was not widened. Guessing is the one thing it
+    will not do: a walk this plane invents is the duplicate that was just
+    deleted, and it would come back with no one deciding to bring it back.
     """
-    graph = _load_code_graph()
-    file_dependents = graph.get("file_dependents") or {}
-    policy = impact_policy()
+    direct = modules_for_paths(changed_paths)
+    affected = (impact or {}).get("affected") or []
+    if not affected:
+        return direct
+    return direct | modules_for_paths(list(affected))
 
-    if not changed_paths or not file_dependents:
-        dependents = {
-            edge["from"]
-            for edge in graph.get("depends_on", [])
-            if edge["to"] in module_ids
-        }
-        return module_ids | dependents
 
-    reached = {_normalise(p) for p in changed_paths}
-    frontier = set(reached)
-    for _ in range(max(0, policy["max_depth"])):
-        nxt: set[str] = set()
-        for path in frontier:
-            nxt |= set(file_dependents.get(path, []))
-        frontier = nxt - reached
-        reached |= nxt
+def _scope_warnings(impact: dict[str, Any] | None) -> list[str]:
+    """Reasons this run's regression scope is narrower than it should be.
 
-    return module_ids | modules_for_paths(sorted(reached))
+    Loud, because narrow is the dangerous direction. A scope missing what a
+    change reaches requires fewer regressions and passes more easily, so
+    silence reads as a cleaner run rather than a less-informed one.
+    """
+    if (impact or {}).get("affected"):
+        return []
+    return [
+        "no impact assessment was supplied, so regression scope is the changed "
+        "modules only and does not include what the change reaches"
+    ]
 
 
 def _load_manifest() -> list[dict[str, Any]]:
@@ -243,7 +252,9 @@ def graph_warnings(head_sha: str = "") -> list[str]:
 
 
 def regression_candidates(
-    changed_paths: list[str], head_sha: str = ""
+    changed_paths: list[str],
+    head_sha: str = "",
+    impact: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """What a change obliges this run to re-test, and what it cannot.
 
@@ -266,7 +277,7 @@ def regression_candidates(
     changed is a claim the test plan should be able to justify.
     """
     direct = modules_for_paths(changed_paths)
-    widened = blast_radius(direct, changed_paths)
+    widened = impacted_modules(changed_paths, impact)
     known_modules = {m["id"] for m in _load_code_graph().get("modules", [])}
 
     required = scripts_covering(widened)
@@ -294,7 +305,14 @@ def regression_candidates(
         # supplied one — so the check that catches a graph describing the
         # wrong commit could not fire outside its own test. A control that
         # cannot fire is not a control.
-        "graph_warnings": graph_warnings(head_sha=head_sha),
+        # Two different doubts, kept apart. graph_warnings asks whether the
+        # graph can be trusted; this asks whether this run was told how far
+        # its change reaches. A run against a perfect graph with no
+        # assessment is still scoped to the edit alone.
+        "graph_warnings": graph_warnings(head_sha=head_sha) + _scope_warnings(impact),
+        # Which engine decided the reach, so a scope can be traced back to
+        # the rules that produced it rather than to whoever ran it.
+        "impact_engine_version": (impact or {}).get("engine_version", ""),
     }
 
 
