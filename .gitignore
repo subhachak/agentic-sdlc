@@ -26,3 +26,10 @@ control-plane/api/evals.db
 .DS_Store
 .tmp-doc-update/
 .tmp-pdlc-deck/
+
+# The exported code graph is a live artefact: the control plane overwrites it
+# on every sync. Tracking it meant whichever repository was last indexed got
+# committed as though it were this one's — a clone arrived holding a graph of
+# somebody else's application, and scoped against modules it does not have.
+# Regenerate with the export rather than reading it out of git.
+execution-plane/qa/code-graph.json
