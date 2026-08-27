@@ -46,6 +46,13 @@ FEATURES_FILE = Path(os.environ.get("QA_FEATURES") or (QA_ROOT / "features.yaml"
 # failure pointing at the cause.
 CODE_GRAPH_FILE = Path(os.environ.get("QA_CODE_GRAPH") or (QA_ROOT / "code-graph.json"))
 
+# The failures a project has admitted to and may not add to. Lives beside the
+# manifest because it is the same kind of thing: a claim about the suite that
+# a human maintains and reviews, not an artefact the pipeline generates.
+KNOWN_FAILING_FILE = Path(
+    os.environ.get("QA_KNOWN_FAILING") or (MANIFEST_FILE.parent / "known-failing.json")
+)
+
 # Where authored specs are written. Inside the app under test, because Node
 # resolves imports by walking up from the spec file — a spec outside it
 # cannot see the app's node_modules. Overridable for a repository whose

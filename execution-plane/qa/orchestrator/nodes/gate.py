@@ -20,15 +20,25 @@ ratchets once its library has caught up.
 """
 from __future__ import annotations
 
+import json
 import os
 
 from orchestrator.baseline import compare
+from orchestrator.known_failing import assess as assess_known_failing
+from orchestrator.known_failing import load as load_known_failing
+from orchestrator.paths import EVIDENCE_DIR, KNOWN_FAILING_FILE
 from orchestrator.state import PipelineState
 
 # Playwright test-level statuses that count as a clean pass. Anything else
 # ("unexpected", "flaky", "skipped") is not a scenario we can claim ran and
 # passed, so it belongs in the gate reasons.
 _PASSING = ("expected", "passed")
+
+
+def _require_green_baseline() -> bool:
+    """No admitted debt at all — for a suite that is green and staying that
+    way. The ratchet's destination, available to anyone already there."""
+    return os.environ.get("QA_REQUIRE_GREEN_BASELINE", "") not in ("", "0", "false")
 
 
 def _require_full_coverage() -> bool:
@@ -226,6 +236,36 @@ def run(state: PipelineState) -> PipelineState:
         sorted(scope.get("required_scripts") or []),
         state.get("baseline_verdicts"),
     )
+    # Debt has to be declared, and the declaration may not grow. Without
+    # this the differential is a permanent excuse: the pre-existing list
+    # could grow forever and nothing would notice, so attribution quietly
+    # becomes tolerance and the suite rots at the speed nobody measures.
+    ratchet = assess_known_failing(
+        state.get("baseline_verdicts"),
+        load_known_failing(KNOWN_FAILING_FILE),
+        strict=_require_green_baseline(),
+    )
+    # A pre-existing failure is only excused if it was admitted to. One that
+    # was not is a failure somebody merged without writing it down, which is
+    # the growth this exists to stop.
+    if ratchet.established:
+        undeclared = set(ratchet.grew)
+        differential.pre_existing = [
+            s for s in differential.pre_existing if s not in undeclared
+        ]
+        differential.regressions = sorted(set(differential.regressions) | undeclared)
+
+    # Written where CI uploads it, so adopting the record — or shrinking it —
+    # is one file somebody copies rather than a list they retype off a log.
+    # Never written into the repository: a pipeline that recorded its own
+    # accepted failures would ratchet in the wrong direction on its first run
+    # and call it a baseline.
+    if ratchet.proposal or ratchet.stale:
+        EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+        (EVIDENCE_DIR / "known-failing.proposed.json").write_text(
+            json.dumps({"known_failing": ratchet.proposal}, indent=2) + "\n"
+        )
+
     required_failed = differential.blocking
 
     # A pre-existing failure must not come back through the general failing
@@ -296,6 +336,28 @@ def run(state: PipelineState) -> PipelineState:
             f"failing before this change and are not blocking it: "
             + ", ".join(differential.pre_existing),
         ]
+    if ratchet.grew:
+        notes = [
+            *notes,
+            "the set of accepted failures grew: "
+            + ", ".join(ratchet.grew)
+            + " failed before this change but was never written down. Fix it, or "
+            "add it to known-failing.json where somebody reviews the decision.",
+        ]
+    if ratchet.stale:
+        notes = [
+            *notes,
+            "note: no longer failing and can be struck from known-failing.json: "
+            + ", ".join(ratchet.stale),
+        ]
+    if not ratchet.established and ratchet.proposal:
+        notes = [
+            *notes,
+            "note: no known-failing.json, so growth in accepted failures is not "
+            "measured. A record containing "
+            + ", ".join(ratchet.proposal)
+            + " would start the ratchet.",
+        ]
     if differential.repaired:
         notes = [*notes, "note: this change repairs " + ", ".join(differential.repaired)]
     if required_failed and not differential.established:
@@ -324,6 +386,10 @@ def run(state: PipelineState) -> PipelineState:
         # change broke it" from "this was broken when we got here" without
         # reading two test reports side by side.
         "regression_differential": differential.as_dict(),
+        # What was admitted, what grew, and what is now fixed and can be
+        # struck off. The record shrinking is the only direction this is
+        # allowed to move without somebody deciding.
+        "known_failing": ratchet.as_dict(),
         # The accounting the control plane reconciles against the blast
         # radius it handed down. Reported rather than compared here: this
         # plane knows what it exercised, the platform knows what it obliged,
