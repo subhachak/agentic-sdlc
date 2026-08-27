@@ -37,10 +37,15 @@ def test_a_changed_file_maps_to_its_component():
 # plane's impact engine; this plane applies it and does not re-derive it.
 CLAIMS_IMPACT = {
     "engine_version": "1.0.0",
+    "changed": ["demo-app/app/api/claims/route.ts"],
     "affected": [
         "demo-app/app/api/claims/route.ts",
         "demo-app/app/claims/page.tsx",
     ],
+    # What actually obliges a scenario, which is what selection reads. An
+    # assessment without it reaches modules and requires nothing, which is a
+    # coherent answer and not the one this fixture means.
+    "test_obligations": ["demo-app/app/claims/page.tsx"],
 }
 
 

@@ -18,6 +18,7 @@ import json
 from typing import Any
 
 from orchestrator.identity import node_id
+from orchestrator.selection import select
 from orchestrator.paths import CODE_GRAPH_FILE, FEATURES_FILE, MANIFEST_FILE
 
 FEATURES_SYSTEM = "features"
@@ -280,7 +281,18 @@ def regression_candidates(
     widened = impacted_modules(changed_paths, impact)
     known_modules = {m["id"] for m in _load_code_graph().get("modules", [])}
 
-    required = scripts_covering(widened)
+    # Which scripts this change actually obliges, decided rather than
+    # intersected. Falls back to the module intersection only where the
+    # selector declines to narrow, so an escalation and a targeted run reach
+    # the same field by the same name.
+    selection = select(
+        _load_manifest(),
+        impact,
+        provenance=graph_provenance(),
+        head_sha=head_sha,
+        touches_indexed_scope=bool(direct or widened),
+    )
+    required = set(selection.scripts)
     covered_modules = {
         module
         for entry in _load_manifest()
@@ -313,6 +325,10 @@ def regression_candidates(
         # Which engine decided the reach, so a scope can be traced back to
         # the rules that produced it rather than to whoever ran it.
         "impact_engine_version": (impact or {}).get("engine_version", ""),
+        # Why exactly these scripts, and what was left out. A regression
+        # suite that quietly shrank is indistinguishable from one that was
+        # quietly disabled, so the argument travels with the answer.
+        "selection": selection.as_dict(),
     }
 
 
