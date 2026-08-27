@@ -72,10 +72,10 @@ revert plus an API call from memory.
 
 ### Phase 1 — point the platform at Fronei
 
-- [ ] Jira credentials in `.env` (you set them; I never handle them)
-- [ ] `/api/config/check-agent` verifies the Jira connection
-- [ ] `requirements_source_adapter=jira`, a story with acceptance criteria
-- [ ] Confirm criteria arrive as graph nodes with their Jira ids
+- [x] Jira credentials in `.env` (you set them; I never handle them)
+- [x] `/api/config/check-agent` verifies the Jira connection
+- [x] `requirements_source_adapter=jira`, a story with acceptance criteria
+- [x] Confirm criteria arrive as graph nodes with their Jira ids
 
 **Exit:** a real story flows into the graph from the system of record.
 
@@ -88,8 +88,8 @@ indexed at 98.8% capture with retrieval built.
 hardcoded relative to `demo-app`. Only `QA_APP_ROOT` and `QA_CODE_GRAPH` are
 overridable, so QA physically cannot point at another app.
 
-- [ ] Make all of them overridable, same pattern as the existing two
-- [ ] `QA_APP_ROOT=apps/web`
+- [x] Make all of them overridable, same pattern as the existing two
+- [x] `QA_APP_ROOT=apps/web`
 
 **Exit:** the QA plane can run against Fronei's checkout.
 
@@ -100,8 +100,8 @@ Those become the regression library; what is missing is the manifest that
 maps spec → modules covered, which is what drives required-regression
 selection.
 
-- [ ] `manifest.json` mapping Fronei's specs to module ids from the index
-- [ ] Acceptance criteria: from the Jira story rather than a hand-written
+- [x] `manifest.json` mapping Fronei's specs to module ids from the index
+- [x] Acceptance criteria: from the Jira story rather than a hand-written
       `features.yaml`, which is the point of Phase 1
 
 **Exit:** a change to a shared lib selects the right existing regressions.
@@ -112,17 +112,26 @@ Fronei's e2e uses Playwright **route mocking** (`e2e/api-mocks.ts`), not a
 database. Each test installs its own routes, so isolation is per-scenario by
 construction.
 
-- [ ] A `RouteMockTestData` provider declaring `scenario` isolation
+- [x] A `RouteMockTestData` provider declaring `scenario` isolation
 
 **Exit:** QA runs Fronei's suite in parallel — `workers_for` already handles
 that once the provider says so.
 
-### Phase 5 — the workflow in Fronei's repo *(needs a PR to Fronei)*
+### Phase 5 — ~~the workflow in Fronei's repo~~ *(no longer needed)*
 
-- [ ] Install `agentic-qa.yml`, adapted to Fronei's layout
-- [ ] `check_access` confirms it exists and declares the four contract inputs
+Dropped. The workflow existed to dispatch QA into Fronei's CI, which needed
+three things Fronei cannot have: `agentic-qa.yml` committed to a live repo, an
+`ANTHROPIC_API_KEY` secret there, and a control-plane token with
+`actions:write` on it.
 
-**Exit:** the control plane can dispatch QA into Fronei's CI.
+The local QA adapter removes all three. `WORK_DISPATCH_ADAPTER=local-pipeline`
+runs this platform's own execution plane against a worktree of the branch
+under test — orchestrator from here, application from there. The dispatch
+seam is still exercised; only the venue changed, which is the point of having
+made the venue an adapter.
+
+Keep the workflow for a client who wants QA in their own CI. It is not on the
+path to this demo.
 
 ### Phase 6 — BuildDeploy: merge, observe, roll back *(medium code)*
 
@@ -133,6 +142,21 @@ that once the provider says so.
 
 **Exit:** Gate 3 approval merges, the deploy is observed, and rollback is one
 call.
+
+### Phase 6b — what the local adapter still owes *(small)*
+
+Found by building it rather than by planning it:
+
+- [ ] A real run against Fronei. Everything so far is verified against
+      fixtures and a synthetic payload — no Playwright has actually executed
+      against `apps/web`
+- [ ] `QA_GENERATED_DIR` must land inside Fronei's `testDir: './e2e'`, or
+      Playwright never collects the authored specs and the gate fails with
+      "0/N assigned tests ran" — correct, but for a reason nobody would guess
+- [ ] `npm run test:e2e:guard` asserts the E2E auth bypass cannot be enabled
+      in production. The orchestrator invokes Playwright directly and skips
+      it. The agent's pipeline must not skip a safety check the humans'
+      pipeline enforces
 
 ### Phase 7 — dry run, then the demo
 
