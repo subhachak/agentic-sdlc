@@ -45,7 +45,19 @@ def build_test_data_provider():
     A factory rather than a literal, for the same reason every other port
     has one: selecting a different implementation should be configuration,
     not an edit to the node that consumes it.
+
+    Chosen by what the application under test actually does, not by a name.
+    An app whose suite mocks at the network boundary has no store to seed,
+    and pointing the JSON provider at a file that does not exist would make
+    it report a restoration of nothing as though it meant something.
     """
+    import os
+
+    mocks = os.environ.get("QA_ROUTE_MOCKS")
+    if mocks:
+        from orchestrator.adapters.route_mock_test_data import RouteMockTestData
+
+        return RouteMockTestData(mocks)
     return JsonFileTestData()
 
 

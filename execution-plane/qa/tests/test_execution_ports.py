@@ -161,3 +161,83 @@ def test_a_missing_results_file_is_itself_a_result(tmp_path, monkeypatch):
 def test_an_attestation_serialises_for_the_gate():
     body = Attestation("h", restored=False, verified=True, residue=["/tmp/x"]).as_dict()
     assert body["restored"] is False and body["residue"] == ["/tmp/x"]
+
+
+# ── the provider for an app that mocks at the network boundary ────────────
+
+
+MOCKS = """
+export async function mockFroneiApi(page) {
+  await page.route('http://127.0.0.1:8000/**', async route => {
+    if (method === 'GET' && path === '/workspaces') return json(route, {})
+    if (method === 'GET' && path === '/documents/templates') return json(route, {})
+    if (path.startsWith('/admin/users')) return json(route, {})
+  })
+}
+"""
+
+
+def provider(tmp_path):
+    from orchestrator.adapters.route_mock_test_data import RouteMockTestData
+
+    f = tmp_path / "api-mocks.ts"
+    f.write_text(MOCKS)
+    return RouteMockTestData(f)
+
+
+def test_route_mocks_give_per_scenario_isolation(tmp_path):
+    """Playwright gives every test its own page, so the fixtures are
+    per-test by construction. This is the first provider that can declare
+    `scenario` honestly — not because the adapter is better, but because the
+    application keeps its fixtures in version-controlled code rather than in
+    mutable state."""
+    from orchestrator.ports_execution import workers_for
+
+    p = provider(tmp_path)
+    assert p.isolation == "scenario"
+    # Which the pipeline turns into parallelism, with no edit to the node.
+    assert workers_for(p.isolation, True, mutating=True) == 0
+
+
+def test_the_shape_is_read_from_the_mocks_not_declared_beside_them(tmp_path):
+    """So it cannot claim an entity the handlers do not answer."""
+    shape = provider(tmp_path).shape()
+    assert "workspaces" in shape
+    assert "templates" in shape
+    assert "users" in shape
+    assert "invoices" not in shape
+
+
+def test_unknowable_fields_are_a_wildcard_not_an_empty_set(tmp_path):
+    """A route handler returns whatever JSON its author wrote; inferring a
+    schema from that would be guessing. An empty set is a different
+    statement — "this entity has no fields" — which the gate reads as reject
+    everything, turning missing information into a refusal."""
+    from orchestrator.ports_execution import ANY_FIELD
+
+    shape = provider(tmp_path).shape()
+    assert shape["workspaces"] == {ANY_FIELD}
+    assert shape["workspaces"] != set()
+
+
+def test_nothing_is_seeded_and_nothing_is_restored(tmp_path):
+    """And it says so, rather than reporting a restoration it did not
+    perform. A provider claiming to have tidied up when there was nothing to
+    tidy is indistinguishable from one that failed to."""
+    p = provider(tmp_path)
+    lease = p.acquire(scope="run-1", scenarios=[])
+    assert lease.seeded == []
+
+    out = p.release(lease)
+    assert out.restored is True and out.verified is True
+    assert out.residue == []
+    assert "no state to restore" in out.detail
+
+
+def test_a_missing_mock_file_yields_no_entities_rather_than_raising(tmp_path):
+    """An application configured for route mocks that has not written them
+    yet gates every scenario, which is the correct outcome — but it should
+    not crash the plan phase to say so."""
+    from orchestrator.adapters.route_mock_test_data import RouteMockTestData
+
+    assert RouteMockTestData(tmp_path / "absent.ts").shape() == {}

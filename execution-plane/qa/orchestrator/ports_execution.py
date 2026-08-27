@@ -42,6 +42,18 @@ EXECUTION_CONTRACT_VERSION = 1
 #   scenario — each scenario gets its own, and they may run in parallel
 Isolation = Literal["none", "run", "scenario"]
 
+# A field set of exactly {ANY_FIELD} means "this entity exists and its fields
+# cannot be known from here". A provider reading a JSON store knows every
+# field; one reading route handlers knows only which endpoints answer, and
+# inferring a schema from whatever JSON a handler happens to return would be
+# guessing.
+#
+# The distinction matters because an empty set is not the same statement.
+# Empty means "this entity has no fields", which the testability gate reads
+# as "reject every scenario touching it" — turning missing information into
+# a refusal.
+ANY_FIELD = "*"
+
 
 class Lease:
     """One scenario's or one run's claim on test data.

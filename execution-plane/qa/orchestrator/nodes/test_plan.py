@@ -13,6 +13,7 @@ from __future__ import annotations
 from orchestrator import data_store
 from orchestrator.adapters.inline_test_author import InlineTestAuthor
 from orchestrator.context import criterion_ids, regression_candidates
+from orchestrator.ports_execution import ANY_FIELD
 from orchestrator.ports import TestAuthor
 from orchestrator.state import PipelineState
 
@@ -44,7 +45,14 @@ def _data_is_satisfiable(
         field = requirement.get("field", "")
         if entity not in shape:
             return False, f"required_data names unknown entity {entity!r}"
-        if field not in shape[entity]:
+        fields = shape[entity]
+        # A provider that knows its entities but not their fields says so
+        # with ANY_FIELD. Checking membership literally would reject every
+        # field name, which is refusing a plan for want of information the
+        # provider never claimed to have.
+        if ANY_FIELD in fields:
+            continue
+        if field not in fields:
             return False, f"required_data names unknown field {entity}.{field}"
     return True, None
 
@@ -94,7 +102,12 @@ def run(state: PipelineState, author: TestAuthor | None = None) -> PipelineState
     author = author or InlineTestAuthor()
 
     known = criterion_ids()
-    shape = data_store.shape()
+    # From the configured provider, not the JSON store directly — an
+    # application that mocks at the network boundary has no store, and
+    # reading one would gate its plans against an empty shape.
+    from orchestrator.nodes.test_run import build_test_data_provider
+
+    shape = build_test_data_provider().shape()
     # Regression scope comes from the dependency graph, not from the change
     # summary: a module the diff never touched can still be the one that
     # breaks, and only the graph knows that.
