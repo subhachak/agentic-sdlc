@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from orchestrator.paths import APP_ROOT, RESULTS_FILE
@@ -31,7 +32,13 @@ class PlaywrightRunner:
         workers: int,
         env: dict[str, str],
         evidence_dir: str,
+        app_root: Any = None,
     ) -> dict[str, Any]:
+        """`app_root` overrides where the suite runs, for the baseline pass.
+
+        Optional rather than required: every existing caller means "the
+        checkout under test", and making them all say so would be ceremony.
+        """
         command = ["npx", "playwright", "test"]
         # 0 means "the runner's own default", which is not the same as
         # asking for zero workers.
@@ -54,15 +61,19 @@ class PlaywrightRunner:
         # claim that scoping selected these tests was not true of execution.
         command.extend(specs)
 
+        root = Path(app_root) if app_root else APP_ROOT
         proc = subprocess.run(
             command,
-            cwd=APP_ROOT,
+            cwd=root,
             capture_output=True,
             text=True,
             env={**os.environ, **env},
         )
-        if RESULTS_FILE.exists():
-            return json.loads(RESULTS_FILE.read_text())
+        # Relative to whichever checkout ran, or the baseline pass reads the
+        # head run's results and reports that everything already passed.
+        results = RESULTS_FILE if root == APP_ROOT else root.parent / "evidence" / "results.json"
+        if results.exists():
+            return json.loads(results.read_text())
         # The absence of a results file is itself the result, and carrying
         # the streams is what makes it diagnosable.
         return {

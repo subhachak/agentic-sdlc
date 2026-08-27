@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 
+from orchestrator.baseline import compare
 from orchestrator.state import PipelineState
 
 # Playwright test-level statuses that count as a clean pass. Anything else
@@ -214,6 +215,31 @@ def run(state: PipelineState) -> PipelineState:
         )
 
     never_ran, required_failed = _required_verdicts(state, leaves)
+
+    # Which of those failures this change is answerable for. A suite red
+    # before the change is red because of something else, and blocking on it
+    # means a codebase with any pre-existing failure can never merge
+    # anything — the same reasoning that already makes coverage gaps report
+    # rather than block.
+    differential = compare(
+        required_failed,
+        sorted(scope.get("required_scripts") or []),
+        state.get("baseline_verdicts"),
+    )
+    required_failed = differential.blocking
+
+    # A pre-existing failure must not come back through the general failing
+    # check. It did: the differential excused it, the note said "not blocking
+    # it", and the gate failed anyway on the same result — a verdict that
+    # contradicted its own explanation, which is worse than either answer on
+    # its own.
+    excused_specs = {
+        _basename(assignment.get("file_path", ""))
+        for assignment in state.get("test_assignments", [])
+        if assignment.get("source_script_id") in set(differential.pre_existing)
+    }
+    failing = [f for f in failing if _basename(f["file"]) not in excused_specs]
+
     if never_ran:
         reasons.append(
             "required regression scripts did not run: " + ", ".join(never_ran)
@@ -263,6 +289,22 @@ def run(state: PipelineState) -> PipelineState:
             + " — scenarios share one data store, so parallel execution would let "
             "one scenario's writes change what another reads",
         ]
+    if differential.pre_existing:
+        notes = [
+            *notes,
+            f"note: {len(differential.pre_existing)} required script(s) were already "
+            f"failing before this change and are not blocking it: "
+            + ", ".join(differential.pre_existing),
+        ]
+    if differential.repaired:
+        notes = [*notes, "note: this change repairs " + ", ".join(differential.repaired)]
+    if required_failed and not differential.established:
+        notes = [
+            *notes,
+            "note: no baseline was established, so every failing required script "
+            "blocks — set QA_BASE_APP_ROOT to a checkout of the base revision to "
+            "tell a regression from a pre-existing failure",
+        ]
     if coverage_gap and not _require_full_coverage():
         # Reported whether or not it blocks. "We did not test this" is the
         # answer a release decision needs; silence is not.
@@ -278,6 +320,10 @@ def run(state: PipelineState) -> PipelineState:
         "required_regressions_missing": never_ran,
         "coverage_gaps": sorted(uncovered),
         "graph_warnings": graph_notes,
+        # What was already broken, so a release decision can tell "this
+        # change broke it" from "this was broken when we got here" without
+        # reading two test reports side by side.
+        "regression_differential": differential.as_dict(),
         # The accounting the control plane reconciles against the blast
         # radius it handed down. Reported rather than compared here: this
         # plane knows what it exercised, the platform knows what it obliged,

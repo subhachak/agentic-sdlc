@@ -160,6 +160,20 @@ class LocalPipelineWorkDispatch:
         state_file = workspace / "qa-state.json"
         app_root = self._checkout(head, workspace / "checkout")
 
+        # A second checkout at the base revision, so the gate can tell a
+        # regression from something that was already broken. Best-effort: a
+        # base that will not check out or will not build costs the run its
+        # baseline, and the gate then blocks every failing required script
+        # and says the baseline was never established. That is the right
+        # failure — the alternative is a missing baseline quietly excusing
+        # everything.
+        base = inputs.get("base_sha") or self._base
+        base_root = None
+        try:
+            base_root = self._checkout(base, workspace / "base")
+        except Exception:  # noqa: BLE001 - reported through the gate's own note
+            base_root = None
+
         command = [
             str(self._python), "-m", "orchestrator.run",
             "--phase", "run",
@@ -194,6 +208,7 @@ class LocalPipelineWorkDispatch:
                     for key, value in self._qa_env.items()
                 },
                 "QA_APP_ROOT": str(app_root),
+                **({"QA_BASE_APP_ROOT": str(base_root)} if base_root else {}),
             },
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

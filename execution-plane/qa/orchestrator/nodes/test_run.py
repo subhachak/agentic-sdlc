@@ -15,6 +15,7 @@ routed some way it does not recognise would otherwise be invisible.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -65,6 +66,66 @@ def build_test_runner():
     return PlaywrightRunner()
 
 
+def _baseline(state: PipelineState, runner, workers: int) -> dict[str, str] | None:
+    """How the required regression scripts behave *before* this change.
+
+    Run against a checkout of the base revision, which the caller provides —
+    this node will not go looking for one, because a base root it guessed at
+    would silently produce a baseline for the wrong revision, and a wrong
+    baseline is worse than none: it excuses real regressions.
+
+    Returns None when no base checkout was supplied. The gate reads that as
+    "nobody looked" rather than "nothing was already broken".
+    """
+    base_root = os.environ.get("QA_BASE_APP_ROOT", "")
+    scope = state.get("regression_scope") or {}
+    required = set(scope.get("required_scripts") or [])
+    if not base_root or not required or not Path(base_root).is_dir():
+        return None
+
+    # Only the library scripts. Authored specs cannot have a baseline — they
+    # did not exist at base — and asking for one would report every new
+    # scenario as unexplained.
+    specs = [
+        a["file_path"]
+        for a in state.get("test_assignments", [])
+        if a.get("source_script_id") in required and a.get("file_path")
+    ]
+    if not specs:
+        return None
+
+    raw = runner.execute(
+        specs=[Path(spec).name for spec in specs],
+        workers=workers,
+        env={},
+        evidence_dir=str(EVIDENCE_DIR / "baseline"),
+        app_root=Path(base_root),
+    )
+    if "error" in raw:
+        # A baseline that could not run is not a baseline of passes.
+        return None
+
+    from orchestrator.nodes.gate import _basename, _walk_results, _PASSING
+
+    by_spec: dict[str, list[str]] = {}
+    for leaf in _walk_results(raw):
+        by_spec.setdefault(_basename(leaf["file"]), []).append(leaf["status"])
+
+    verdicts: dict[str, str] = {}
+    for assignment in state.get("test_assignments", []):
+        script_id = assignment.get("source_script_id")
+        if script_id not in required:
+            continue
+        statuses = by_spec.get(_basename(assignment.get("file_path", "")))
+        if not statuses:
+            verdicts[script_id] = "missing"
+        else:
+            verdicts[script_id] = (
+                "passed" if all(s in _PASSING for s in statuses) else "failed"
+            )
+    return verdicts
+
+
 def run(state: PipelineState) -> PipelineState:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -93,6 +154,10 @@ def run(state: PipelineState) -> PipelineState:
 
     return {
         **state,
+        # What the required set does without this change. Captured after the
+        # head run rather than before, so a baseline failure never prevents
+        # the run that actually matters from happening.
+        "baseline_verdicts": _baseline(state, runner, workers),
         "run_exit_code": raw_results.get("exit_code", 0) if "error" in raw_results else 0,
         "run_results_raw": raw_results,
         "ran_serially": workers == 1,

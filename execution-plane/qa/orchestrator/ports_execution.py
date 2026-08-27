@@ -149,8 +149,16 @@ class TestRunner(Protocol):
         workers: int,
         env: dict[str, str],
         evidence_dir: str,
+        app_root: Any = None,
     ) -> dict[str, Any]: ...
     """Run them and return the raw result document.
+
+    `app_root` names the checkout to run against, and exists because the
+    regression gate is differential: the required set runs once at the base
+    revision and once at head, and a runner that could only address one of
+    them could only ever report failures rather than regressions. Optional,
+    because every other caller means "the revision under test" and a required
+    argument saying so would be ceremony.
 
     Raw rather than parsed: parsing belongs to whoever knows the runner's
     format, and a runner that pre-digested its results could hide a failure
