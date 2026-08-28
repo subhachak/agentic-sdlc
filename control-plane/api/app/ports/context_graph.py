@@ -105,6 +105,16 @@ class ContextGraphStore(Protocol):
         self, phase: str, edges: set[tuple[str, str, str]], project: str = DEFAULT_PROJECT
     ) -> dict[str, int]: ...
 
+    async def retract_run(
+        self, run_id: str, phase: str, project: str = DEFAULT_PROJECT
+    ) -> dict[str, int]: ...
+    """Withdraw everything one run asserted in one phase.
+
+    Distinct from `retract`, which matches edge tuples within a phase and so
+    cannot tell two runs apart: edges are unique per run, and two releases
+    of the same file are two assertions that happen to look identical.
+    Rolling back one run by tuple would withdraw the other's as well."""
+
     async def index_provenance(self, project: str = DEFAULT_PROJECT) -> IndexProvenance: ...
 
     async def neighbours(self, node_id: str) -> list[EdgeRef]: ...

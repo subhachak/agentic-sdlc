@@ -440,6 +440,50 @@ do_reset() {
   echo "Local databases and run artifacts wiped. The schema is recreated on the next start."
 }
 
+do_rollback() {
+  local run_id="${1:-}"
+  if [[ -z "$run_id" ]]; then
+    echo "Usage: $0 rollback <run-id>" >&2
+    echo >&2
+    echo "Reverts the merge that run released, and withdraws what it" >&2
+    echo "asserted about the release in the context graph." >&2
+    exit 1
+  fi
+
+  # Through the running platform rather than a script of its own: the API
+  # already holds the adapters and the graph, and a second construction path
+  # for them is a second place for a rollback to behave differently from the
+  # pipeline it is undoing.
+  if ! curl -fs -o /dev/null "$API_URL/api/health"; then
+    echo "The control plane is not running on $API_URL — start it first" >&2
+    echo "with ./run.sh start. Rollback goes through the platform so it" >&2
+    echo "uses the same adapters the release did." >&2
+    exit 1
+  fi
+
+  echo "Rolling back run $run_id..."
+  echo "(reverts the merge and pushes; the hosts redeploy from that on their own)"
+  echo
+
+  local body status
+  body="$(curl -s -w '\n%{http_code}' -X POST "$API_URL/api/runs/$run_id/rollback")"
+  status="${body##*$'\n'}"
+  body="${body%$'\n'*}"
+
+  if [[ "$status" != "200" ]]; then
+    echo "Rollback did not complete (HTTP $status):" >&2
+    echo "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("detail", sys.stdin))' 2>/dev/null \
+      || echo "$body" >&2
+    exit 1
+  fi
+
+  echo "$body" | python3 -m json.tool 2>/dev/null || echo "$body"
+  echo
+  echo "The repository is reverted. Watch the hosts redeploy — that is the"
+  echo "part that takes minutes, and it is the same wait as a deploy because"
+  echo "it is one."
+}
+
 do_demo() {
   do_stop >/dev/null 2>&1 || true
   do_reset
@@ -462,8 +506,9 @@ case "${1:-}" in
   qa)      do_qa ;;
   test)    do_test ;;
   reset)   do_reset ;;
+  rollback) shift; do_rollback "$@" ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status|logs|keys|seed|demo|qa|test|reset}"
+    echo "Usage: $0 {start|stop|restart|status|logs|keys|seed|demo|qa|test|reset|rollback}"
     exit 1
     ;;
 esac

@@ -275,3 +275,98 @@ async def stream_events(run_id: str, request: Request) -> EventSourceResponse:
             await asyncio.sleep(POLL_INTERVAL_S)
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/{run_id}/rollback")
+async def rollback_run(run_id: str, request: Request) -> dict[str, Any]:
+    """Undo a release: revert what it shipped, withdraw what it claimed.
+
+    Two layers, because they restore different things and fail
+    independently. The revert restores the repository and, through the
+    client's own automation, both running hosts — minutes, because it
+    rebuilds. The retraction restores the graph instantly, so a rolled-back
+    release stops answering "what is live" while still answering "what
+    happened".
+
+    The revert goes first. If it fails there is nothing to withdraw: a graph
+    that no longer claims a release, over a repository that still has it, is
+    a worse state than either failure on its own — and the one that reads as
+    success.
+    """
+    snapshot = await request.app.state.graph.aget_state(
+        {"configurable": {"thread_id": run_id}}
+    )
+    state = snapshot.values if snapshot else {}
+    if not state:
+        # "No state" and "no such run" are different answers, and only one of
+        # them is the operator's mistake. A run that exists but has not
+        # checkpointed yet would otherwise be reported as missing, which is
+        # confusing precisely when someone is reading its id off the console.
+        try:
+            key = uuid.UUID(run_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail=f"no run {run_id}") from None
+        async with get_sessionmaker()() as session:
+            known = await session.get(Run, key)
+        if known is None:
+            raise HTTPException(status_code=404, detail=f"no run {run_id}")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"run {run_id} has not recorded any state yet (status "
+                f"{known.status!r}), so it has certainly not released anything"
+            ),
+        )
+
+    deployment = state.get("deployment") or {}
+    deployment_id = deployment.get("deployment_id") or ""
+    if not deployment_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"run {run_id} has no recorded deployment, so there is nothing to "
+                f"roll back. Its status is {state.get('status', 'unknown')!r}."
+            ),
+        )
+
+    adapter = request.app.state.adapters.build_deploy
+    reverse = getattr(adapter, "rollback", None)
+    if reverse is None:
+        # RollbackCapable is optional on purpose — a platform with no reversal
+        # primitive should not have to implement one that raises. Saying which
+        # adapter cannot do it beats a 500.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{type(adapter).__name__} cannot roll back. Set "
+                f"BUILD_DEPLOY_ADAPTER to one that implements RollbackCapable."
+            ),
+        )
+
+    outcome = await reverse(deployment_id)
+    if outcome.state == "failed":
+        # Nothing is retracted. The graph still claims the release, which is
+        # true — it is still deployed.
+        raise HTTPException(status_code=502, detail=outcome.detail)
+
+    project = state.get("project") or DEFAULT_PROJECT
+    withdrawn = await request.app.state.context_graph.retract_run(
+        run_id, "release", project
+    )
+
+    return {
+        "run_id": run_id,
+        "reverted": {
+            "from": deployment_id,
+            "commit": outcome.deployment.deployment_id if outcome.deployment else "",
+            "url": outcome.deployment.url if outcome.deployment else "",
+            "detail": outcome.detail or (outcome.deployment.detail if outcome.deployment else ""),
+        },
+        "retracted": withdrawn,
+        # Said plainly because it is the thing a person watching will ask
+        # next, and the honest answer is not "done".
+        "note": (
+            "the revert is pushed; the hosts redeploy from it on their own "
+            "schedule, so the live site follows in minutes rather than now"
+        ),
+    }

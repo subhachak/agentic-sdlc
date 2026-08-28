@@ -321,6 +321,67 @@ class SqlContextGraph:
 
         return {"edges": len(doomed), "nodes": len(orphans)}
 
+    async def retract_run(
+        self, run_id: str, phase: str, project: str = DEFAULT_PROJECT
+    ) -> dict[str, int]:
+        """Withdraw what one run asserted in one phase.
+
+        The retraction a rollback needs. `retract` matches on edge tuples
+        within a phase, and edges are unique per run — so two runs that
+        released the same file hold two assertions that look identical, and
+        withdrawing one by tuple would withdraw both.
+
+        Superseding rather than deleting, for the same reason as `retract`:
+        rolling a release back should leave the history that it happened.
+        "What did this run ship, and when was it withdrawn" stays answerable,
+        which is the question that follows an incident.
+        """
+        async with get_sessionmaker()() as session:
+            doomed = (
+                await session.execute(
+                    select(GraphEdge).where(
+                        GraphEdge.run_id == run_id,
+                        GraphEdge.phase == phase,
+                        # Already withdrawn edges are history. Re-superseding
+                        # them would move a withdrawal's timestamp to whenever
+                        # somebody last ran a rollback.
+                        GraphEdge.superseded_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+            if not doomed:
+                return {"edges": 0, "nodes": 0}
+
+            touched = {e.src_id for e in doomed} | {e.dst_id for e in doomed}
+            withdrawn_at = _now()
+            for edge in doomed:
+                edge.superseded_at = withdrawn_at
+            await session.flush()
+
+            still: set[str] = set()
+            rows = (
+                await session.execute(
+                    select(GraphEdge.src_id, GraphEdge.dst_id).where(
+                        or_(
+                            GraphEdge.src_id.in_(touched),
+                            GraphEdge.dst_id.in_(touched),
+                        ),
+                        GraphEdge.superseded_at.is_(None),
+                    )
+                )
+            ).all()
+            for src, dst in rows:
+                still.update((src, dst))
+
+            orphans = touched - still
+            for orphan in orphans:
+                node = await session.get(GraphNode, orphan)
+                if node is not None:
+                    await session.delete(node)
+            await session.commit()
+
+        return {"edges": len(doomed), "nodes": len(orphans)}
+
     async def index_provenance(self, project: str = DEFAULT_PROJECT) -> dict[str, Any]:
         """Which snapshot of the codebase this graph currently holds.
 

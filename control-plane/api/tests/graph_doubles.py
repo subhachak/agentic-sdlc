@@ -65,6 +65,23 @@ class InMemoryContextGraph:
                 out.add((e["type"], src["external_id"], dst["external_id"]))
         return out
 
+    async def retract_run(
+        self, run_id: str, phase: str, project: str = DEFAULT_PROJECT
+    ) -> dict[str, int]:
+        doomed = [
+            e
+            for e in self.live
+            if e.get("run_id") == run_id and e.get("phase") == phase
+        ]
+        touched = {e["src_id"] for e in doomed} | {e["dst_id"] for e in doomed}
+        for e in doomed:
+            e["superseded_at"] = _now()
+        still = {e["src_id"] for e in self.live} | {e["dst_id"] for e in self.live}
+        orphans = touched - still
+        for orphan in orphans:
+            self.nodes.pop(orphan, None)
+        return {"edges": len(doomed), "nodes": len(orphans)}
+
     async def retract(
         self, phase: str, edges: set[tuple[str, str, str]], project: str = DEFAULT_PROJECT
     ) -> dict[str, int]:
