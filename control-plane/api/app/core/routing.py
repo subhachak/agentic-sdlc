@@ -114,7 +114,57 @@ def page_route_for(path: str) -> str | None:
     return normalise_route("/" + "/".join(segments[index + 1:]))
 
 
-def route_map(paths: list[str]) -> dict[str, list[str]]:
+# Where Next.js writes the route table it actually built. Reading it beats
+# re-deriving it: the framework knows about route groups, parallel routes,
+# intercepting routes and private folders, and convention inference has to
+# reimplement each of them correctly or be silently wrong about the route a
+# file serves.
+NEXT_ROUTE_MANIFEST = ".next/app-path-routes-manifest.json"
+
+
+def routes_from_manifest(
+    manifest: dict[str, str], paths: list[str], app_prefix: str = ""
+) -> dict[str, str]:
+    """File path to URL, from the framework's own build output.
+
+    The manifest keys are app-relative and extensionless — `/admin/page` —
+    and the values are the URLs Next actually serves. Both halves matter: the
+    key still carries the route group or slot that the URL does not, which is
+    exactly the information convention inference has to guess at.
+
+    Measured against the constructs a real Next application uses, inference
+    was wrong on five of six: `(marketing)/pricing` served `/pricing` and was
+    read as `/(marketing)/pricing`; `@modal/photo` is a parallel slot and not
+    a page route at all; `_internal` is excluded from routing entirely. None
+    of them fail loudly — the route simply matches nothing, and coverage is
+    attributed to a URL nobody requests.
+    """
+    by_suffix: dict[str, str] = {}
+    for key, url in manifest.items():
+        if not key.endswith("/page"):
+            # Route handlers, and anything else Next lists that is not a
+            # page. handler_route_for still covers those.
+            continue
+        by_suffix[key[: -len("/page")] or "/"] = url
+
+    out: dict[str, str] = {}
+    for path in paths:
+        name = path.rsplit("/", 1)[-1]
+        if name not in _PAGE_FILES:
+            continue
+        segments = path.split("/")[:-1]
+        if "app" not in segments:
+            continue
+        # Same first-`app` rule as the inference path, and for the same
+        # reason: a route named `app` is not the router root.
+        rel = "/" + "/".join(segments[segments.index("app") + 1 :])
+        url = by_suffix.get(rel if rel != "/" else "/")
+        if url is not None:
+            out[path] = normalise_route(url)
+    return out
+
+
+def route_map(paths: list[str], manifest: dict[str, str] | None = None) -> dict[str, list[str]]:
     """URL to the files that serve it, including the layouts above it.
 
     Layouts are included because they genuinely execute on every navigation
@@ -127,9 +177,15 @@ def route_map(paths: list[str]) -> dict[str, list[str]]:
         if path.rsplit("/", 1)[-1] in _LAYOUT_FILES:
             layouts.setdefault(posixpath.dirname(path), []).append(path)
 
+    # The framework's answer where a build produced one, convention inference
+    # otherwise. Not a fallback that hides which was used: the caller records
+    # the provenance, because a route read from a build manifest and one
+    # guessed from a directory name are not the same kind of fact.
+    authoritative = routes_from_manifest(manifest or {}, paths)
+
     out: dict[str, list[str]] = {}
     for path in paths:
-        page_route = page_route_for(path)
+        page_route = authoritative.get(path) or page_route_for(path)
         route = page_route or handler_route_for(path)
         if route is None:
             continue

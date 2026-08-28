@@ -43,6 +43,7 @@ async def sync(
     export_path: Path | None = None,
     project: str = DEFAULT_PROJECT,
     run_id: str = "sync",
+    working_copy: str | Path | None = None,
 ) -> dict[str, Any]:
     """Index or update, ground the design agent, and hand off to the QA plane.
 
@@ -129,7 +130,14 @@ async def sync(
         ))
     else:
         chosen = choice["selected"] or ""
-        export = await build_export(graph, scope=chosen, project=project)
+        export = await build_export(
+            graph, scope=chosen, project=project,
+            # The one that matters: this is the export the execution
+            # plane reads. A route table derived here and a route table
+            # the framework built are different facts, and the QA plane
+            # attributes coverage with whichever it is handed.
+            working_copy=working_copy,
+        )
         if not export["modules"]:
             # Should be unreachable: the scope came from the index. Kept
             # because "should be unreachable" has been wrong before, and an

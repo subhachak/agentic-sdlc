@@ -21,9 +21,11 @@ a script nobody had written.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
-from app.core.routing import route_map
+from app.core.routing import NEXT_ROUTE_MANIFEST, route_map
 from app.core.impact import ENGINE_VERSION, Policy
 from app.graph.projects import DEFAULT_PROJECT
 
@@ -34,8 +36,31 @@ def _in_scope(path: str, scope: str) -> bool:
     return not scope or path == scope or path.startswith(f"{scope.rstrip('/')}/")
 
 
+def read_route_manifest(root: str | Path, scope: str = "") -> dict[str, str]:
+    """Next.js's own route table, where a build has produced one.
+
+    Read from the working copy rather than from the index, because `.next/`
+    is build output — gitignored, absent from a fresh clone, and deliberately
+    excluded from the code graph. Missing is a normal state and not an error:
+    the export falls back to convention inference and records that it did.
+    """
+    base = Path(root) / scope if scope else Path(root)
+    for candidate in (base / NEXT_ROUTE_MANIFEST, Path(root) / NEXT_ROUTE_MANIFEST):
+        try:
+            data = json.loads(candidate.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            return {str(k): str(v) for k, v in data.items()}
+    return {}
+
+
 async def build_export(
-    graph: Any, scope: str = "", project: str = DEFAULT_PROJECT
+    graph: Any,
+    scope: str = "",
+    project: str = DEFAULT_PROJECT,
+    *,
+    working_copy: str | Path | None = None,
 ) -> dict[str, Any]:
     """The derived graph as JSON, optionally narrowed to a subtree.
 
@@ -44,6 +69,7 @@ async def build_export(
     it neither deploys nor tests.
     """
     provenance = await graph.index_provenance(project)
+    manifest = read_route_manifest(working_copy, scope) if working_copy else {}
     module_paths = await graph.module_paths(project)
     file_deps = await graph.file_dependents(project, include_tests=False)
 
@@ -76,7 +102,15 @@ async def build_export(
         # attribute what a test actually requested back to source files
         # without re-implementing the framework's routing conventions — the
         # kind of duplication that lets the two planes drift.
-        "routes": route_map(sorted(path_to_module)),
+        "routes": route_map(sorted(path_to_module), manifest),
+        # Which kind of fact those routes are. Inference has to reimplement
+        # route groups, parallel routes, intercepting routes and private
+        # folders correctly or be silently wrong — measured against a real
+        # Next application it was wrong on five of six, and none of them fail
+        # loudly: the route simply matches nothing and coverage is attributed
+        # to a URL nobody requests. A consumer should be able to tell which
+        # answer it is holding.
+        "routes_provenance": "framework-manifest" if manifest else "path-convention",
         "generated": True,
         "scope": scope,
         # The impact contract, carried rather than assumed. The execution

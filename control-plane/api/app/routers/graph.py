@@ -116,6 +116,7 @@ async def sync_graph(request: Request, body: SyncRequest) -> dict:
             scope=scope,
             export_path=_export_path(settings),
             project=_project(request, body.project),
+            working_copy=settings.target_working_copy,
         )
 
     # Remember what was chosen. Asking which subtree to test is reasonable
@@ -308,7 +309,10 @@ async def write_export(request: Request, body: ExportRequest) -> dict:
         )
     scope = choice["selected"] or ""
 
-    export = await build_export(graph, scope=scope, project=project)
+    export = await build_export(
+        graph, scope=scope, project=project,
+        working_copy=request.app.state.settings.target_working_copy,
+    )
     if not export["modules"]:
         raise HTTPException(
             status_code=409,
@@ -378,5 +382,11 @@ async def export_graph(
     read produces wrong scope silently, which is a different thing entirely.
     """
     return await build_export(
-        request.app.state.context_graph, scope=scope, project=_project(request, project)
+        request.app.state.context_graph,
+        scope=scope,
+        project=_project(request, project),
+        # So the export can read Next's own route table where a build has
+        # produced one, instead of re-deriving routes from directory names
+        # and being silently wrong about route groups.
+        working_copy=request.app.state.settings.target_working_copy,
     )

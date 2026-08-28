@@ -36,7 +36,10 @@ async def main() -> int:
 
     await init_db()
     graph = SqlContextGraph(build_entity_resolver(get_settings()))
-    export = await build_export(graph, scope=args.scope, project=args.project)
+    export = await build_export(
+        graph, scope=args.scope, project=args.project,
+        working_copy=get_settings().target_working_copy,
+    )
 
     if not export["modules"]:
         print(
