@@ -11,6 +11,8 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.agents.state import PipelineConfig
 from app.core.audit import summarize
+from app.core.context_graph import Assertion, NodeSpec
+from app.graph.projects import scoped
 from app.core.db import get_sessionmaker
 from app.core import reconciler
 from app.core.graph_runtime import TERMINAL_STATUSES, spawn_run
@@ -370,3 +372,87 @@ async def rollback_run(run_id: str, request: Request) -> dict[str, Any]:
             "schedule, so the live site follows in minutes rather than now"
         ),
     }
+
+
+@router.get("/{run_id}/deployment")
+async def run_deployment(run_id: str, request: Request) -> dict[str, Any]:
+    """Whether what this run released is actually working.
+
+    Asked rather than watched. The release phase records `healthy=None`
+    because at the instant of merge nothing is deployed yet, and the honest
+    thing to do with a question that has no answer for another few minutes is
+    to answer it when somebody asks — not to hold the run open, and not to
+    run a second background loop whose only job is to re-ask.
+
+    Deliberately not the reconciler. That loop polls WorkDispatch adapters and
+    resumes parked graph threads; a released run is neither. It has completed,
+    so there is nothing to resume, and BuildDeploy is a different port with a
+    different check. Reusing it would mean widening the reconciler to carry a
+    second port and a row that never resumes anything — machinery around a
+    question a GET already answers.
+
+    The answer is written back once it settles. Node projections merge on
+    re-assert, so re-stating the release's own DEPLOYED_TO edge updates what
+    the graph records without duplicating an edge or inventing a second one:
+    the record stops saying "unknown" the first time anyone looks, and keeps
+    saying what it found.
+    """
+    snapshot = await request.app.state.graph.aget_state(
+        {"configurable": {"thread_id": run_id}}
+    )
+    state = snapshot.values if snapshot else {}
+    deployment = (state or {}).get("deployment") or {}
+    handle = deployment.get("deployment_id") or ""
+    if not handle:
+        raise HTTPException(
+            status_code=404,
+            detail=f"run {run_id} has no recorded deployment to report on",
+        )
+
+    adapter = request.app.state.adapters.build_deploy
+    outcome = await adapter.check(handle)
+
+    settled = outcome.deployment.healthy if outcome.deployment else None
+    recorded = False
+    release = (state or {}).get("release") or {}
+    if settled is not None and release.get("id"):
+        # Same nodes the release phase wrote, so this merges into that record
+        # rather than starting a parallel one. The edge is idempotent; only
+        # the projection moves.
+        project = state.get("project") or DEFAULT_PROJECT
+        system = scoped("pipeline", project)
+        await request.app.state.context_graph.ingest(
+            run_id,
+            "release",
+            [
+                Assertion(
+                    "DEPLOYED_TO",
+                    NodeSpec("RELEASE", system, release["id"], {
+                        "healthy": settled,
+                        "health_detail": outcome.deployment.detail,
+                        "health_checked_at": _now_iso(),
+                    }),
+                    NodeSpec("ENVIRONMENT", system, release.get("environment", ""), {}),
+                )
+            ],
+        )
+        recorded = True
+
+    return {
+        "run_id": run_id,
+        "deployment_id": handle,
+        "state": outcome.state,
+        "healthy": settled,
+        "url": outcome.deployment.url if outcome.deployment else "",
+        "detail": outcome.detail or (outcome.deployment.detail if outcome.deployment else ""),
+        # Whether this answer is now durable or still only true right now.
+        # A pending deployment is re-asked on the next look; a settled one is
+        # in the graph.
+        "recorded": recorded,
+    }
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
