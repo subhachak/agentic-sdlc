@@ -285,6 +285,32 @@ def build_test_management(settings: Settings) -> TestManagement:
 
 def build_build_deploy(settings: Settings) -> BuildDeploy:
     """How a release reaches an environment."""
+    if settings.build_deploy_adapter == "github-merge":
+        if not (settings.target_repo and settings.github_token):
+            raise ValueError(
+                "build_deploy_adapter=github-merge needs TARGET_REPO and GITHUB_TOKEN"
+            )
+        from pathlib import Path as _Path
+
+        from app.adapters.build_deploy.github_merge import GitHubMergeDeploy
+
+        # Optional, and its absence is a real configuration: merging and
+        # observing need only the API. Rollback needs a checkout to revert
+        # in, so a platform configured without one can still deploy — and
+        # says so in check_access rather than failing at the worst moment.
+        working_copy = (
+            _Path(settings.target_working_copy)
+            if settings.target_working_copy and _Path(settings.target_working_copy).is_dir()
+            else None
+        )
+        return GitHubMergeDeploy(
+            repo=settings.target_repo,
+            token=settings.github_token,
+            base_ref=settings.target_ref,
+            merge_method=settings.merge_method,
+            working_copy=working_copy,
+        )
+
     from app.adapters.build_deploy.noop import NoOpBuildDeploy
 
     return NoOpBuildDeploy()

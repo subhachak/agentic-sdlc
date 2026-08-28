@@ -56,7 +56,16 @@ class Settings(BaseSettings):
     # and no two agree.
     jira_query: str = ""
     test_management_adapter: Literal["json-file"] = "json-file"
-    build_deploy_adapter: Literal["noop"] = "noop"
+    # "noop" records a release without shipping anything. "github-merge"
+    # deploys the way a person would: it merges the approved pull request and
+    # lets the client's own automation react, then observes the result
+    # through GitHub rather than through any one host's API.
+    build_deploy_adapter: Literal["noop", "github-merge"] = "noop"
+    # `merge` keeps the pull request's commits and produces a merge commit;
+    # `squash` and `rebase` produce a single one. The adapter asks the commit
+    # how many parents it has before reverting, so this can change without
+    # rollback quietly breaking.
+    merge_method: Literal["merge", "squash", "rebase"] = "merge"
     audit_sink_adapter: Literal["sqlite"] = "sqlite"
     claude_model: str = "claude-opus-5"
     anthropic_api_key: str | None = None

@@ -127,6 +127,11 @@ SAFE_MODE = {
     "source_control_adapter": "local",
     "code_intelligence_adapter": "local",
     "code_design_context_adapter": "stub",
+    # The one adapter whose fallback matters more than reachability: safe
+    # mode exists because something is already wrong, and an adapter that
+    # merges pull requests is not something to leave armed while nobody
+    # knows why the configuration failed.
+    "build_deploy_adapter": "noop",
     "target_working_copy": ".",
     "code_index_local_root": ".",
 }
