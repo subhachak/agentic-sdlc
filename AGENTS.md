@@ -116,8 +116,9 @@ cd control-plane/api && uv run pytest -q
 cd execution-plane/qa && .venv/bin/python -m pytest tests/ -q
 ```
 
-`make test-qa` is currently broken: it invokes bare `python`, which does not
-exist on macOS here. Use the `.venv/bin/python` form above.
+`make test` runs both. `make test-qa` creates the execution plane's venv on
+first use, so the explicit form above is only needed when you want to skip
+that check.
 
 ```bash
 ./run.sh demo      # reset, start both planes, seed the graph, open the console

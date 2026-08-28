@@ -85,6 +85,26 @@ class GitHubCopilotWorkDispatch:
                 "the design phase produces it and something has dropped it"
             )
 
+        # The dispatch names the repository this run is about, and this
+        # adapter was constructed for one. They agree today — both derive
+        # from TARGET_REPO — and they have to, because check() polls the task
+        # by id under self._repo and cannot see these inputs. Silently
+        # preferring either one would start the task in one repository and
+        # poll it in another, which surfaces as a task that no longer exists
+        # rather than as the configuration error it is.
+        #
+        # `local_pipeline` honours this key and this adapter did not, so the
+        # same input meant different things depending on the provider.
+        # Checking is what makes it mean something here without pretending a
+        # per-run repository is supported: that needs a repo on DispatchHandle.
+        requested = str(inputs.get("repo") or "").strip()
+        if requested and requested != self._repo:
+            raise ValueError(
+                f"the dispatch names {requested} but this adapter is configured for "
+                f"{self._repo} — the task would be started in one repository and "
+                f"polled in another"
+            )
+
         body: dict[str, Any] = {
             "prompt": prompt,
             # A branch and a pull request, so what the agent did is reviewable

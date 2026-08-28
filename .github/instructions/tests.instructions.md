@@ -40,5 +40,5 @@ cd control-plane/api   && uv run pytest -q                      # 727 passed, 4 
 cd execution-plane/qa  && .venv/bin/python -m pytest tests/ -q  # 277 passed
 ```
 
-`make test-qa` is broken — it calls a bare `python` that does not exist on
-this machine. Use the `.venv/bin/python` form.
+`make test` runs both. `make test-qa` creates the execution plane's venv on
+first use; the explicit form above skips that check.

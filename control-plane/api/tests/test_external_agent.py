@@ -161,6 +161,21 @@ async def test_an_empty_prompt_is_refused_before_anything_is_started():
         await dispatcher.trigger("run-1", "implementation", "n", {"prompt": "  "})
 
 
+@pytest.mark.asyncio
+async def test_a_dispatch_naming_another_repository_is_refused():
+    """check() polls the task under the configured repository and cannot see
+    the trigger's inputs, so a task started somewhere else would come back as
+    one that no longer exists — a misconfiguration wearing the disguise of a
+    deleted task."""
+    dispatcher = GitHubCopilotWorkDispatch(repo="acme/thing", token="t")
+
+    with pytest.raises(ValueError, match="started in one repository"):
+        await dispatcher.trigger(
+            "run-1", "implementation", "n", {"prompt": "do the thing", "repo": "acme/other"}
+        )
+
+
+
 # --- the reconciler picks the right provider -------------------------------
 
 

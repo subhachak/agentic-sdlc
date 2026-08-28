@@ -37,8 +37,17 @@ test: test-api test-qa
 test-api:
 	cd control-plane/api && uv run pytest -q
 
+# The pipeline gets its own environment rather than installing into whatever
+# `python` happens to be — which on most machines now is nothing at all, so
+# this target failed on its first word. Created on demand, the same way
+# scripts/local-demo.sh does it, so `make test` works on a fresh clone.
 test-qa:
-	cd execution-plane/qa && python -m pytest tests/ -q
+	cd execution-plane/qa && \
+	if [ ! -x .venv/bin/python ]; then \
+	  uv venv .venv >/dev/null && \
+	  uv pip install --python .venv/bin/python -q -r orchestrator/requirements-dev.txt; \
+	fi && \
+	.venv/bin/python -m pytest tests/ -q
 
 # --- evals -----------------------------------------------------------------
 

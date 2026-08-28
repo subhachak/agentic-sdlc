@@ -72,5 +72,5 @@ derived with `orchestrator/identity.py`, which is **duplicated verbatim** from
 the control plane (I6). Never edit one copy alone.
 
 Run the suite with `.venv/bin/python -m pytest tests/ -q` from
-`execution-plane/qa` — `make test-qa` invokes a bare `python` that does not
-exist here.
+`execution-plane/qa`, or `make test-qa` from the root, which creates that venv
+on first use.
