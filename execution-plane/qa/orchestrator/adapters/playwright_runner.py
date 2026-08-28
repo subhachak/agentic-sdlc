@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from orchestrator import runner_env
 from orchestrator.paths import APP_ROOT, RESULTS_FILE
 from orchestrator.ports_execution import EXECUTION_CONTRACT_VERSION
 
@@ -67,7 +68,11 @@ class PlaywrightRunner:
             cwd=root,
             capture_output=True,
             text=True,
-            env={**os.environ, **env},
+            # Built, not inherited. These specs were written by a model
+            # minutes ago from a diff this pipeline does not control, and
+            # inheriting the parent environment handed them the model key,
+            # the git token and everything else in the caller's shell.
+            env=runner_env.for_specs(env),
         )
         # Relative to whichever checkout ran, or the baseline pass reads the
         # head run's results and reports that everything already passed.
